@@ -1,8 +1,14 @@
-use std::{collections::HashMap, error::Error, fs::File};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::File,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use arrow_array::{
-    builder::{ArrayBuilder, Int32Builder},
-    Int32Array, RecordBatch,
+    builder::{ArrayBuilder, GenericByteBuilder, Int32Builder, TimestampMicrosecondBuilder},
+    types::Utf8Type,
+    Int32Array, RecordBatch, TimestampMicrosecondArray,
 };
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 use pg_replicate::{Attribute, ReplicationClient, RowEvent, Table, TableSchema};
@@ -13,11 +19,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let repl_client = ReplicationClient::new(
         "localhost".to_string(),
         8080,
-        "testdb".to_string(),
+        "pagila".to_string(),
         "raminder.singh".to_string(),
     );
 
-    let publication = "table1_pub";
+    let publication = "actor_pub";
     let postgres_client = repl_client.connect().await?;
     let schemas = ReplicationClient::get_schema(&postgres_client, publication).await?;
 
@@ -100,6 +106,40 @@ fn insert_in_col(
                     col_builder.append_value(row.get::<i32>(i));
                 }
             }
+            Type::VARCHAR => {
+                let col_builder = builders[i]
+                    .1
+                    .as_any_mut()
+                    .downcast_mut::<GenericByteBuilder<Utf8Type>>()
+                    .expect("builder of incorrect type");
+                if attr.nullable {
+                    col_builder.append_option(row.get::<Option<&str>>(i));
+                } else {
+                    col_builder.append_value(row.get::<&str>(i));
+                }
+            }
+            Type::TIMESTAMP => {
+                let col_builder = builders[i]
+                    .1
+                    .as_any_mut()
+                    .downcast_mut::<TimestampMicrosecondBuilder>()
+                    .expect("builder of incorrect type");
+                if attr.nullable {
+                    let st = row.get::<Option<SystemTime>>(i).map(|t| {
+                        t.duration_since(UNIX_EPOCH)
+                            .expect("failed to get duration since unix epoch")
+                            .as_micros() as i64
+                    });
+                    col_builder.append_option(st);
+                } else {
+                    let st = row.get::<SystemTime>(i);
+                    let dur = st
+                        .duration_since(UNIX_EPOCH)
+                        .expect("failed to get duration since unix epoch")
+                        .as_micros() as i64;
+                    col_builder.append_value(dur);
+                }
+            }
             ref t => panic!("type {t:?} not yet supported"),
         };
     }
@@ -129,7 +169,15 @@ fn create_column_builders_for_table(
             Type::INT4 => {
                 col_builders.push((attr.name.clone(), Box::new(Int32Array::builder(128))))
             }
-            _ => panic!("not supported"),
+            Type::VARCHAR => col_builders.push((
+                attr.name.clone(),
+                Box::new(GenericByteBuilder::<Utf8Type>::new()),
+            )),
+            Type::TIMESTAMP => col_builders.push((
+                attr.name.clone(),
+                Box::new(TimestampMicrosecondArray::builder(128)),
+            )),
+            ref t => panic!("type {t:?} not yet supported"),
         }
     }
     col_builders
