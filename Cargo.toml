@@ -9,9 +9,9 @@ edition = "2021"
 tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres" }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
-parquet = "50"
-arrow-array = "50"
-tempfile = "3.10"
 thiserror = "1.0"
 
 [dev-dependencies]
+parquet = "50"
+tempfile = "3.10"
+arrow-array = "50"
