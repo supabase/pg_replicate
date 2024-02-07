@@ -1,8 +1,13 @@
-use std::any::Any;
-use std::collections::HashMap;
-use std::fs::File;
-use std::sync::Arc;
+mod replication;
 
+pub use replication::{
+    Attribute, ReplicationClient, ReplicationClientError, Row, RowEvent, Table, TableSchema,
+};
+
+use std::collections::{HashMap, VecDeque};
+use std::fs::File;
+
+use arrow_array::builder::{ArrayBuilder, Int32Builder};
 use arrow_array::{ArrayRef, Int32Array, RecordBatch};
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
@@ -16,16 +21,16 @@ use futures::StreamExt;
 use tokio_postgres::NoTls;
 use tokio_postgres::{Client, SimpleQueryMessage};
 
-pub struct ReplicationClient {
+pub struct CopyTableClient {
     host: String,
     port: u16,
     dbname: String,
     user: String,
 }
 
-impl ReplicationClient {
-    pub fn new(host: String, port: u16, dbname: String, user: String) -> ReplicationClient {
-        ReplicationClient {
+impl CopyTableClient {
+    pub fn new(host: String, port: u16, dbname: String, user: String) -> CopyTableClient {
+        CopyTableClient {
             host,
             port,
             dbname,
@@ -209,45 +214,10 @@ impl ReplicationClient {
         client: &Client,
         tables_schema: &HashMap<(String, String), Vec<(String, Type, bool)>>,
     ) -> Result<(), tokio_postgres::Error> {
-        for ((namespace, table), types) in tables_schema {
-            // println!("Copying initial data for {namespace}.{table}:");
-            // for (_, typ, is_null) in types {
-            //     let typ = match *typ {
-            //         Type::BOOL => {
-            //             if *is_null {
-            //                 "BOOL NULL"
-            //             } else {
-            //                 "BOOL"
-            //             }
-            //         }
-            //         Type::INT4 => {
-            //             if *is_null {
-            //                 "INT NULL"
-            //             } else {
-            //                 "INT"
-            //             }
-            //         }
-            //         Type::TEXT => {
-            //             if *is_null {
-            //                 "TEXT NULL"
-            //             } else {
-            //                 "TEXT"
-            //             }
-            //         }
-            //         _ => {
-            //             if *is_null {
-            //                 "UNKNOWN NULL"
-            //             } else {
-            //                 "UNKNOWN"
-            //             }
-            //         }
-            //     };
-            //     // print!("    {typ}, ");
-            // }
-            // println!();
+        for ((schema, table), types) in tables_schema {
             let copy_query = format!(
                 r#"COPY "{}"."{}" TO STDOUT WITH (FORMAT binary);"#,
-                namespace, table
+                schema, table
             );
 
             let stream = client.copy_out_simple(&copy_query).await?;
@@ -259,77 +229,57 @@ impl ReplicationClient {
             let row_stream = BinaryCopyOutStream::new(stream, &bare_types);
             let rows: Vec<Result<BinaryCopyOutRow, tokio_postgres::Error>> =
                 row_stream.collect().await;
-            let mut col_vals: Vec<Box<dyn Any>> = Vec::new();
+            let mut col_builders: Vec<Box<dyn ArrayBuilder>> = Vec::new();
             for ty_info in types {
                 match ty_info {
-                    (_, Type::INT4, _) => col_vals.push(Box::new(Vec::<i32>::new())),
+                    (_, Type::INT4, _) => col_builders.push(Box::new(Int32Array::builder(128))),
                     _ => panic!("not supported"),
                 }
             }
             for row in rows {
                 let row = row.unwrap();
 
-                // print!("    ");
                 for (i, ty_info) in types.iter().enumerate() {
                     match ty_info {
-                        // (Type::BOOL, false) => Self::print_value(row.get::<Option<bool>>(i)),
-                        // (Type::INT4, false) => Self::print_value(row.get::<Option<i32>>(i)),
-                        // (Type::TEXT, false) => Self::print_value(row.get::<Option<String>>(i)),
-                        // (Type::BOOL, true) => Self::print_value(Some(row.get::<bool>(i))),
-                        (_, Type::INT4, true) => {
-                            let col = col_vals[i].downcast_mut::<Vec<i32>>().unwrap();
-                            col.push(row.get::<i32>(i));
-                            // Self::print_value(Some(row.get::<i32>(i)))
+                        (_, Type::INT4, not_null) => {
+                            let col_builder = col_builders[i]
+                                .as_any_mut()
+                                .downcast_mut::<Int32Builder>()
+                                .unwrap();
+                            if *not_null {
+                                col_builder.append_value(row.get::<i32>(i));
+                            } else {
+                                col_builder.append_option(row.get::<Option<i32>>(i));
+                            }
                         }
-                        // (Type::TEXT, true) => Self::print_value(Some(row.get::<String>(i))),
-                        _ => print!("<{:?}>, ", ty_info),
+                        _ => panic!("not supported"),
                     };
                 }
-                // println!();
             }
+
+            let mut array_refs: VecDeque<ArrayRef> = col_builders
+                .iter_mut()
+                .map(|builder| builder.finish())
+                .collect();
+
             let mut cols = vec![];
-            for i in (0..types.len()).rev() {
-                let (name, ty, _) = &types[i];
+            for (name, ty, _) in types {
                 match *ty {
                     Type::INT4 => {
-                        let col_val = Int32Array::from(
-                            *col_vals.pop().unwrap().downcast::<Vec<i32>>().unwrap(),
-                        );
-                        cols.push((name, Arc::new(col_val) as ArrayRef));
+                        let col = array_refs.pop_front().unwrap() as ArrayRef;
+                        cols.push((name, col))
                     }
                     _ => panic!("not supported"),
                 }
             }
             let batch = RecordBatch::try_from_iter(cols).unwrap();
-            Self::write_parquet(batch, "./test.parquet");
-            // println!();
+            Self::write_parquet(batch, &format!("./{schema}.{table}.parquet"));
         }
 
         Ok(())
     }
 
-    // fn print_value<T>(value: Option<T>)
-    // where
-    //     T: std::fmt::Display,
-    // {
-    //     match value {
-    //         Some(value) => print!("{value}, "),
-    //         None => print!("NULL, "),
-    //     }
-    // }
-
     fn write_parquet(batch: RecordBatch, file_name: &str) {
-        // let ids = Int32Array::from(vec![1, 2, 3, 4]);
-        // let vals = Int32Array::from(vec![5, 6, 7, 8]);
-        // let batch = RecordBatch::try_from_iter(vec![
-        //     ("id", Arc::new(ids) as ArrayRef),
-        //     ("val", Arc::new(vals) as ArrayRef),
-        // ])
-        // .unwrap();
-
-        // println!("tempdir {:?}", std::env::temp_dir());
-        // let file = tempfile().unwrap();
-        // let options = OpenOptions::new().read(true).write(true).create_new(true);
         let file = File::options()
             .read(true)
             .write(true)
@@ -337,9 +287,6 @@ impl ReplicationClient {
             .open(file_name)
             .unwrap();
 
-        // let file = File::open("./").unwrap();
-
-        // WriterProperties can be used to set Parquet file options
         let props = WriterProperties::builder()
             .set_compression(Compression::SNAPPY)
             .build();
@@ -348,7 +295,6 @@ impl ReplicationClient {
 
         writer.write(&batch).expect("Writing batch");
 
-        // writer must be closed to write footer
         writer.close().unwrap();
     }
 }

@@ -1,10 +1,10 @@
 use std::error::Error;
 
-use pg_replicate::ReplicationClient;
+use pg_replicate::CopyTableClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let client = ReplicationClient::new(
+    let client = CopyTableClient::new(
         "localhost".to_string(),
         8080,
         "testdb".to_string(),
