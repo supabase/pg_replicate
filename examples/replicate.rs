@@ -38,11 +38,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             insert_in_col(&table_schema.attributes, &mut builders, &row)
                         }
                     }
-
-                    println!(
-                        "Got insert event for table {}.{}",
-                        table_schema.table.schema, table_schema.table.name
-                    );
                 }
                 RowEvent::Update => {}
                 RowEvent::Delete => {}
