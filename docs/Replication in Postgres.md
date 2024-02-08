@@ -62,7 +62,6 @@ Connection 2 (CDC connection)
 Connection 3 (snapshot connection)
 ==================================
 
-
 1. Connect with following params:
     Parameter: database = pub
     Parameter: replication = database

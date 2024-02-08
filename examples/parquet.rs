@@ -30,18 +30,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut column_builders = create_column_builders(&schemas);
 
     repl_client
-        .get_changes(
+        .get_table_snapshot(
             &postgres_client,
             &schemas,
             |event, table_schema| match event {
                 RowEvent::Insert(row) => {
-                    let mut builders = column_builders
+                    let builders = column_builders
                         .get_mut(&table_schema.table)
                         .expect("no builder found");
 
                     match row {
                         pg_replicate::Row::CopyOut(row) => {
-                            insert_in_col(&table_schema.attributes, &mut builders, &row)
+                            insert_in_col(&table_schema.attributes, builders, &row)
+                        }
+                        pg_replicate::Row::Tuple(_tuple) => {
+                            //
                         }
                     }
                 }
@@ -64,8 +67,8 @@ fn create_record_batch(builders: Vec<(String, Box<dyn ArrayBuilder>)>) -> Record
     for (name, mut builder) in builders {
         cols.push((name, builder.finish()))
     }
-    let batch = RecordBatch::try_from_iter(cols).expect("failed to create record batch");
-    batch
+
+    RecordBatch::try_from_iter(cols).expect("failed to create record batch")
 }
 
 fn write_parquet(batch: RecordBatch, file_name: &str) {
@@ -145,9 +148,9 @@ fn insert_in_col(
     }
 }
 
-fn create_column_builders(
-    schemas: &[TableSchema],
-) -> HashMap<Table, Vec<(String, Box<dyn ArrayBuilder>)>> {
+type ColumnBuilders = HashMap<Table, Vec<(String, Box<dyn ArrayBuilder>)>>;
+
+fn create_column_builders(schemas: &[TableSchema]) -> ColumnBuilders {
     let mut table_to_col_builders = HashMap::new();
 
     for schema in schemas {
