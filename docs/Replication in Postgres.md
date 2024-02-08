@@ -116,12 +116,14 @@ Connection 3 (snapshot connection)
         Data: [57, 9, 100, 97, 116, 97, 57, 10]
         Data: [49, 48, 9, 100, 97, 116, 97, 49, 48, 10]
 
-8. Run query: START_REPLICATION SLOT "pg_16406_sync_16399_7329764006882527550" LOGICAL 0/19BDA20 (proto_version '3', publication_names '"mypub"')
+8. Run query: COMMIT
+
+9. Run query: START_REPLICATION SLOT "pg_16406_sync_16399_7329764006882527550" LOGICAL 0/19BDA20 (proto_version '3', publication_names '"mypub"')
     Result:
         ← Data: [107, 0, 0, 0, 0, 1, 155, 218, 32, 0, 2, 179, 42, 70, 55, 146, 232, 0]
         → Data: [114, 0, 0, 0, 0, 1, 155, 218, 32, 0, 0, 0, 0, 1, 155, 218, 32, 0, 0, 0, 0, 1, 155, 218, 32, 0, 2, 179, 42, 70, 55, 146, 255, 0]
 
-9. Run query: DROP_REPLICATION_SLOT pg_16406_sync_16399_7329764006882527550 WAIT
+10. Run query: DROP_REPLICATION_SLOT pg_16406_sync_16399_7329764006882527550 WAIT
     Result:
 
-10. Terminate
+11. Terminate
