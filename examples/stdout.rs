@@ -7,23 +7,24 @@ use postgres_protocol::message::backend::TupleData;
 async fn main() -> Result<(), Box<dyn Error>> {
     let repl_client = ReplicationClient::new(
         "localhost".to_string(),
-        8080,
+        5431,
         "pagila".to_string(),
         "raminder.singh".to_string(),
-    );
+        "temp_slot".to_string(),
+    )
+    .await?;
 
     let publication = "actor_pub";
-    let postgres_client = repl_client.connect().await?;
-    let schemas = ReplicationClient::get_schema(&postgres_client, publication).await?;
+    // let postgres_client = repl_client.connect().await?;
+    let schemas = repl_client.get_schema(publication).await?;
 
     let mut rel_id_to_schema = HashMap::new();
     for schema in &schemas {
         rel_id_to_schema.insert(schema.relation_id, schema);
     }
 
-    let (slot_name, consistent_point) = repl_client
+    repl_client
         .get_table_snapshot(
-            &postgres_client,
             &schemas,
             |event, table_schema| match event {
                 RowEvent::Insert(row) => {
@@ -51,11 +52,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     repl_client
         .get_realtime_changes(
-            &postgres_client,
             &rel_id_to_schema,
             publication,
-            &slot_name,
-            consistent_point,
             |event, table_schema| match event {
                 RowEvent::Insert(row) => match row {
                     pg_replicate::Row::CopyOut(_row) => {

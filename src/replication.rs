@@ -14,10 +14,9 @@ use tokio_postgres::{
 };
 
 pub struct ReplicationClient {
-    host: String,
-    port: u16,
-    dbname: String,
-    user: String,
+    slot_name: String,
+    consistent_point: PgLsn,
+    postgres_client: Client,
 }
 
 #[derive(Debug, Error)]
@@ -65,19 +64,31 @@ pub enum Row<'a> {
 }
 
 impl ReplicationClient {
-    pub fn new(host: String, port: u16, dbname: String, user: String) -> ReplicationClient {
-        ReplicationClient {
-            host,
-            port,
-            dbname,
-            user,
-        }
+    pub async fn new(
+        host: String,
+        port: u16,
+        dbname: String,
+        user: String,
+        slot_name: String,
+    ) -> Result<ReplicationClient, ReplicationClientError> {
+        let postgres_client = Self::connect(&host, port, &dbname, &user).await?;
+        let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
+        Ok(ReplicationClient {
+            slot_name,
+            consistent_point,
+            postgres_client,
+        })
     }
 
-    pub async fn connect(&self) -> Result<Client, ReplicationClientError> {
+    pub async fn connect(
+        host: &str,
+        port: u16,
+        dbname: &str,
+        user: &str,
+    ) -> Result<Client, ReplicationClientError> {
         let config = format!(
             "host={} port ={} dbname={} user={} replication=database",
-            self.host, self.port, self.dbname, self.user
+            host, port, dbname, user
         );
 
         let (client, connection) = tokio_postgres::connect(&config, NoTls).await?;
@@ -92,13 +103,14 @@ impl ReplicationClient {
     }
 
     async fn get_publication_tables(
-        client: &Client,
+        &self,
         publication: &str,
     ) -> Result<Vec<Table>, ReplicationClientError> {
         //TODO: use a non-replication connection to avoid SQL injection
         let publication_query =
             format!("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{publication}';");
-        let tables = client
+        let tables = self
+            .postgres_client
             .simple_query(&publication_query)
             .await?
             .into_iter()
@@ -124,10 +136,7 @@ impl ReplicationClient {
         Ok(tables)
     }
 
-    async fn get_relation_id(
-        client: &Client,
-        table: &Table,
-    ) -> Result<Option<u32>, ReplicationClientError> {
+    async fn get_relation_id(&self, table: &Table) -> Result<Option<u32>, ReplicationClientError> {
         let rel_id_query = format!(
             "SELECT c.oid
           FROM pg_catalog.pg_class c
@@ -138,7 +147,8 @@ impl ReplicationClient {
             table.schema, table.name
         );
 
-        let rel_id = client
+        let rel_id = self
+            .postgres_client
             .simple_query(&rel_id_query)
             .await?
             .into_iter()
@@ -159,7 +169,7 @@ impl ReplicationClient {
     }
 
     async fn get_table_attributes(
-        client: &Client,
+        &self,
         relation_id: u32,
     ) -> Result<Vec<Attribute>, ReplicationClientError> {
         let col_info_query = format!(
@@ -178,7 +188,8 @@ impl ReplicationClient {
             relation_id, relation_id
         );
 
-        let attributes = client
+        let attributes = self
+            .postgres_client
             .simple_query(&col_info_query)
             .await?
             .into_iter()
@@ -211,16 +222,16 @@ impl ReplicationClient {
     }
 
     pub async fn get_schema(
-        client: &Client,
+        &self,
         publication: &str,
     ) -> Result<Vec<TableSchema>, ReplicationClientError> {
-        let tables = Self::get_publication_tables(client, publication).await?;
+        let tables = self.get_publication_tables(publication).await?;
         let mut schema = Vec::new();
 
         for table in tables {
-            let relation_id = Self::get_relation_id(client, &table).await?;
+            let relation_id = self.get_relation_id(&table).await?;
             if let Some(relation_id) = relation_id {
-                let attributes = Self::get_table_attributes(client, relation_id).await?;
+                let attributes = self.get_table_attributes(relation_id).await?;
                 schema.push(TableSchema {
                     table,
                     relation_id,
@@ -241,8 +252,8 @@ impl ReplicationClient {
         Ok(())
     }
 
-    async fn commit_txn(client: &Client) -> Result<(), ReplicationClientError> {
-        client.simple_query("COMMIT;").await?;
+    async fn commit_txn(&self) -> Result<(), ReplicationClientError> {
+        self.postgres_client.simple_query("COMMIT;").await?;
         Ok(())
     }
 
@@ -267,7 +278,7 @@ impl ReplicationClient {
     }
 
     async fn copy_table(
-        client: &Client,
+        &self,
         table: &Table,
         attr_types: &[Type],
     ) -> Result<BinaryCopyOutStream, ReplicationClientError> {
@@ -276,7 +287,7 @@ impl ReplicationClient {
             table.schema, table.name
         );
 
-        let stream = client.copy_out_simple(&copy_query).await?;
+        let stream = self.postgres_client.copy_out_simple(&copy_query).await?;
         let row_stream = BinaryCopyOutStream::new(stream, attr_types);
         Ok(row_stream)
     }
@@ -291,20 +302,16 @@ impl ReplicationClient {
 
     pub async fn get_table_snapshot<F: FnMut(RowEvent, &TableSchema)>(
         &self,
-        client: &Client,
         schemas: &[TableSchema],
         mut f: F,
-    ) -> Result<(String, PgLsn), ReplicationClientError> {
-        let slot_name = "temp_slot".to_string();
-        let consistent_point = Self::start_table_copy(client, &slot_name).await?;
-
+    ) -> Result<(), ReplicationClientError> {
         for schema in schemas {
             let types = schema
                 .attributes
                 .iter()
                 .map(|attr| attr.typ.clone())
                 .collect::<Vec<_>>();
-            let rows = Self::copy_table(client, &schema.table, &types).await?;
+            let rows = self.copy_table(&schema.table, &types).await?;
             tokio::pin!(rows);
             while let Some(row) = rows.next().await {
                 let row = row?;
@@ -312,29 +319,25 @@ impl ReplicationClient {
             }
         }
 
-        Self::commit_txn(client).await?;
+        self.commit_txn().await?;
 
-        Ok((slot_name, consistent_point))
+        Ok(())
     }
 
     pub async fn get_realtime_changes<F: FnMut(RowEvent, &TableSchema)>(
         &self,
-        client: &Client,
         rel_id_to_schema: &HashMap<u32, &TableSchema>,
         publication: &str,
-        slot_name: &str,
-        consistent_point: PgLsn,
         mut f: F,
     ) -> Result<(), ReplicationClientError> {
-        let logical_stream =
-            Self::start_replication_slot(client, publication, slot_name, consistent_point).await?;
+        let logical_stream = self.start_replication_slot(publication).await?;
 
         tokio::pin!(logical_stream);
 
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
-        let mut last_lsn = consistent_point;
+        let mut last_lsn = self.consistent_point;
 
         while let Some(replication_msg) = logical_stream.next().await {
             match replication_msg? {
@@ -385,17 +388,18 @@ impl ReplicationClient {
     }
 
     async fn start_replication_slot(
-        client: &Client,
+        &self,
         publication: &str,
-        slot_name: &str,
-        consistent_point: PgLsn,
     ) -> Result<LogicalReplicationStream, ReplicationClientError> {
         let options = format!("(\"proto_version\" '1', \"publication_names\" '{publication}')");
         let query = format!(
             r#"START_REPLICATION SLOT {:?} LOGICAL {} {}"#,
-            slot_name, consistent_point, options
+            self.slot_name, self.consistent_point, options
         );
-        let copy_stream = client.copy_both_simple::<bytes::Bytes>(&query).await?;
+        let copy_stream = self
+            .postgres_client
+            .copy_both_simple::<bytes::Bytes>(&query)
+            .await?;
         let stream = LogicalReplicationStream::new(copy_stream);
         Ok(stream)
     }

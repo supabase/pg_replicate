@@ -18,40 +18,38 @@ use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
 async fn main() -> Result<(), Box<dyn Error>> {
     let repl_client = ReplicationClient::new(
         "localhost".to_string(),
-        8080,
+        5431,
         "pagila".to_string(),
         "raminder.singh".to_string(),
-    );
+        "temp_slot".to_string(),
+    )
+    .await?;
 
     let publication = "actor_pub";
-    let postgres_client = repl_client.connect().await?;
-    let schemas = ReplicationClient::get_schema(&postgres_client, publication).await?;
+    // let postgres_client = repl_client.connect().await?;
+    let schemas = repl_client.get_schema(publication).await?;
 
     let mut column_builders = create_column_builders(&schemas);
 
     repl_client
-        .get_table_snapshot(
-            &postgres_client,
-            &schemas,
-            |event, table_schema| match event {
-                RowEvent::Insert(row) => {
-                    let builders = column_builders
-                        .get_mut(&table_schema.table)
-                        .expect("no builder found");
+        .get_table_snapshot(&schemas, |event, table_schema| match event {
+            RowEvent::Insert(row) => {
+                let builders = column_builders
+                    .get_mut(&table_schema.table)
+                    .expect("no builder found");
 
-                    match row {
-                        pg_replicate::Row::CopyOut(row) => {
-                            insert_in_col(&table_schema.attributes, builders, &row)
-                        }
-                        pg_replicate::Row::Tuple(_tuple) => {
-                            //
-                        }
+                match row {
+                    pg_replicate::Row::CopyOut(row) => {
+                        insert_in_col(&table_schema.attributes, builders, &row)
+                    }
+                    pg_replicate::Row::Tuple(_tuple) => {
+                        //
                     }
                 }
-                RowEvent::Update => {}
-                RowEvent::Delete => {}
-            },
-        )
+            }
+            RowEvent::Update => {}
+            RowEvent::Delete => {}
+        })
         .await?;
 
     for (table, builders) in column_builders {
