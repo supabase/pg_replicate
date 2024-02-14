@@ -26,8 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .await?;
 
     let publication = "actor_pub";
-    // let postgres_client = repl_client.connect().await?;
-    let schemas = repl_client.get_schema(publication).await?;
+    let schemas = repl_client.get_schemas(publication).await?;
 
     let mut column_builders = create_column_builders(&schemas);
 

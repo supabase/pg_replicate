@@ -221,7 +221,7 @@ impl ReplicationClient {
         Ok(attributes)
     }
 
-    pub async fn get_schema(
+    pub async fn get_schemas(
         &self,
         publication: &str,
     ) -> Result<Vec<TableSchema>, ReplicationClientError> {

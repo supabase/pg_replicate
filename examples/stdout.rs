@@ -2,6 +2,7 @@ use std::{collections::HashMap, error::Error, str::from_utf8, time::SystemTime};
 
 use pg_replicate::{ReplicationClient, RowEvent};
 use postgres_protocol::message::backend::TupleData;
+use tokio_postgres::types::Type;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -15,8 +16,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .await?;
 
     let publication = "actor_pub";
-    // let postgres_client = repl_client.connect().await?;
-    let schemas = repl_client.get_schema(publication).await?;
+    let schemas = repl_client.get_schemas(publication).await?;
 
     let mut rel_id_to_schema = HashMap::new();
     for schema in &schemas {
@@ -24,30 +24,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     repl_client
-        .get_table_snapshot(
-            &schemas,
-            |event, table_schema| match event {
-                RowEvent::Insert(row) => {
-                    match row {
-                        pg_replicate::Row::CopyOut(row) => {
-                            let actor_id = row.get::<i32>(0);
-                            let first_name = row.get::<&str>(1);
-                            let last_name = row.get::<&str>(2);
-                            let last_update = row.get::<SystemTime>(3);
-                            println!(
-                                "Row inserted in table {}.{}: ActorId {}, FirstName {}, LastName {}, LastUpdate {:?}",
-                                table_schema.table.schema, table_schema.table.name, actor_id, first_name, last_name, last_update
-                            );
+        .get_table_snapshot(&schemas, |event, table_schema| match event {
+            RowEvent::Insert(row) => {
+                match row {
+                    pg_replicate::Row::CopyOut(row) => {
+                        print!("{{\"event_type\": \"insert\", \"data\": {{");
+                        let len = table_schema.attributes.len();
+                        for (i, attr) in table_schema.attributes.iter().enumerate() {
+                            let name = &attr.name;
+                            match attr.typ {
+                                Type::INT4 => {
+                                    let val = row.get::<i32>(i);
+                                    print!("\"{name}\": {val}");
+                                }
+                                Type::VARCHAR => {
+                                    let val = row.get::<&str>(i);
+                                    print!("\"{name}\": \"{val}\"");
+                                }
+                                Type::TIMESTAMP => {
+                                    let val = row.get::<SystemTime>(i);
+                                    print!("\"{name}\": \"{val:?}\"");
+                                }
+                                _ => {}
+                            }
+                            if i < len - 1 {
+                                print!(", ");
+                            }
                         }
-                        pg_replicate::Row::Tuple(_tuple) => {
-                            //
-                        }
+                        println!("}}}}");
+                    }
+                    pg_replicate::Row::Tuple(_tuple) => {
+                        //
                     }
                 }
-                RowEvent::Update => {}
-                RowEvent::Delete => {}
-            },
-        )
+            }
+            RowEvent::Update => {}
+            RowEvent::Delete => {}
+        })
         .await?;
 
     repl_client
@@ -61,43 +74,51 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                     pg_replicate::Row::Tuple(tuple) => {
                         let data = tuple.tuple_data();
-                        assert_eq!(data.len(), 4);
-                        let actor_id = &data[0];
-                        let actor_id = match actor_id {
-                            TupleData::Null => "null",
-                            TupleData::UnchangedToast => "unchanged toast",
-                            TupleData::Text(bytes) => {
-                                from_utf8(&bytes[..]).expect("failed to get actor_id")
+                        print!("{{\"event_type\": \"insert\", \"data\": {{");
+                        let len = table_schema.attributes.len();
+                        for (i, attr) in table_schema.attributes.iter().enumerate() {
+                            let name = &attr.name;
+                            match attr.typ {
+                                Type::INT4 => {
+                                    let val = &data[i];
+                                    let val = match val {
+                                        TupleData::Null => "null",
+                                        TupleData::UnchangedToast => "unchanged toast",
+                                        TupleData::Text(bytes) => {
+                                            from_utf8(&bytes[..]).expect("failed to get val")
+                                        }
+                                    };
+                                    print!("\"{name}\": {val}");
+                                }
+                                Type::VARCHAR => {
+                                    let val = &data[i];
+                                    let val = match val {
+                                        TupleData::Null => "null",
+                                        TupleData::UnchangedToast => "unchanged toast",
+                                        TupleData::Text(bytes) => {
+                                            from_utf8(&bytes[..]).expect("failed to get val")
+                                        }
+                                    };
+                                    print!("\"{name}\": \"{val}\"");
+                                }
+                                Type::TIMESTAMP => {
+                                    let val = &data[i];
+                                    let val = match val {
+                                        TupleData::Null => "null",
+                                        TupleData::UnchangedToast => "unchanged toast",
+                                        TupleData::Text(bytes) => {
+                                            from_utf8(&bytes[..]).expect("failed to get val")
+                                        }
+                                    };
+                                    print!("\"{name}\": \"{val:?}\"");
+                                }
+                                _ => {}
                             }
-                        };
-                        let first_name = &data[1];
-                        let first_name = match first_name {
-                            TupleData::Null => "null",
-                            TupleData::UnchangedToast => "unchanged toast",
-                            TupleData::Text(bytes) => {
-                                from_utf8(&bytes[..]).expect("failed to get first_name")
+                            if i < len - 1 {
+                                print!(", ");
                             }
-                        };
-                        let last_name = &data[2];
-                        let last_name = match last_name {
-                            TupleData::Null => "null",
-                            TupleData::UnchangedToast => "unchanged toast",
-                            TupleData::Text(bytes) => {
-                                from_utf8(&bytes[..]).expect("failed to get last_name")
-                            }
-                        };
-                        let last_update = &data[3];
-                        let last_update = match last_update {
-                            TupleData::Null => "null",
-                            TupleData::UnchangedToast => "unchanged toast",
-                            TupleData::Text(bytes) => {
-                                from_utf8(&bytes[..]).expect("failed to get last_update")
-                            }
-                        };
-                        println!(
-                            "Row inserted in table {}.{}: ActorId {}, FirstName {}, LastName {}, LastUpdate {:?}",
-                            table_schema.table.schema, table_schema.table.name, actor_id, first_name, last_name, last_update
-                        );
+                        }
+                        println!("}}}}");
                     }
                 },
                 RowEvent::Update => {}
