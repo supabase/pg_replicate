@@ -4,7 +4,9 @@ use std::{
 };
 
 use futures::StreamExt;
-use postgres_protocol::message::backend::{LogicalReplicationMessage, ReplicationMessage, Tuple};
+use postgres_protocol::message::backend::{
+    DeleteBody, InsertBody, LogicalReplicationMessage, ReplicationMessage, UpdateBody,
+};
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::{BinaryCopyOutRow, BinaryCopyOutStream},
@@ -54,13 +56,13 @@ pub struct TableSchema {
 
 pub enum RowEvent<'a> {
     Insert(Row<'a>),
-    Update,
-    Delete,
+    Update(&'a UpdateBody),
+    Delete(&'a DeleteBody),
 }
 
 pub enum Row<'a> {
     CopyOut(BinaryCopyOutRow),
-    Tuple(&'a Tuple),
+    Insert(&'a InsertBody),
 }
 
 impl ReplicationClient {
@@ -352,18 +354,35 @@ impl ReplicationClient {
                     LogicalReplicationMessage::Insert(insert) => {
                         match rel_id_to_schema.get(&insert.rel_id()) {
                             Some(schema) => {
-                                f(RowEvent::Insert(Row::Tuple(insert.tuple())), schema);
+                                f(RowEvent::Insert(Row::Insert(&insert)), schema);
                             }
                             None => {
-                                //
                                 return Err(ReplicationClientError::RelationIdNotFound(
                                     insert.rel_id(),
                                 ));
                             }
                         }
                     }
-                    LogicalReplicationMessage::Update(_) => {}
-                    LogicalReplicationMessage::Delete(_) => {}
+                    LogicalReplicationMessage::Update(update) => {
+                        match rel_id_to_schema.get(&update.rel_id()) {
+                            Some(schema) => f(RowEvent::Update(&update), schema),
+                            None => {
+                                return Err(ReplicationClientError::RelationIdNotFound(
+                                    update.rel_id(),
+                                ));
+                            }
+                        }
+                    }
+                    LogicalReplicationMessage::Delete(delete) => {
+                        match rel_id_to_schema.get(&delete.rel_id()) {
+                            Some(schema) => f(RowEvent::Delete(&delete), schema),
+                            None => {
+                                return Err(ReplicationClientError::RelationIdNotFound(
+                                    delete.rel_id(),
+                                ));
+                            }
+                        }
+                    }
                     LogicalReplicationMessage::Truncate(_) => {}
                     msg => {
                         return Err(
@@ -393,7 +412,7 @@ impl ReplicationClient {
     ) -> Result<LogicalReplicationStream, ReplicationClientError> {
         let options = format!("(\"proto_version\" '1', \"publication_names\" '{publication}')");
         let query = format!(
-            r#"START_REPLICATION SLOT {:?} LOGICAL {} {}"#,
+            r#"START_REPLICATION SLOT "{}" LOGICAL {} {}"#,
             self.slot_name, self.consistent_point, options
         );
         let copy_stream = self

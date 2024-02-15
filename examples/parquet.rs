@@ -41,13 +41,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     pg_replicate::Row::CopyOut(row) => {
                         insert_in_col(&table_schema.attributes, builders, &row)
                     }
-                    pg_replicate::Row::Tuple(_tuple) => {
+                    pg_replicate::Row::Insert(_insert) => {
                         //
                     }
                 }
             }
-            RowEvent::Update => {}
-            RowEvent::Delete => {}
+            RowEvent::Update(_update) => {}
+            RowEvent::Delete(_delete) => {}
         })
         .await?;
 

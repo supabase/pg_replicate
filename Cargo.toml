@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres" }
+tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", features = [
+    "with-chrono-0_4",
+] }
 postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres" }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
@@ -17,3 +19,4 @@ bytes = "1.0"
 parquet = "50"
 tempfile = "3.10"
 arrow-array = "50"
+chrono = "0.4"
