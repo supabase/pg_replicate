@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, str::from_utf8, time::SystemTime};
+use std::{collections::HashMap, error::Error, str::from_utf8};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use pg_replicate::{ReplicationClient, RowEvent, TableSchema};
