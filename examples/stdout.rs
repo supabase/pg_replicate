@@ -11,6 +11,7 @@ use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
 struct Event {
     event_type: String,
     timestamp: DateTime<Utc>,
+    relation_id: Option<u32>,
     data: Value,
 }
 
@@ -29,15 +30,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let schemas = repl_client.get_schemas(publication).await?;
 
     let mut rel_id_to_schema = HashMap::new();
+    let now = Utc::now();
     for schema in &schemas {
         rel_id_to_schema.insert(schema.relation_id, schema);
+        let event = Event {
+            event_type: "schema".to_string(),
+            timestamp: now,
+            relation_id: None,
+            data: schema_to_event_data(schema),
+        };
+        let event = serde_json::to_string(&event).expect("failed to convert event to json string");
+        println!("{event}");
     }
 
     repl_client
         .get_table_snapshot(&schemas, |event, table_schema| match event {
             RowEvent::Insert(row) => match row {
                 pg_replicate::Row::CopyOut(row) => {
-                    let now: DateTime<Utc> = Utc::now();
+                    let now = Utc::now();
                     let mut data_map = Map::new();
                     for (i, attr) in table_schema.attributes.iter().enumerate() {
                         let val = get_val_from_row(&attr.typ, &row, i);
@@ -46,6 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let event = Event {
                         event_type: "insert".to_string(),
                         timestamp: now,
+                        relation_id: Some(table_schema.relation_id),
                         data: Value::Object(data_map),
                     };
                     let event = serde_json::to_string(&event)
@@ -86,10 +97,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     (data, "delete".to_string())
                 }
             };
-            let now: DateTime<Utc> = Utc::now();
+            let now = Utc::now();
             let event = Event {
                 event_type,
                 timestamp: now,
+                relation_id: Some(table_schema.relation_id),
                 data,
             };
             let event =
@@ -99,6 +111,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await?;
 
     Ok(())
+}
+
+fn schema_to_event_data(schema: &TableSchema) -> Value {
+    let attrs: Vec<Value> = schema
+        .attributes
+        .iter()
+        .map(|attr| json!({"name": attr.name, "nullable": attr.nullable, "type_oid": attr.typ.oid()}))
+        .collect();
+    json!({"schema": schema.table.schema, "table": schema.table.name, "relation_id": schema.relation_id, "attrs": attrs})
 }
 
 fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Value {
