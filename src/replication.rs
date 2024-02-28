@@ -5,7 +5,7 @@ use std::{
 
 use futures::StreamExt;
 use postgres_protocol::message::backend::{
-    DeleteBody, InsertBody, LogicalReplicationMessage, ReplicationMessage, UpdateBody,
+    DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody, ReplicationMessage, UpdateBody,
 };
 use thiserror::Error;
 use tokio_postgres::{
@@ -58,6 +58,7 @@ pub enum RowEvent<'a> {
     Insert(Row<'a>),
     Update(&'a UpdateBody),
     Delete(&'a DeleteBody),
+    Relation(&'a RelationBody),
 }
 
 pub enum Row<'a> {
@@ -349,7 +350,16 @@ impl ReplicationClient {
                         last_lsn = commit.commit_lsn().into();
                     }
                     LogicalReplicationMessage::Origin(_) => {}
-                    LogicalReplicationMessage::Relation(_) => {}
+                    LogicalReplicationMessage::Relation(relation) => {
+                        match rel_id_to_schema.get(&relation.rel_id()) {
+                            Some(schema) => f(RowEvent::Relation(&relation), schema),
+                            None => {
+                                return Err(ReplicationClientError::RelationIdNotFound(
+                                    relation.rel_id(),
+                                ));
+                            }
+                        }
+                    }
                     LogicalReplicationMessage::Type(_) => {}
                     LogicalReplicationMessage::Insert(insert) => {
                         match rel_id_to_schema.get(&insert.rel_id()) {

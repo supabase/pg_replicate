@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, str::from_utf8};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use pg_replicate::{ReplicationClient, RowEvent, TableSchema};
-use postgres_protocol::message::backend::{Tuple, TupleData};
+use postgres_protocol::message::backend::{RelationBody, Tuple, TupleData};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
@@ -69,6 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             },
             RowEvent::Update(_update) => {}
             RowEvent::Delete(_delete) => {}
+            RowEvent::Relation(_relation) => {}
         })
         .await?;
 
@@ -96,6 +97,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let data = get_data(table_schema, tuple);
                     (data, "delete".to_string())
                 }
+                RowEvent::Relation(relation) => {
+                    let data = relation_body_to_event_data(relation);
+                    (data, "relation".to_string())
+                }
             };
             let now = Utc::now();
             let event = Event {
@@ -111,6 +116,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await?;
 
     Ok(())
+}
+
+fn relation_body_to_event_data(relation: &RelationBody) -> Value {
+    let schema = relation.namespace().expect("invalid relation namespace");
+    let table = relation.name().expect("invalid relation name");
+    let cols: Vec<Value> = relation
+        .columns()
+        .iter()
+        .map(|col| {
+            let name = col.name().expect("invalid column name");
+            json!({ "name": name, "flags": col.flags(), "type_id": col.type_id(), "type_modifier": col.type_modifier() })
+        })
+        .collect();
+    json!({"schema": schema, "table": table, "columns": cols })
 }
 
 fn schema_to_event_data(schema: &TableSchema) -> Value {

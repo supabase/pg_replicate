@@ -48,6 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             RowEvent::Update(_update) => {}
             RowEvent::Delete(_delete) => {}
+            RowEvent::Relation(_relation) => {}
         })
         .await?;
 
