@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     error::Error,
     fs::File,
     hash::{Hash, Hasher},
@@ -28,7 +28,7 @@ pub struct Event {
 
 struct Row<'a> {
     schema: &'a TableSchema,
-    data: Value,
+    data: &'a Value,
 }
 
 impl<'a> Hash for Row<'a> {
@@ -127,43 +127,51 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut column_builders = create_column_builders(&schemas);
-    let mut rows = HashSet::new();
+    let mut rows = HashMap::new();
 
-    for event in events {
+    for event in &events {
         if event.event_type == "insert" {
             let relation_id = event.relation_id;
             let schema = relation_id_to_table_schema
                 .get(&relation_id)
                 .expect("missing schema for relation_id");
-            let row = Row {
+            let row_key = Row {
                 schema,
-                data: event.data,
+                data: &event.data,
             };
-            rows.insert(row);
+            let row_value = Row {
+                schema,
+                data: &event.data,
+            };
+            rows.insert(row_key, row_value);
         } else if event.event_type == "update" {
             let relation_id = event.relation_id;
             let schema = relation_id_to_table_schema
                 .get(&relation_id)
                 .expect("missing schema for relation_id");
-            let row = Row {
+            let row_key = Row {
                 schema,
-                data: event.data,
+                data: &event.data,
             };
-            rows.insert(row);
+            let row_value = Row {
+                schema,
+                data: &event.data,
+            };
+            rows.insert(row_key, row_value);
         } else if event.event_type == "delete" {
             let relation_id = event.relation_id;
             let schema = relation_id_to_table_schema
                 .get(&relation_id)
                 .expect("missing schema for relation_id");
-            let row = Row {
+            let row_key = Row {
                 schema,
-                data: event.data,
+                data: &event.data,
             };
-            rows.remove(&row);
+            rows.remove(&row_key);
         }
     }
 
-    for row in rows {
+    for row in rows.values() {
         let builders = column_builders
             .get_mut(&row.schema.table)
             .expect("no builder found");
