@@ -1,7 +1,8 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     fs::File,
+    hash::{Hash, Hasher},
     io::{stdin, BufRead},
 };
 
@@ -21,8 +22,82 @@ use tokio_postgres::types::Type;
 pub struct Event {
     pub event_type: String,
     pub timestamp: DateTime<Utc>,
-    pub relation_id: Option<u32>,
+    pub relation_id: u32,
     pub data: Value,
+}
+
+struct Row<'a> {
+    schema: &'a TableSchema,
+    data: Value,
+}
+
+impl<'a> Hash for Row<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for attr in &self.schema.attributes {
+            if attr.identity {
+                match self.data.get(&attr.name) {
+                    Some(value) => HashedValue { value }.hash(state),
+                    None => {}
+                }
+            }
+        }
+    }
+}
+
+impl<'a> PartialEq for Row<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        for attr in &self.schema.attributes {
+            if attr.identity {
+                if self.data.get(&attr.name) != other.data.get(&attr.name) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
+impl<'a> Eq for Row<'a> {}
+
+#[derive(Eq)]
+struct HashedValue<'a> {
+    value: &'a Value,
+}
+
+impl<'a> Hash for HashedValue<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self.value {
+            Value::Null => {}
+            Value::Bool(b) => b.hash(state),
+            Value::Number(n) => n.hash(state),
+            Value::String(s) => s.hash(state),
+            Value::Array(a) => {
+                for i in a {
+                    HashedValue { value: i }.hash(state)
+                }
+            }
+            Value::Object(o) => {
+                for (k, v) in o {
+                    k.hash(state);
+                    HashedValue { value: v }.hash(state)
+                }
+            }
+        }
+    }
+}
+
+impl<'a> PartialEq for HashedValue<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.value, other.value) {
+            (Value::Null, Value::Null) => true,
+            (Value::Bool(b1), Value::Bool(b2)) => b1 == b2,
+            (Value::Number(n1), Value::Number(n2)) => n1 == n2,
+            (Value::String(s1), Value::String(s2)) => s1 == s2,
+            (Value::Array(a1), Value::Array(a2)) => a1 == a2,
+            (Value::Object(o1), Value::Object(o2)) => o1 == o2,
+            _ => false,
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -30,18 +105,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut schemas = Vec::new();
     let mut events = Vec::new();
-    const PROCESS_EVENTS: usize = 10;
+    const PROCESS_EVENTS: usize = 204;
 
     for (i, line) in stdin.lock().lines().enumerate() {
         let line = &line?;
         let v: Event = serde_json::from_str(line)?;
         if v.event_type == "schema" {
-            let schema = event_data_to_schema(&v.data);
+            let schema = event_data_to_schema(&v.data, v.relation_id);
             schemas.push(schema);
         } else {
             events.push(v);
         }
-        if i >= PROCESS_EVENTS {
+        if i + 1 >= PROCESS_EVENTS {
             break;
         }
     }
@@ -52,18 +127,47 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut column_builders = create_column_builders(&schemas);
+    let mut rows = HashSet::new();
 
-    for event in &events {
+    for event in events {
         if event.event_type == "insert" {
-            let relation_id = event.relation_id.expect("missing relation_id");
+            let relation_id = event.relation_id;
             let schema = relation_id_to_table_schema
                 .get(&relation_id)
                 .expect("missing schema for relation_id");
-            let builders = column_builders
-                .get_mut(&schema.table)
-                .expect("no builder found");
-            insert_in_col(&schema.attributes, builders, &event.data);
+            let row = Row {
+                schema,
+                data: event.data,
+            };
+            rows.insert(row);
+        } else if event.event_type == "update" {
+            let relation_id = event.relation_id;
+            let schema = relation_id_to_table_schema
+                .get(&relation_id)
+                .expect("missing schema for relation_id");
+            let row = Row {
+                schema,
+                data: event.data,
+            };
+            rows.insert(row);
+        } else if event.event_type == "delete" {
+            let relation_id = event.relation_id;
+            let schema = relation_id_to_table_schema
+                .get(&relation_id)
+                .expect("missing schema for relation_id");
+            let row = Row {
+                schema,
+                data: event.data,
+            };
+            rows.remove(&row);
         }
+    }
+
+    for row in rows {
+        let builders = column_builders
+            .get_mut(&row.schema.table)
+            .expect("no builder found");
+        insert_in_col(&row.schema.attributes, builders, &row.data);
     }
 
     for (table, builders) in column_builders {
@@ -74,7 +178,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn event_data_to_schema(val: &Value) -> TableSchema {
+fn event_data_to_schema(val: &Value, relation_id: u32) -> TableSchema {
     let obj = val.as_object().expect("expected schema to be an object");
     let schema = obj
         .get("schema")
@@ -89,13 +193,6 @@ fn event_data_to_schema(val: &Value) -> TableSchema {
         .expect("table is not str")
         .to_string();
     let table = Table { schema, name };
-    let relation_id = obj
-        .get("relation_id")
-        .expect("missing relation_id key")
-        .as_number()
-        .expect("relation_id is not number")
-        .as_u64()
-        .expect("number is not u64") as u32;
 
     let attrs = obj
         .get("attrs")

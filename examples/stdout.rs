@@ -161,11 +161,30 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Value {
     }
 }
 
-fn get_val_from_tuple_data(val: &TupleData) -> &str {
-    match val {
-        TupleData::Null => "null",
-        TupleData::UnchangedToast => "unchanged toast",
+fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Value {
+    let val = match val {
+        TupleData::Null => {
+            return Value::Null;
+        }
+        TupleData::UnchangedToast => panic!("unchanged toast"),
         TupleData::Text(bytes) => from_utf8(&bytes[..]).expect("failed to get val"),
+    };
+    match *typ {
+        Type::INT4 => {
+            let val: i32 = val.parse().expect("value not i32");
+            Value::Number(val.into())
+        }
+        Type::VARCHAR => {
+            json!(val)
+        }
+        Type::TIMESTAMP => {
+            let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")
+                .expect("invalid timestamp");
+            json!(val)
+        }
+        ref typ => {
+            panic!("unsupported type {typ:?}")
+        }
     }
 }
 
@@ -173,7 +192,7 @@ fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Value {
     let data = tuple.tuple_data();
     let mut data_map = Map::new();
     for (i, attr) in table_schema.attributes.iter().enumerate() {
-        let val = get_val_from_tuple_data(&data[i]);
+        let val = get_val_from_tuple_data(&attr.typ, &data[i]);
         data_map.insert(attr.name.clone(), json!(val));
     }
     Value::Object(data_map)
