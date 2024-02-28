@@ -120,15 +120,29 @@ fn event_data_to_schema(val: &Value) -> TableSchema {
                 .as_u64()
                 .expect("type_oid is not u64") as u32;
             let typ = Type::from_oid(oid).expect("invalid oid");
+            let type_modifier = obj
+                .get("type_modifier")
+                .expect("missing type_modifier key")
+                .as_number()
+                .expect("type_modifier is not number")
+                .as_i64()
+                .expect("type_modifier is not i64") as i32;
             let nullable = obj
                 .get("nullable")
                 .expect("missing nullable key")
                 .as_bool()
                 .expect("nullable is not bool");
+            let identity = obj
+                .get("identity")
+                .expect("missing identity key")
+                .as_bool()
+                .expect("identity is not bool");
             Attribute {
                 name,
                 typ,
                 nullable,
+                type_modifier,
+                identity,
             }
         })
         .collect();

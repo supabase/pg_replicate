@@ -11,7 +11,7 @@ use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
 struct Event {
     event_type: String,
     timestamp: DateTime<Utc>,
-    relation_id: Option<u32>,
+    relation_id: u32,
     data: Value,
 }
 
@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let event = Event {
             event_type: "schema".to_string(),
             timestamp: now,
-            relation_id: None,
+            relation_id: schema.relation_id,
             data: schema_to_event_data(schema),
         };
         let event = serde_json::to_string(&event).expect("failed to convert event to json string");
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let event = Event {
                         event_type: "insert".to_string(),
                         timestamp: now,
-                        relation_id: Some(table_schema.relation_id),
+                        relation_id: table_schema.relation_id,
                         data: Value::Object(data_map),
                     };
                     let event = serde_json::to_string(&event)
@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let event = Event {
                 event_type,
                 timestamp: now,
-                relation_id: Some(table_schema.relation_id),
+                relation_id: table_schema.relation_id,
                 data,
             };
             let event =
@@ -126,7 +126,7 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
         .iter()
         .map(|col| {
             let name = col.name().expect("invalid column name");
-            json!({ "name": name, "flags": col.flags(), "type_id": col.type_id(), "type_modifier": col.type_modifier() })
+            json!({ "name": name, "identity": col.flags() == 1, "type_id": col.type_id(), "type_modifier": col.type_modifier() })
         })
         .collect();
     json!({"schema": schema, "table": table, "columns": cols })
@@ -136,9 +136,9 @@ fn schema_to_event_data(schema: &TableSchema) -> Value {
     let attrs: Vec<Value> = schema
         .attributes
         .iter()
-        .map(|attr| json!({"name": attr.name, "nullable": attr.nullable, "type_oid": attr.typ.oid()}))
+        .map(|attr| json!({"name": attr.name, "nullable": attr.nullable, "type_oid": attr.typ.oid(), "type_modifier": attr.type_modifier, "identity": attr.identity}))
         .collect();
-    json!({"schema": schema.table.schema, "table": schema.table.name, "relation_id": schema.relation_id, "attrs": attrs})
+    json!({"schema": schema.table.schema, "table": schema.table.name, "attrs": attrs})
 }
 
 fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Value {

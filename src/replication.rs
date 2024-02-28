@@ -45,7 +45,9 @@ pub struct Table {
 pub struct Attribute {
     pub name: String,
     pub typ: Type,
+    pub type_modifier: i32,
     pub nullable: bool,
+    pub identity: bool,
 }
 
 pub struct TableSchema {
@@ -180,7 +182,7 @@ impl ReplicationClient {
                 a.atttypid,
                 a.atttypmod,
                 a.attnotnull,
-                a.attnum = ANY(i.indkey)
+                a.attnum = ANY(i.indkey) is_identity
            FROM pg_catalog.pg_attribute a
            LEFT JOIN pg_catalog.pg_index i
                 ON (i.indexrelid = pg_get_replica_identity_index({}))
@@ -209,11 +211,19 @@ impl ReplicationClient {
                             .expect("attribute oid is not a valid u32"),
                     )
                     .expect("attribute is not valid oid");
+                    let type_modifier = row
+                        .get(2)
+                        .expect("failed to get type modifier")
+                        .parse()
+                        .expect("type modifier is not an i32");
                     let nullable = row.get(3).expect("failed to get attribute nullability") == "f";
+                    let identity = row.get(4).expect("failed to get is_identity column") == "t";
                     Some(Attribute {
                         name,
                         typ,
+                        type_modifier,
                         nullable,
+                        identity,
                     })
                 } else {
                     None
