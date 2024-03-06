@@ -35,9 +35,8 @@ impl<'a> Hash for Row<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for attr in &self.schema.attributes {
             if attr.identity {
-                match self.data.get(&attr.name) {
-                    Some(value) => HashedValue { value }.hash(state),
-                    None => {}
+                if let Some(value) = self.data.get(&attr.name) {
+                    HashedValue { value }.hash(state)
                 }
             }
         }
@@ -47,10 +46,8 @@ impl<'a> Hash for Row<'a> {
 impl<'a> PartialEq for Row<'a> {
     fn eq(&self, other: &Self) -> bool {
         for attr in &self.schema.attributes {
-            if attr.identity {
-                if self.data.get(&attr.name) != other.data.get(&attr.name) {
-                    return false;
-                }
+            if attr.identity && self.data.get(&attr.name) != other.data.get(&attr.name) {
+                return false;
             }
         }
         true
@@ -130,21 +127,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut rows = HashMap::new();
 
     for event in &events {
-        if event.event_type == "insert" {
-            let relation_id = event.relation_id;
-            let schema = relation_id_to_table_schema
-                .get(&relation_id)
-                .expect("missing schema for relation_id");
-            let row_key = Row {
-                schema,
-                data: &event.data,
-            };
-            let row_value = Row {
-                schema,
-                data: &event.data,
-            };
-            rows.insert(row_key, row_value);
-        } else if event.event_type == "update" {
+        if event.event_type == "insert" || event.event_type == "update" {
             let relation_id = event.relation_id;
             let schema = relation_id_to_table_schema
                 .get(&relation_id)
@@ -175,7 +158,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let builders = column_builders
             .get_mut(&row.schema.table)
             .expect("no builder found");
-        insert_in_col(&row.schema.attributes, builders, &row.data);
+        insert_in_col(&row.schema.attributes, builders, row.data);
     }
 
     for (table, builders) in column_builders {
