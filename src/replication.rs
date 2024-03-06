@@ -10,6 +10,7 @@ use postgres_protocol::message::backend::{
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::{BinaryCopyOutRow, BinaryCopyOutStream},
+    error::SqlState,
     replication::LogicalReplicationStream,
     types::{PgLsn, Type},
     Client, NoTls, SimpleQueryMessage,
@@ -265,6 +266,11 @@ impl ReplicationClient {
         Ok(())
     }
 
+    async fn rollback_txn(client: &Client) -> Result<(), ReplicationClientError> {
+        client.simple_query("ROLLBACK;").await?;
+        Ok(())
+    }
+
     async fn commit_txn(&self) -> Result<(), ReplicationClientError> {
         self.postgres_client.simple_query("COMMIT;").await?;
         Ok(())
@@ -275,7 +281,7 @@ impl ReplicationClient {
         slot_name: &str,
     ) -> Result<PgLsn, ReplicationClientError> {
         let query = format!(
-            r#"CREATE_REPLICATION_SLOT {:?} TEMPORARY LOGICAL pgoutput USE_SNAPSHOT"#,
+            r#"CREATE_REPLICATION_SLOT {:?} LOGICAL pgoutput USE_SNAPSHOT"#,
             slot_name
         );
         let slot_query = client.simple_query(&query).await?;
@@ -283,11 +289,31 @@ impl ReplicationClient {
             row.get("consistent_point")
                 .expect("failed to get consistent_point")
                 .parse()
-                .expect("failed to parse lsn")
+                .expect("failed to parse consistent_point")
         } else {
-            panic!("unexpeced query message");
+            panic!("unexpected query message");
         };
         Ok(consistent_point)
+    }
+
+    async fn get_replication_slot_details(
+        client: &Client,
+        slot_name: &str,
+    ) -> Result<Option<PgLsn>, ReplicationClientError> {
+        let query = format!(
+            r#"select confirmed_flush_lsn from pg_replication_slots where slot_name = '{}';"#,
+            slot_name
+        );
+        let query_result = client.simple_query(&query).await?;
+        let confirmed_flush_lsn: PgLsn = if let SimpleQueryMessage::Row(row) = &query_result[0] {
+            row.get("confirmed_flush_lsn")
+                .expect("failed to get confirmed_flush_lsn column")
+                .parse()
+                .expect("failed to parse confirmed_flush_lsn")
+        } else {
+            return Ok(None);
+        };
+        Ok(Some(confirmed_flush_lsn))
     }
 
     async fn copy_table(
@@ -310,7 +336,28 @@ impl ReplicationClient {
         slot_name: &str,
     ) -> Result<PgLsn, ReplicationClientError> {
         Self::begin_txn(client).await?;
-        Self::create_replication_slot(client, slot_name).await
+        match Self::create_replication_slot(client, slot_name).await {
+            Ok(consistent_point) => Ok(consistent_point),
+            Err(e) => match e {
+                ReplicationClientError::TokioPostgresError(e) => {
+                    if let Some(c) = e.code() {
+                        if *c != SqlState::DUPLICATE_OBJECT {
+                            return Err(e.into());
+                        }
+                    }
+                    Self::rollback_txn(client).await?;
+                    Self::begin_txn(client).await?;
+                    if let Some(confirmed_flush_lsn) =
+                        Self::get_replication_slot_details(client, slot_name).await?
+                    {
+                        Ok(confirmed_flush_lsn)
+                    } else {
+                        panic!("slot {slot_name} should exist")
+                    }
+                }
+                e => Err(e),
+            },
+        }
     }
 
     pub async fn get_table_snapshot<F: FnMut(RowEvent, &TableSchema)>(
