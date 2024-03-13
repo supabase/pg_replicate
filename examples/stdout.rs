@@ -3,8 +3,9 @@ use std::{collections::HashMap, error::Error, str::from_utf8};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use pg_replicate::{ReplicationClient, RowEvent, TableSchema};
 use postgres_protocol::message::backend::{RelationBody, Tuple, TupleData};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use thiserror::Error;
 use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
 
 #[derive(Serialize, Debug)]
@@ -15,14 +16,62 @@ struct Event {
     data: Value,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ReplicationState {
+    table_copied: bool,
+    last_lsn: u64,
+}
+
+#[derive(Error, Debug)]
+enum StateError {
+    #[error("error while reading state {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("error while deserializing state {0}")]
+    Serde(#[from] serde_json::Error),
+}
+
+// const STATE_FILE: &'static str = "./replication_state.json";
+
+// async fn load_state() -> Result<ReplicationState, StateError> {
+//     let state_str = tokio::fs::read_to_string(STATE_FILE).await?;
+//     let state = serde_json::from_str(&state_str)?;
+//     Ok(state)
+// }
+
+// async fn save_state(state: &ReplicationState) -> Result<(), StateError> {
+//     let state_str = serde_json::to_string(state)?;
+//     tokio::fs::write(STATE_FILE, state_str).await?;
+//     Ok(())
+// }
+
+// async fn load_or_create_state() -> Result<ReplicationState, StateError> {
+//     match load_state().await {
+//         Ok(state) => Ok(state),
+//         Err(_) => {
+//             let state = ReplicationState {
+//                 table_copied: false,
+//                 last_lsn: 0,
+//             };
+//             save_state(&state).await?;
+//             load_state().await
+//         }
+//     }
+// }
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let repl_client = ReplicationClient::new(
+    let mut repl_client = ReplicationClient::new(
         "localhost".to_string(),
         8080,
         "pagila".to_string(),
         "raminder.singh".to_string(),
         "temp_slot".to_string(),
+        None,
+        // Some("0/33FF821".parse().expect("invalid resume_lsn")),
+        // Some("0/33F81A8".parse().expect("invalid resume_lsn")),//commit msg end_lsn
+        // Some("0/33F8178".parse().expect("invalid resume_lsn")), //commit msg commit lsn
+        // Some("0/33F8050".parse().expect("invalid resume_lsn")), //delete msg wal start/end lsn
     )
     .await?;
 

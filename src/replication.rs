@@ -18,7 +18,8 @@ use tokio_postgres::{
 
 pub struct ReplicationClient {
     slot_name: String,
-    consistent_point: PgLsn,
+    resume_lsn: PgLsn,
+    last_lsn: Option<PgLsn>,
     postgres_client: Client,
 }
 
@@ -35,6 +36,9 @@ pub enum ReplicationClientError {
 
     #[error("relation id {0} not found")]
     RelationIdNotFound(u32),
+
+    #[error("resumption lsn {0} is older than the slot lsn {1}")]
+    CantResume(PgLsn, PgLsn),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -76,12 +80,21 @@ impl ReplicationClient {
         dbname: String,
         user: String,
         slot_name: String,
+        resume_lsn: Option<PgLsn>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         let postgres_client = Self::connect(&host, port, &dbname, &user).await?;
-        let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
+        let consistent_point = Self::create_slot_if_missing(&postgres_client, &slot_name).await?;
+        let resume_lsn = resume_lsn.unwrap_or(consistent_point);
+        if resume_lsn < consistent_point {
+            return Err(ReplicationClientError::CantResume(
+                resume_lsn,
+                consistent_point,
+            ));
+        }
         Ok(ReplicationClient {
             slot_name,
-            consistent_point,
+            resume_lsn,
+            last_lsn: None,
             postgres_client,
         })
     }
@@ -331,7 +344,7 @@ impl ReplicationClient {
         Ok(row_stream)
     }
 
-    async fn start_table_copy(
+    async fn create_slot_if_missing(
         client: &Client,
         slot_name: &str,
     ) -> Result<PgLsn, ReplicationClientError> {
@@ -384,8 +397,20 @@ impl ReplicationClient {
         Ok(())
     }
 
+    pub fn update_last_lsn(&mut self, new_lsn: PgLsn) {
+        let should_update = !self.last_lsn.is_some()
+            || (self.last_lsn.is_some() && self.last_lsn.unwrap() < new_lsn);
+        if should_update {
+            self.last_lsn = Some(new_lsn);
+        }
+    }
+
+    pub fn is_new_message(&self, lsn: PgLsn) -> bool {
+        lsn > self.last_lsn.expect("missing last lsn")
+    }
+
     pub async fn get_realtime_changes<F: FnMut(RowEvent, &TableSchema)>(
-        &self,
+        &mut self,
         rel_id_to_schema: &HashMap<u32, &TableSchema>,
         publication: &str,
         mut f: F,
@@ -397,73 +422,114 @@ impl ReplicationClient {
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
-        let mut last_lsn = self.consistent_point;
+        self.update_last_lsn(self.resume_lsn);
+        eprintln!("INITIAL LAST LSN: {:?}", self.last_lsn);
 
         while let Some(replication_msg) = logical_stream.next().await {
             match replication_msg? {
-                ReplicationMessage::XLogData(xlog_data) => match xlog_data.into_data() {
-                    LogicalReplicationMessage::Begin(_) => {}
-                    LogicalReplicationMessage::Commit(commit) => {
-                        last_lsn = commit.commit_lsn().into();
-                    }
-                    LogicalReplicationMessage::Origin(_) => {}
-                    LogicalReplicationMessage::Relation(relation) => {
-                        match rel_id_to_schema.get(&relation.rel_id()) {
-                            Some(schema) => f(RowEvent::Relation(&relation), schema),
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    relation.rel_id(),
-                                ));
+                ReplicationMessage::XLogData(xlog_data) => {
+                    let wal_start: PgLsn = xlog_data.wal_start().into();
+                    let wal_end: PgLsn = xlog_data.wal_end().into();
+                    eprintln!("XLOGDATA WAL_START: {wal_start}, WAL_END: {wal_end}");
+                    match xlog_data.into_data() {
+                        LogicalReplicationMessage::Begin(begin_body) => {
+                            let final_lsn: PgLsn = begin_body.final_lsn().into();
+                            eprintln!("BEGIN MESSAGE FINAL_LSN: {final_lsn}");
+                        }
+                        LogicalReplicationMessage::Commit(commit) => {
+                            self.update_last_lsn(commit.commit_lsn().into());
+                            let commit_lsn: PgLsn = commit.commit_lsn().into();
+                            let end_lsn: PgLsn = commit.end_lsn().into();
+                            eprintln!(
+                                "COMMIT MESSAGE COMMIT_LSN: {commit_lsn}, END_LSN: {end_lsn}",
+                            );
+                        }
+                        LogicalReplicationMessage::Origin(_) => {
+                            eprintln!("ORIGIN MSG");
+                        }
+                        LogicalReplicationMessage::Relation(relation) => {
+                            eprintln!("RELATION MSG");
+                            match rel_id_to_schema.get(&relation.rel_id()) {
+                                Some(schema) => f(RowEvent::Relation(&relation), schema),
+                                None => {
+                                    return Err(ReplicationClientError::RelationIdNotFound(
+                                        relation.rel_id(),
+                                    ));
+                                }
                             }
                         }
-                    }
-                    LogicalReplicationMessage::Type(_) => {}
-                    LogicalReplicationMessage::Insert(insert) => {
-                        match rel_id_to_schema.get(&insert.rel_id()) {
-                            Some(schema) => {
-                                f(RowEvent::Insert(Row::Insert(&insert)), schema);
-                            }
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    insert.rel_id(),
-                                ));
+                        LogicalReplicationMessage::Type(_) => {
+                            eprintln!("TYPE MSG");
+                        }
+                        LogicalReplicationMessage::Insert(insert) => {
+                            eprintln!("INSERT MSG");
+                            match rel_id_to_schema.get(&insert.rel_id()) {
+                                Some(schema) => {
+                                    if self.is_new_message(wal_end) {
+                                        f(RowEvent::Insert(Row::Insert(&insert)), schema);
+                                    }
+                                }
+                                None => {
+                                    return Err(ReplicationClientError::RelationIdNotFound(
+                                        insert.rel_id(),
+                                    ));
+                                }
                             }
                         }
-                    }
-                    LogicalReplicationMessage::Update(update) => {
-                        match rel_id_to_schema.get(&update.rel_id()) {
-                            Some(schema) => f(RowEvent::Update(&update), schema),
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    update.rel_id(),
-                                ));
+                        LogicalReplicationMessage::Update(update) => {
+                            eprintln!("UPDATE MSG");
+                            match rel_id_to_schema.get(&update.rel_id()) {
+                                Some(schema) => {
+                                    if self.is_new_message(wal_end) {
+                                        f(RowEvent::Update(&update), schema);
+                                    }
+                                }
+                                None => {
+                                    return Err(ReplicationClientError::RelationIdNotFound(
+                                        update.rel_id(),
+                                    ));
+                                }
                             }
                         }
-                    }
-                    LogicalReplicationMessage::Delete(delete) => {
-                        match rel_id_to_schema.get(&delete.rel_id()) {
-                            Some(schema) => f(RowEvent::Delete(&delete), schema),
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    delete.rel_id(),
-                                ));
+                        LogicalReplicationMessage::Delete(delete) => {
+                            eprintln!("DELETE MSG");
+                            match rel_id_to_schema.get(&delete.rel_id()) {
+                                Some(schema) => {
+                                    if self.is_new_message(wal_end) {
+                                        f(RowEvent::Delete(&delete), schema);
+                                    }
+                                }
+                                None => {
+                                    return Err(ReplicationClientError::RelationIdNotFound(
+                                        delete.rel_id(),
+                                    ));
+                                }
                             }
                         }
+                        LogicalReplicationMessage::Truncate(_) => {
+                            eprintln!("TRUNCATE MSG");
+                        }
+                        msg => {
+                            eprintln!("UNKNOWN MSG");
+                            return Err(
+                                ReplicationClientError::UnsupportedLogicalReplicationMessage(msg),
+                            );
+                        }
                     }
-                    LogicalReplicationMessage::Truncate(_) => {}
-                    msg => {
-                        return Err(
-                            ReplicationClientError::UnsupportedLogicalReplicationMessage(msg),
-                        )
-                    }
-                },
+                }
                 ReplicationMessage::PrimaryKeepAlive(keepalive) => {
+                    eprintln!(
+                        "GOT KEEPALIVE FROM SERVER WITH REPLY = {}",
+                        keepalive.reply() == 1
+                    );
                     if keepalive.reply() == 1 {
                         let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
+                        let lsn = self.last_lsn.expect("missing last lsn");
                         logical_stream
                             .as_mut()
-                            .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)
+                            .standby_status_update(lsn, lsn, lsn, ts, 0)
                             .await?;
+                        eprintln!("SENT A REPLY");
                     }
                 }
                 msg => return Err(ReplicationClientError::UnsupportedReplicationMessage(msg)),
@@ -480,7 +546,7 @@ impl ReplicationClient {
         let options = format!("(\"proto_version\" '1', \"publication_names\" '{publication}')");
         let query = format!(
             r#"START_REPLICATION SLOT "{}" LOGICAL {} {}"#,
-            self.slot_name, self.consistent_point, options
+            self.slot_name, self.resume_lsn, options
         );
         let copy_stream = self
             .postgres_client

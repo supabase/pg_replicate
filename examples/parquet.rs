@@ -22,6 +22,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "pagila".to_string(),
         "raminder.singh".to_string(),
         "temp_slot".to_string(),
+        None,
     )
     .await?;
 
