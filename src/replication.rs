@@ -3,6 +3,7 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
+use bytes::Bytes;
 use futures::StreamExt;
 use postgres_protocol::message::backend::{
     DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody, ReplicationMessage, UpdateBody,
@@ -11,10 +12,14 @@ use thiserror::Error;
 use tokio_postgres::{
     binary_copy::{BinaryCopyOutRow, BinaryCopyOutStream},
     error::SqlState,
-    replication::LogicalReplicationStream,
+    // replication::LogicalReplicationStream,
     types::{PgLsn, Type},
-    Client, NoTls, SimpleQueryMessage,
+    Client,
+    NoTls,
+    SimpleQueryMessage,
 };
+
+use crate::stream::BytesLogicalReplicationStream;
 
 pub struct ReplicationClient {
     slot_name: String,
@@ -24,11 +29,14 @@ pub struct ReplicationClient {
 
 #[derive(Debug, Error)]
 pub enum ReplicationClientError {
+    #[error("stream error: {0}")]
+    BytesStream(#[from] super::stream::Error),
+
     #[error("tokio_postgres error: {0}")]
     TokioPostgresError(#[from] tokio_postgres::Error),
 
     #[error("unsupported replication message: {0:?}")]
-    UnsupportedReplicationMessage(ReplicationMessage<LogicalReplicationMessage>),
+    UnsupportedReplicationMessage(ReplicationMessage<(LogicalReplicationMessage, Bytes)>),
 
     #[error("unsupported logical replication message: {0:?}")]
     UnsupportedLogicalReplicationMessage(LogicalReplicationMessage),
@@ -384,7 +392,7 @@ impl ReplicationClient {
         Ok(())
     }
 
-    pub async fn get_realtime_changes<F: FnMut(RowEvent, &TableSchema)>(
+    pub async fn get_realtime_changes<F: FnMut(RowEvent, &TableSchema, Bytes)>(
         &self,
         rel_id_to_schema: &HashMap<u32, &TableSchema>,
         publication: &str,
@@ -402,14 +410,14 @@ impl ReplicationClient {
         while let Some(replication_msg) = logical_stream.next().await {
             match replication_msg? {
                 ReplicationMessage::XLogData(xlog_data) => match xlog_data.into_data() {
-                    LogicalReplicationMessage::Begin(_) => {}
-                    LogicalReplicationMessage::Commit(commit) => {
+                    (LogicalReplicationMessage::Begin(_), _) => {}
+                    (LogicalReplicationMessage::Commit(commit), _) => {
                         last_lsn = commit.commit_lsn().into();
                     }
-                    LogicalReplicationMessage::Origin(_) => {}
-                    LogicalReplicationMessage::Relation(relation) => {
+                    (LogicalReplicationMessage::Origin(_), _) => {}
+                    (LogicalReplicationMessage::Relation(relation), buf) => {
                         match rel_id_to_schema.get(&relation.rel_id()) {
-                            Some(schema) => f(RowEvent::Relation(&relation), schema),
+                            Some(schema) => f(RowEvent::Relation(&relation), schema, buf),
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
                                     relation.rel_id(),
@@ -417,11 +425,11 @@ impl ReplicationClient {
                             }
                         }
                     }
-                    LogicalReplicationMessage::Type(_) => {}
-                    LogicalReplicationMessage::Insert(insert) => {
+                    (LogicalReplicationMessage::Type(_), _) => {}
+                    (LogicalReplicationMessage::Insert(insert), buf) => {
                         match rel_id_to_schema.get(&insert.rel_id()) {
                             Some(schema) => {
-                                f(RowEvent::Insert(Row::Insert(&insert)), schema);
+                                f(RowEvent::Insert(Row::Insert(&insert)), schema, buf);
                             }
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
@@ -430,9 +438,9 @@ impl ReplicationClient {
                             }
                         }
                     }
-                    LogicalReplicationMessage::Update(update) => {
+                    (LogicalReplicationMessage::Update(update), buf) => {
                         match rel_id_to_schema.get(&update.rel_id()) {
-                            Some(schema) => f(RowEvent::Update(&update), schema),
+                            Some(schema) => f(RowEvent::Update(&update), schema, buf),
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
                                     update.rel_id(),
@@ -440,9 +448,9 @@ impl ReplicationClient {
                             }
                         }
                     }
-                    LogicalReplicationMessage::Delete(delete) => {
+                    (LogicalReplicationMessage::Delete(delete), buf) => {
                         match rel_id_to_schema.get(&delete.rel_id()) {
-                            Some(schema) => f(RowEvent::Delete(&delete), schema),
+                            Some(schema) => f(RowEvent::Delete(&delete), schema, buf),
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
                                     delete.rel_id(),
@@ -450,8 +458,8 @@ impl ReplicationClient {
                             }
                         }
                     }
-                    LogicalReplicationMessage::Truncate(_) => {}
-                    msg => {
+                    (LogicalReplicationMessage::Truncate(_), _) => {}
+                    (msg, _) => {
                         return Err(
                             ReplicationClientError::UnsupportedLogicalReplicationMessage(msg),
                         )
@@ -476,7 +484,7 @@ impl ReplicationClient {
     async fn start_replication_slot(
         &self,
         publication: &str,
-    ) -> Result<LogicalReplicationStream, ReplicationClientError> {
+    ) -> Result<BytesLogicalReplicationStream, ReplicationClientError> {
         let options = format!("(\"proto_version\" '1', \"publication_names\" '{publication}')");
         let query = format!(
             r#"START_REPLICATION SLOT "{}" LOGICAL {} {}"#,
@@ -486,7 +494,7 @@ impl ReplicationClient {
             .postgres_client
             .copy_both_simple::<bytes::Bytes>(&query)
             .await?;
-        let stream = LogicalReplicationStream::new(copy_stream);
+        let stream = BytesLogicalReplicationStream::new(copy_stream);
         Ok(stream)
     }
 }

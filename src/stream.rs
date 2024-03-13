@@ -1,0 +1,194 @@
+//! Utilities for working with the PostgreSQL replication copy both format.
+
+// use crate::copy_both::CopyBothDuplex;
+// use crate::Error;
+use bytes::Bytes;
+// use futures::Stream;
+use futures_util::{ready, Stream};
+use pin_project_lite::pin_project;
+use postgres_protocol::message::backend::LogicalReplicationMessage;
+use postgres_protocol::message::backend::ReplicationMessage;
+// use thiserror::Error;
+use tokio_postgres::replication::ReplicationStream;
+use tokio_postgres::types::PgLsn;
+use tokio_postgres::CopyBothDuplex;
+// use tokio_postgres::Error;
+// use postgres_types::PgLsn;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+// const STANDBY_STATUS_UPDATE_TAG: u8 = b'r';
+// const HOT_STANDBY_FEEDBACK_TAG: u8 = b'h';
+
+// pin_project! {
+//     /// A type which deserializes the postgres replication protocol. This type can be used with
+//     /// both physical and logical replication to get access to the byte content of each replication
+//     /// message.
+//     ///
+//     /// The replication *must* be explicitly completed via the `finish` method.
+//     pub struct ReplicationStream {
+//         #[pin]
+//         stream: CopyBothDuplex<Bytes>,
+//     }
+// }
+
+// impl ReplicationStream {
+//     /// Creates a new ReplicationStream that will wrap the underlying CopyBoth stream
+//     pub fn new(stream: CopyBothDuplex<Bytes>) -> Self {
+//         Self { stream }
+//     }
+
+//     /// Send standby update to server.
+//     pub async fn standby_status_update(
+//         self: Pin<&mut Self>,
+//         write_lsn: PgLsn,
+//         flush_lsn: PgLsn,
+//         apply_lsn: PgLsn,
+//         ts: i64,
+//         reply: u8,
+//     ) -> Result<(), Error> {
+//         let mut this = self.project();
+
+//         let mut buf = BytesMut::new();
+//         buf.put_u8(STANDBY_STATUS_UPDATE_TAG);
+//         buf.put_u64(write_lsn.into());
+//         buf.put_u64(flush_lsn.into());
+//         buf.put_u64(apply_lsn.into());
+//         buf.put_i64(ts);
+//         buf.put_u8(reply);
+
+//         this.stream.send(buf.freeze()).await
+//     }
+
+//     /// Send hot standby feedback message to server.
+//     pub async fn hot_standby_feedback(
+//         self: Pin<&mut Self>,
+//         timestamp: i64,
+//         global_xmin: u32,
+//         global_xmin_epoch: u32,
+//         catalog_xmin: u32,
+//         catalog_xmin_epoch: u32,
+//     ) -> Result<(), Error> {
+//         let mut this = self.project();
+
+//         let mut buf = BytesMut::new();
+//         buf.put_u8(HOT_STANDBY_FEEDBACK_TAG);
+//         buf.put_i64(timestamp);
+//         buf.put_u32(global_xmin);
+//         buf.put_u32(global_xmin_epoch);
+//         buf.put_u32(catalog_xmin);
+//         buf.put_u32(catalog_xmin_epoch);
+
+//         this.stream.send(buf.freeze()).await
+//     }
+// }
+
+// impl Stream for ReplicationStream {
+//     type Item = Result<ReplicationMessage<Bytes>, Error>;
+
+//     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+//         let this = self.project();
+
+//         match ready!(this.stream.poll_next(cx)) {
+//             Some(Ok(buf)) => {
+//                 Poll::Ready(Some(ReplicationMessage::parse(&buf).map_err(Error::parse)))
+//             }
+//             Some(Err(err)) => Poll::Ready(Some(Err(err))),
+//             None => Poll::Ready(None),
+//         }
+//     }
+// }
+
+pin_project! {
+    /// A type which deserializes the postgres logical replication protocol. This type gives access
+    /// to a high level representation of the changes in transaction commit order.
+    ///
+    /// The replication *must* be explicitly completed via the `finish` method.
+    pub struct BytesLogicalReplicationStream {
+        #[pin]
+        stream: ReplicationStream,
+    }
+}
+
+impl BytesLogicalReplicationStream {
+    /// Creates a new LogicalReplicationStream that will wrap the underlying CopyBoth stream
+    pub fn new(stream: CopyBothDuplex<Bytes>) -> Self {
+        Self {
+            stream: ReplicationStream::new(stream),
+        }
+    }
+
+    /// Send standby update to server.
+    pub async fn standby_status_update(
+        self: Pin<&mut Self>,
+        write_lsn: PgLsn,
+        flush_lsn: PgLsn,
+        apply_lsn: PgLsn,
+        ts: i64,
+        reply: u8,
+    ) -> Result<(), tokio_postgres::Error> {
+        let this = self.project();
+        this.stream
+            .standby_status_update(write_lsn, flush_lsn, apply_lsn, ts, reply)
+            .await
+    }
+
+    // /// Send hot standby feedback message to server.
+    // pub async fn hot_standby_feedback(
+    //     self: Pin<&mut Self>,
+    //     timestamp: i64,
+    //     global_xmin: u32,
+    //     global_xmin_epoch: u32,
+    //     catalog_xmin: u32,
+    //     catalog_xmin_epoch: u32,
+    // ) -> Result<(), tokio_postgres::Error> {
+    //     let this = self.project();
+    //     this.stream
+    //         .hot_standby_feedback(
+    //             timestamp,
+    //             global_xmin,
+    //             global_xmin_epoch,
+    //             catalog_xmin,
+    //             catalog_xmin_epoch,
+    //         )
+    //         .await
+    // }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("postgres error: {0}")]
+    Postgres(#[from] tokio_postgres::Error),
+
+    #[error("std io error: {0}")]
+    Std(#[from] std::io::Error),
+
+    #[error("unexpected replication message")]
+    UnexpectedMessage,
+}
+
+impl Stream for BytesLogicalReplicationStream {
+    type Item = Result<ReplicationMessage<(LogicalReplicationMessage, Bytes)>, Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+
+        match ready!(this.stream.poll_next(cx)) {
+            Some(Ok(ReplicationMessage::XLogData(body))) => {
+                let body = body
+                    .map_data(|buf| {
+                        let msg = LogicalReplicationMessage::parse(&buf)?;
+                        Ok((msg, buf))
+                    })
+                    .map_err(|e| Error::Std(e))?;
+                Poll::Ready(Some(Ok(ReplicationMessage::XLogData(body))))
+            }
+            Some(Ok(ReplicationMessage::PrimaryKeepAlive(body))) => {
+                Poll::Ready(Some(Ok(ReplicationMessage::PrimaryKeepAlive(body))))
+            }
+            Some(Ok(_)) => Poll::Ready(Some(Err(Error::UnexpectedMessage))),
+            Some(Err(err)) => Poll::Ready(Some(Err(err.into()))),
+            None => Poll::Ready(None),
+        }
+    }
+}

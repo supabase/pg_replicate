@@ -74,45 +74,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await?;
 
     repl_client
-        .get_realtime_changes(&rel_id_to_schema, publication, |event, table_schema| {
-            let (data, event_type) = match event {
-                RowEvent::Insert(row) => match row {
-                    pg_replicate::Row::CopyOut(_row) => {
-                        unreachable!()
+        .get_realtime_changes(
+            &rel_id_to_schema,
+            publication,
+            |event, table_schema, _buf| {
+                let (data, event_type) = match event {
+                    RowEvent::Insert(row) => match row {
+                        pg_replicate::Row::CopyOut(_row) => {
+                            unreachable!()
+                        }
+                        pg_replicate::Row::Insert(insert) => {
+                            let data = get_data(table_schema, insert.tuple());
+                            (data, "insert".to_string())
+                        }
+                    },
+                    RowEvent::Update(update) => {
+                        let data = get_data(table_schema, update.new_tuple());
+                        (data, "update".to_string())
                     }
-                    pg_replicate::Row::Insert(insert) => {
-                        let data = get_data(table_schema, insert.tuple());
-                        (data, "insert".to_string())
+                    RowEvent::Delete(delete) => {
+                        let tuple = delete
+                            .key_tuple()
+                            .or(delete.old_tuple())
+                            .expect("no tuple found in delete message");
+                        let data = get_data(table_schema, tuple);
+                        (data, "delete".to_string())
                     }
-                },
-                RowEvent::Update(update) => {
-                    let data = get_data(table_schema, update.new_tuple());
-                    (data, "update".to_string())
-                }
-                RowEvent::Delete(delete) => {
-                    let tuple = delete
-                        .key_tuple()
-                        .or(delete.old_tuple())
-                        .expect("no tuple found in delete message");
-                    let data = get_data(table_schema, tuple);
-                    (data, "delete".to_string())
-                }
-                RowEvent::Relation(relation) => {
-                    let data = relation_body_to_event_data(relation);
-                    (data, "relation".to_string())
-                }
-            };
-            let now = Utc::now();
-            let event = Event {
-                event_type,
-                timestamp: now,
-                relation_id: table_schema.relation_id,
-                data,
-            };
-            let event =
-                serde_json::to_string(&event).expect("failed to convert event to json string");
-            println!("{event}");
-        })
+                    RowEvent::Relation(relation) => {
+                        let data = relation_body_to_event_data(relation);
+                        (data, "relation".to_string())
+                    }
+                };
+                let now = Utc::now();
+                let event = Event {
+                    event_type,
+                    timestamp: now,
+                    relation_id: table_schema.relation_id,
+                    data,
+                };
+                let event =
+                    serde_json::to_string(&event).expect("failed to convert event to json string");
+                println!("{event}");
+                // println!("BUF: {:?}", &_buf[..]);
+            },
+        )
         .await?;
 
     Ok(())
