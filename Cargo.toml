@@ -2,4 +2,4 @@
 
 resolver = "2"
 
-members = ["pg_replicate"]
+members = ["pg_replicate", "replicate-to-s3"]
