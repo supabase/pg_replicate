@@ -320,7 +320,7 @@ fn insert_in_col(
                 .map(|d| {
                     let d = d.as_str().expect("attribute not str");
                     let d: NaiveDateTime = d.parse().expect("failed to parse datetime");
-                    d.timestamp_micros()
+                    d.and_utc().timestamp_micros()
                 });
                 col_builder.append_option(val);
             }
