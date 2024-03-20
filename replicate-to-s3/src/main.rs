@@ -75,58 +75,100 @@ async fn copy_table(
         .iter()
         .map(|attr| attr.typ.clone())
         .collect::<Vec<_>>();
-    let rows = repl_client
-        .copy_table(&table_schema.table, &types)
-        .await
-        .expect("failed to call copy table");
+    let rows = repl_client.copy_table(&table_schema.table, &types).await?;
     tokio::pin!(rows);
     while let Some(row) = rows.next().await {
-        let row = row.expect("failed to get row");
-        let now = Utc::now();
-        let mut data_map = BTreeMap::new();
-        for (i, attr) in table_schema.attributes.iter().enumerate() {
-            let val = get_val_from_row(&attr.typ, &row, i);
-            data_map.insert(Value::Text(attr.name.clone()), val);
-        }
-        let event = Event {
-            event_type: "insert".to_string(),
-            timestamp: now,
-            relation_id: table_schema.relation_id,
-            data: Value::Map(data_map),
-        };
-        let mut event_buf = vec![];
-        serde_cbor::to_writer(&mut event_buf, &event).expect("failed to write insert event");
-        data_chunk_buf
-            .write(&event_buf.len().to_be_bytes())
-            .expect("failed to write event_buf len");
-        data_chunk_buf
-            .write(&event_buf)
-            .expect("failed to write event buf");
+        let row = row?;
+        row_to_cbor_buf(row, table_schema, &mut data_chunk_buf)?;
         row_count += 1;
         if row_count == ROWS_PER_DATA_CHUNK {
             data_chunk_count += 1;
-            let s3_path = format!(
-                "table_copies/{}.{}/{}.dat",
-                table_schema.table.schema, table_schema.table.name, data_chunk_count
-            );
-            let byte_stream = ByteStream::from(data_chunk_buf.clone());
-            client
-                .put_object()
-                .bucket(bucket_name)
-                .key(s3_path)
-                .body(byte_stream)
-                .send()
-                .await?;
+            save_data_chunk(
+                client,
+                table_schema,
+                data_chunk_buf.clone(),
+                data_chunk_count,
+                bucket_name,
+            )
+            .await?;
             data_chunk_buf.clear();
             row_count = 0;
         }
     }
 
+    if !data_chunk_buf.is_empty() {
+        data_chunk_count += 1;
+        save_data_chunk(
+            client,
+            table_schema,
+            data_chunk_buf.clone(),
+            data_chunk_count,
+            bucket_name,
+        )
+        .await?;
+    }
+
+    mark_table_copy_done(table_schema, bucket_name, client).await?;
+
+    Ok(())
+}
+
+fn row_to_cbor_buf(
+    row: BinaryCopyOutRow,
+    table_schema: &TableSchema,
+    mut data_chunk_buf: &mut [u8],
+) -> Result<(), anyhow::Error> {
+    let now = Utc::now();
+    let mut data_map = BTreeMap::new();
+    for (i, attr) in table_schema.attributes.iter().enumerate() {
+        let val = get_val_from_row(&attr.typ, &row, i)?;
+        data_map.insert(Value::Text(attr.name.clone()), val);
+    }
+    let event = Event {
+        event_type: "insert".to_string(),
+        timestamp: now,
+        relation_id: table_schema.relation_id,
+        data: Value::Map(data_map),
+    };
+    let mut event_buf = vec![];
+    serde_cbor::to_writer(&mut event_buf, &event)?;
+    data_chunk_buf.write(&event_buf.len().to_be_bytes())?;
+    data_chunk_buf.write(&event_buf)?;
+    Ok(())
+}
+
+async fn mark_table_copy_done(
+    table_schema: &TableSchema,
+    bucket_name: &str,
+    client: &Client,
+) -> Result<(), anyhow::Error> {
     let s3_path = format!(
         "table_copies/{}.{}/done",
         table_schema.table.schema, table_schema.table.name
     );
     let byte_stream = ByteStream::from(vec![]);
+    client
+        .put_object()
+        .bucket(bucket_name)
+        .key(s3_path)
+        .body(byte_stream)
+        .send()
+        .await?;
+    Ok(())
+}
+
+async fn save_data_chunk(
+    client: &Client,
+    table_schema: &TableSchema,
+    data_chunk_buf: Vec<u8>,
+    data_chunk_count: u32,
+    bucket_name: &str,
+) -> Result<(), anyhow::Error> {
+    let s3_path = format!(
+        "table_copies/{}.{}/{}.dat",
+        table_schema.table.schema, table_schema.table.name, data_chunk_count
+    );
+    let byte_stream = ByteStream::from(data_chunk_buf.clone());
     client
         .put_object()
         .bucket(bucket_name)
@@ -225,26 +267,24 @@ async fn table_copy_done(
     Ok(true)
 }
 
-fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Value {
+fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Value, anyhow::Error> {
     match *typ {
         Type::INT4 => {
             let val = row.get::<i32>(i);
-            Value::Integer(val as i128)
+            Ok(Value::Integer(val as i128))
         }
         Type::VARCHAR => {
             let val = row.get::<&str>(i);
-            Value::Text(val.to_string())
+            Ok(Value::Text(val.to_string()))
         }
         Type::TIMESTAMP => {
             let val = row.get::<NaiveDateTime>(i);
-            Value::Integer(
+            Ok(Value::Integer(
                 val.and_utc()
                     .timestamp_nanos_opt()
                     .expect("failed to get timestamp nanos") as i128,
-            )
+            ))
         }
-        ref typ => {
-            panic!("unsupported type {typ:?}")
-        }
+        ref typ => Err(anyhow::anyhow!("unsupported type {typ:?}")),
     }
 }
