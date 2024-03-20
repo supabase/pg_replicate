@@ -36,18 +36,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let publication = "actor_pub";
     let schemas = repl_client.get_schemas(publication).await?;
 
-    for schema in &schemas {
-        copy_table(&schemas, &schema, &repl_client).await?;
-    }
-
-    Ok(())
-}
-
-async fn copy_table(
-    _schemas: &[TableSchema],
-    table_schema: &TableSchema,
-    repl_client: &ReplicationClient,
-) -> Result<(), S3Error> {
     let bucket_name = "test-rust-s3";
     let region = Region::Custom {
         region: "eu-central-1".to_owned(),
@@ -58,6 +46,20 @@ async fn copy_table(
 
     let bucket = Bucket::new(bucket_name, region.clone(), credentials.clone())?.with_path_style();
 
+    for schema in &schemas {
+        if !table_copy_done(&bucket, schema).await? {
+            copy_table(&bucket, schema, &repl_client).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn copy_table(
+    bucket: &Bucket,
+    table_schema: &TableSchema,
+    repl_client: &ReplicationClient,
+) -> Result<(), S3Error> {
     let mut row_count: u32 = 0;
     let mut data_chunk_count: u32 = 0;
     const ROWS_PER_DATA_CHUNK: u32 = 10;
@@ -128,6 +130,28 @@ async fn copy_table(
     }
 
     Ok(())
+}
+
+async fn table_copy_done(bucket: &Bucket, table_schema: &TableSchema) -> Result<bool, S3Error> {
+    let s3_path = format!(
+        "table_copies/{}.{}/done",
+        table_schema.table.schema, table_schema.table.name
+    );
+
+    let res = match bucket.get_object(s3_path).await {
+        Ok(res) => res,
+        Err(e) => match e {
+            S3Error::Http(404, _) => return Ok(false),
+            e => {
+                return Err(e);
+            }
+        },
+    };
+    if res.status_code() != 200 {
+        return Ok(false);
+    }
+
+    Ok(true)
 }
 
 fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Value {
