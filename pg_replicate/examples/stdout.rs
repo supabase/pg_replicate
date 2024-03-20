@@ -2,8 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
     fs::File,
-    io::{Read, Write},
-    os::unix::fs::FileExt,
+    io::Write,
     str::from_utf8,
 };
 
@@ -25,141 +24,141 @@ struct Event {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let mut events_file = File::open("events.cbor")?;
-    let mut size = [0; 8];
-    events_file.read_exact(&mut size)?;
-    let size = usize::from_le_bytes(size);
-    // println!("SIZE: {size}");
-    let mut buf = vec![0; size];
-    // println!("BUF SIZE: {}", buf.len());
-    events_file.read_exact_at(&mut buf, 8)?;
-    // println!("BUF: {buf:#?}");
-    let event: Event = serde_cbor::from_reader(&buf[..])?;
-    println!("{:?}", event);
+    // let mut events_file = File::open("events.cbor")?;
+    // let mut size = [0; 8];
+    // events_file.read_exact(&mut size)?;
+    // let size = usize::from_le_bytes(size);
+    // // println!("SIZE: {size}");
+    // let mut buf = vec![0; size];
+    // // println!("BUF SIZE: {}", buf.len());
+    // events_file.read_exact_at(&mut buf, 8)?;
+    // // println!("BUF: {buf:#?}");
+    // let event: Event = serde_cbor::from_reader(&buf[..])?;
+    // println!("{:?}", event);
 
-    // let repl_client = ReplicationClient::new(
-    //     "localhost".to_string(),
-    //     8080,
-    //     "pagila".to_string(),
-    //     "raminder.singh".to_string(),
-    //     "temp_slot".to_string(),
-    // )
-    // .await?;
+    let repl_client = ReplicationClient::new(
+        "localhost".to_string(),
+        8080,
+        "pagila".to_string(),
+        "raminder.singh".to_string(),
+        "temp_slot".to_string(),
+    )
+    .await?;
 
-    // let publication = "actor_pub";
-    // let schemas = repl_client.get_schemas(publication).await?;
-    // let mut events_file = File::create("events.cbor")?;
-    // let mut rel_id_to_schema = HashMap::new();
-    // let now = Utc::now();
-    // for schema in &schemas {
-    //     rel_id_to_schema.insert(schema.relation_id, schema);
-    //     let event = Event {
-    //         event_type: "schema".to_string(),
-    //         timestamp: now,
-    //         relation_id: schema.relation_id,
-    //         data: schema_to_event_data(schema),
-    //     };
-    //     // let event = serde_json::to_string(&event).expect("failed to convert event to json string");
-    //     // println!("{event}");
-    //     let mut vec = vec![];
-    //     serde_cbor::to_writer(&mut vec, &event)?;
-    //     // println!("SCHEMA: {vec:#?}");
-    //     events_file
-    //         .write(&vec.len().to_le_bytes())
-    //         .expect("failed to write to events file");
-    //     events_file.write(&vec)?;
-    //     // println!("saved schema");
-    // }
+    let publication = "actor_pub";
+    let schemas = repl_client.get_schemas(publication).await?;
+    let mut events_file = File::create("events.cbor")?;
+    let mut rel_id_to_schema = HashMap::new();
+    let now = Utc::now();
+    for schema in &schemas {
+        rel_id_to_schema.insert(schema.relation_id, schema);
+        let event = Event {
+            event_type: "schema".to_string(),
+            timestamp: now,
+            relation_id: schema.relation_id,
+            data: schema_to_event_data(schema),
+        };
+        // let event = serde_json::to_string(&event).expect("failed to convert event to json string");
+        // println!("{event}");
+        let mut vec = vec![];
+        serde_cbor::to_writer(&mut vec, &event)?;
+        // println!("SCHEMA: {vec:#?}");
+        events_file
+            .write(&vec.len().to_le_bytes())
+            .expect("failed to write to events file");
+        events_file.write(&vec)?;
+        // println!("saved schema");
+    }
 
-    // repl_client
-    //     .get_table_snapshot(&schemas, |event, table_schema| match event {
-    //         RowEvent::Insert(row) => match row {
-    //             pg_replicate::Row::CopyOut(row) => {
-    //                 let now = Utc::now();
-    //                 let mut data_map = BTreeMap::new();
-    //                 for (i, attr) in table_schema.attributes.iter().enumerate() {
-    //                     let val = get_val_from_row(&attr.typ, &row, i);
-    //                     data_map.insert(Value::Text(attr.name.clone()), val);
-    //                 }
-    //                 let event = Event {
-    //                     event_type: "insert".to_string(),
-    //                     timestamp: now,
-    //                     relation_id: table_schema.relation_id,
-    //                     data: Value::Map(data_map),
-    //                 };
-    //                 // let event = serde_json::to_string(&event)
-    //                 //     .expect("failed to convert event to json string");
-    //                 // println!("{event}");
-    //                 // serde_cbor::to_writer(&events_file, &event)
-    //                 //     .expect("failed to write insert event to cbor file");
-    //                 // println!("saved row");
-    //                 let mut vec = vec![];
-    //                 serde_cbor::to_writer(&mut vec, &event).expect("failed to write insert event");
-    //                 events_file
-    //                     .write(&vec.len().to_be_bytes())
-    //                     .expect("failed to write to events file");
-    //                 events_file.write(&vec).expect("failed to write");
-    //             }
-    //             pg_replicate::Row::Insert(_insert) => {
-    //                 unreachable!()
-    //             }
-    //         },
-    //         RowEvent::Update(_update) => {}
-    //         RowEvent::Delete(_delete) => {}
-    //         RowEvent::Relation(_relation) => {}
-    //     })
-    //     .await?;
+    repl_client
+        .get_table_snapshot(&schemas, |event, table_schema| match event {
+            RowEvent::Insert(row) => match row {
+                pg_replicate::Row::CopyOut(row) => {
+                    let now = Utc::now();
+                    let mut data_map = BTreeMap::new();
+                    for (i, attr) in table_schema.attributes.iter().enumerate() {
+                        let val = get_val_from_row(&attr.typ, &row, i);
+                        data_map.insert(Value::Text(attr.name.clone()), val);
+                    }
+                    let event = Event {
+                        event_type: "insert".to_string(),
+                        timestamp: now,
+                        relation_id: table_schema.relation_id,
+                        data: Value::Map(data_map),
+                    };
+                    // let event = serde_json::to_string(&event)
+                    //     .expect("failed to convert event to json string");
+                    // println!("{event}");
+                    // serde_cbor::to_writer(&events_file, &event)
+                    //     .expect("failed to write insert event to cbor file");
+                    // println!("saved row");
+                    let mut vec = vec![];
+                    serde_cbor::to_writer(&mut vec, &event).expect("failed to write insert event");
+                    events_file
+                        .write(&vec.len().to_be_bytes())
+                        .expect("failed to write to events file");
+                    events_file.write(&vec).expect("failed to write");
+                }
+                pg_replicate::Row::Insert(_insert) => {
+                    unreachable!()
+                }
+            },
+            RowEvent::Update(_update) => {}
+            RowEvent::Delete(_delete) => {}
+            RowEvent::Relation(_relation) => {}
+        })
+        .await?;
 
-    // repl_client
-    //     .get_realtime_changes(&rel_id_to_schema, publication, |event, table_schema| {
-    //         let (data, event_type) = match event {
-    //             RowEvent::Insert(row) => match row {
-    //                 pg_replicate::Row::CopyOut(_row) => {
-    //                     unreachable!()
-    //                 }
-    //                 pg_replicate::Row::Insert(insert) => {
-    //                     let data = get_data(table_schema, insert.tuple());
-    //                     (data, "insert".to_string())
-    //                 }
-    //             },
-    //             RowEvent::Update(update) => {
-    //                 let data = get_data(table_schema, update.new_tuple());
-    //                 (data, "update".to_string())
-    //             }
-    //             RowEvent::Delete(delete) => {
-    //                 let tuple = delete
-    //                     .key_tuple()
-    //                     .or(delete.old_tuple())
-    //                     .expect("no tuple found in delete message");
-    //                 let data = get_data(table_schema, tuple);
-    //                 (data, "delete".to_string())
-    //             }
-    //             RowEvent::Relation(relation) => {
-    //                 let data = relation_body_to_event_data(relation);
-    //                 (data, "relation".to_string())
-    //             }
-    //         };
-    //         let now = Utc::now();
-    //         let event = Event {
-    //             event_type,
-    //             timestamp: now,
-    //             relation_id: table_schema.relation_id,
-    //             data,
-    //         };
-    //         // let event =
-    //         //     serde_json::to_string(&event).expect("failed to convert event to json string");
-    //         // println!("{event}");
-    //         // serde_cbor::to_writer(&events_file, &event)
-    //         //     .expect("failed to write event to cbor file");
-    //         // println!("saved event");
-    //         let mut vec = vec![];
-    //         serde_cbor::to_writer(&mut vec, &event).expect("failed to write event");
-    //         events_file
-    //             .write(&vec.len().to_be_bytes())
-    //             .expect("failed to write to events file");
-    //         events_file.write(&vec).expect("failed to write");
-    //     })
-    //     .await?;
+    repl_client
+        .get_realtime_changes(&rel_id_to_schema, publication, |event, table_schema| {
+            let (data, event_type) = match event {
+                RowEvent::Insert(row) => match row {
+                    pg_replicate::Row::CopyOut(_row) => {
+                        unreachable!()
+                    }
+                    pg_replicate::Row::Insert(insert) => {
+                        let data = get_data(table_schema, insert.tuple());
+                        (data, "insert".to_string())
+                    }
+                },
+                RowEvent::Update(update) => {
+                    let data = get_data(table_schema, update.new_tuple());
+                    (data, "update".to_string())
+                }
+                RowEvent::Delete(delete) => {
+                    let tuple = delete
+                        .key_tuple()
+                        .or(delete.old_tuple())
+                        .expect("no tuple found in delete message");
+                    let data = get_data(table_schema, tuple);
+                    (data, "delete".to_string())
+                }
+                RowEvent::Relation(relation) => {
+                    let data = relation_body_to_event_data(relation);
+                    (data, "relation".to_string())
+                }
+            };
+            let now = Utc::now();
+            let event = Event {
+                event_type,
+                timestamp: now,
+                relation_id: table_schema.relation_id,
+                data,
+            };
+            // let event =
+            //     serde_json::to_string(&event).expect("failed to convert event to json string");
+            // println!("{event}");
+            // serde_cbor::to_writer(&events_file, &event)
+            //     .expect("failed to write event to cbor file");
+            // println!("saved event");
+            let mut vec = vec![];
+            serde_cbor::to_writer(&mut vec, &event).expect("failed to write event");
+            events_file
+                .write(&vec.len().to_be_bytes())
+                .expect("failed to write to events file");
+            events_file.write(&vec).expect("failed to write");
+        })
+        .await?;
 
     Ok(())
 }

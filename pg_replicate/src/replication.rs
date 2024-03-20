@@ -316,7 +316,7 @@ impl ReplicationClient {
         Ok(Some(confirmed_flush_lsn))
     }
 
-    async fn copy_table(
+    pub async fn copy_table(
         &self,
         table: &Table,
         attr_types: &[Type],

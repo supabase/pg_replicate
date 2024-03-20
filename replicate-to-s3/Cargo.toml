@@ -6,4 +6,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", features = [
+    "with-chrono-0_4",
+] }
+postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres" }
 pg_replicate = { path = "../pg_replicate" }
+rust-s3 = { version = "0.33" }
+aws-region = "0.25"
+aws-creds = "0.34"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.11"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
