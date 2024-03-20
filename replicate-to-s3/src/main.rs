@@ -1,18 +1,19 @@
 use std::{collections::BTreeMap, error::Error, io::Write};
 
-// use ::s3::error::S3Error;
-
-use ::s3::Bucket;
-use awscreds::Credentials;
+use aws_config::{BehaviorVersion, Region};
+use aws_sdk_s3 as s3;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::StreamExt;
 use pg_replicate::{ReplicationClient, TableSchema};
-use s3::{error::S3Error, Region};
+use s3::{
+    config::Credentials,
+    primitives::ByteStream,
+    types::{Delete, ObjectIdentifier},
+    Client,
+};
 use serde::{Deserialize, Serialize};
 use serde_cbor::Value;
 use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
-
-mod s3_api;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Event {
@@ -36,19 +37,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let publication = "actor_pub";
     let schemas = repl_client.get_schemas(publication).await?;
 
+    let credentials = Credentials::new("admin", "password", None, None, "example");
+    let s3_config = aws_sdk_s3::config::Builder::new()
+        .behavior_version(BehaviorVersion::latest())
+        .endpoint_url("http://localhost:9000")
+        .credentials_provider(credentials)
+        .region(Region::new("eu-central-1"))
+        .force_path_style(true) // apply bucketname as path param instead of pre-domain
+        .build();
+    let client = aws_sdk_s3::Client::from_conf(s3_config);
+
     let bucket_name = "test-rust-s3";
-    let region = Region::Custom {
-        region: "eu-central-1".to_owned(),
-        endpoint: "http://localhost:9000".to_owned(),
-    };
-    let credentials =
-        Credentials::new(Some("admin"), Some("password"), None, None, Some("example"))?;
-
-    let bucket = Bucket::new(bucket_name, region.clone(), credentials.clone())?.with_path_style();
-
     for schema in &schemas {
-        if !table_copy_done(&bucket, schema).await? {
-            copy_table(&bucket, schema, &repl_client).await?;
+        if !table_copy_done(&client, schema, bucket_name).await? {
+            delete_partial_table_copy(&client, schema, bucket_name).await?;
+            copy_table(&client, schema, &repl_client, bucket_name).await?;
         }
     }
 
@@ -56,10 +59,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn copy_table(
-    bucket: &Bucket,
+    client: &Client,
     table_schema: &TableSchema,
     repl_client: &ReplicationClient,
-) -> Result<(), S3Error> {
+    bucket_name: &str,
+) -> Result<(), anyhow::Error> {
     let mut row_count: u32 = 0;
     let mut data_chunk_count: u32 = 0;
     const ROWS_PER_DATA_CHUNK: u32 = 10;
@@ -105,13 +109,14 @@ async fn copy_table(
                 "table_copies/{}.{}/{}.dat",
                 table_schema.table.schema, table_schema.table.name, data_chunk_count
             );
-            let response_data = bucket
-                .put_object(s3_path, &data_chunk_buf)
-                .await
-                .expect("failed to put object");
-            if response_data.status_code() != 200 {
-                panic!("failed to save object");
-            }
+            let byte_stream = ByteStream::from(data_chunk_buf.clone());
+            client
+                .put_object()
+                .bucket(bucket_name)
+                .key(s3_path)
+                .body(byte_stream)
+                .send()
+                .await?;
             data_chunk_buf.clear();
             row_count = 0;
         }
@@ -121,34 +126,100 @@ async fn copy_table(
         "table_copies/{}.{}/done",
         table_schema.table.schema, table_schema.table.name
     );
-    let response_data = bucket
-        .put_object(s3_path, "done".as_bytes())
-        .await
-        .expect("failed to put object");
-    if response_data.status_code() != 200 {
-        panic!("failed to save object");
-    }
+    let byte_stream = ByteStream::from(vec![]);
+    client
+        .put_object()
+        .bucket(bucket_name)
+        .key(s3_path)
+        .body(byte_stream)
+        .send()
+        .await?;
 
     Ok(())
 }
 
-async fn table_copy_done(bucket: &Bucket, table_schema: &TableSchema) -> Result<bool, S3Error> {
+async fn delete_partial_table_copy(
+    client: &Client,
+    table_schema: &TableSchema,
+    bucket_name: &str,
+) -> Result<(), anyhow::Error> {
+    let s3_prefix = format!(
+        "table_copies/{}.{}",
+        table_schema.table.schema, table_schema.table.name
+    );
+    let objects = list_objects(client, bucket_name, &s3_prefix).await?;
+    if objects.is_empty() {
+        return Ok(());
+    }
+    client
+        .delete_objects()
+        .bucket(bucket_name)
+        .delete(Delete::builder().set_objects(Some(objects)).build()?)
+        .send()
+        .await?;
+    Ok(())
+}
+
+pub async fn list_objects(
+    client: &Client,
+    bucket: &str,
+    prefix: &str,
+) -> Result<Vec<ObjectIdentifier>, anyhow::Error> {
+    let mut response = client
+        .list_objects_v2()
+        .bucket(bucket.to_owned())
+        .prefix(prefix)
+        .max_keys(100)
+        .into_paginator()
+        .send();
+
+    let mut objects = vec![];
+    while let Some(result) = response.next().await {
+        match result {
+            Ok(output) => {
+                for object in output.contents() {
+                    let obj_id = ObjectIdentifier::builder()
+                        .set_key(Some(object.key().expect("missing key").to_string()))
+                        .build()?;
+                    objects.push(obj_id);
+                }
+            }
+            Err(err) => {
+                Err(err)?;
+            }
+        }
+    }
+
+    Ok(objects)
+}
+
+async fn table_copy_done(
+    client: &Client,
+    table_schema: &TableSchema,
+    bucket_name: &str,
+) -> Result<bool, anyhow::Error> {
     let s3_path = format!(
         "table_copies/{}.{}/done",
         table_schema.table.schema, table_schema.table.name
     );
 
-    let res = match bucket.get_object(s3_path).await {
-        Ok(res) => res,
-        Err(e) => match e {
-            S3Error::Http(404, _) => return Ok(false),
-            e => {
-                return Err(e);
+    match client
+        .get_object()
+        .bucket(bucket_name)
+        .key(s3_path)
+        .send()
+        .await
+    {
+        Err(e) => {
+            if e.raw_response()
+                .expect("no raw response")
+                .status()
+                .is_client_error()
+            {
+                return Ok(false);
             }
-        },
-    };
-    if res.status_code() != 200 {
-        return Ok(false);
+        }
+        _ => {}
     }
 
     Ok(true)
