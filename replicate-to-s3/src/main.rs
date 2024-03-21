@@ -68,6 +68,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     repl_client.commit_txn().await?;
 
+    get_relatime_resumption_data(&client, bucket_name).await?;
     copy_realtime_changes(
         &client,
         bucket_name,
@@ -107,7 +108,7 @@ async fn copy_table(
         if row_count == ROWS_PER_DATA_CHUNK {
             data_chunk_count += 1;
             let s3_path = format!(
-                "table_copies/{}.{}/{}.dat",
+                "table_copies/{}.{}/{}",
                 table_schema.table.schema, table_schema.table.name, data_chunk_count
             );
             save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
@@ -119,13 +120,72 @@ async fn copy_table(
     if !data_chunk_buf.is_empty() {
         data_chunk_count += 1;
         let s3_path = format!(
-            "table_copies/{}.{}/{}.dat",
+            "table_copies/{}.{}/{}",
             table_schema.table.schema, table_schema.table.name, data_chunk_count
         );
         save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
     }
 
     mark_table_copy_done(table_schema, bucket_name, client).await?;
+
+    Ok(())
+}
+
+async fn get_relatime_resumption_data(
+    client: &Client,
+    bucket_name: &str,
+) -> Result<(), anyhow::Error> {
+    let s3_prefix = format!("realtime_changes/",);
+    let objects = list_objects(client, bucket_name, &s3_prefix).await?;
+    if objects.is_empty() {
+        return Ok(());
+    }
+    let mut file_names: Vec<u32> = objects
+        .iter()
+        .map(|o| {
+            let key: u32 = o
+                .key
+                .strip_prefix(&s3_prefix)
+                .expect("wrong prefix")
+                .parse()
+                .expect("key not a number");
+            key
+        })
+        .collect();
+    file_names.sort();
+    let last_file_name = file_names[file_names.len() - 1];
+    let s3_prefix = format!("realtime_changes/{}", last_file_name);
+
+    let mut last_file = client
+        .get_object()
+        .bucket(bucket_name)
+        .key(s3_prefix)
+        .send()
+        .await?;
+
+    let mut v = vec![];
+    while let Some(bytes) = last_file.body.try_next().await? {
+        v.write(&bytes)?;
+    }
+
+    let mut start = 0;
+    let mut v = &v[..];
+    loop {
+        let size: [u8; 8] = (&v[start..start + 8]).try_into()?;
+        let size = usize::from_be_bytes(size);
+        let new_start = start + 8 + size;
+        if v.len() <= new_start {
+            v = &v[start + 8..];
+            break;
+        }
+        start = new_start;
+    }
+    println!("LAST RECORD: {:?}, LEN: {}", v, v.len());
+    let event: Event = serde_cbor::from_reader(v)?;
+    println!("EVENT: {event:#?}");
+    // let size: [u8; 8] = (&v[..8]).try_into()?;
+    // let size = usize::from_be_bytes(size);
+    // println!("LAST OBJ: {size}");
 
     Ok(())
 }
@@ -281,7 +341,7 @@ async fn try_save_data_chunk(
     *row_count += 1;
     if *row_count == ROWS_PER_DATA_CHUNK {
         *data_chunk_count += 1;
-        let s3_path = format!("realtime_changes/{}.dat", data_chunk_count);
+        let s3_path = format!("realtime_changes/{}", data_chunk_count);
         save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
         data_chunk_buf.clear();
         *row_count = 0;
