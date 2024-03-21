@@ -333,7 +333,7 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
 fn binary_copy_out_row_to_cbor_buf(
     row: BinaryCopyOutRow,
     table_schema: &TableSchema,
-    mut data_chunk_buf: &mut [u8],
+    data_chunk_buf: &mut Vec<u8>,
 ) -> Result<(), anyhow::Error> {
     let now = Utc::now();
     let mut data_map = BTreeMap::new();
@@ -349,8 +349,8 @@ fn binary_copy_out_row_to_cbor_buf(
     };
     let mut event_buf = vec![];
     serde_cbor::to_writer(&mut event_buf, &event)?;
-    data_chunk_buf.write(&event_buf.len().to_be_bytes())?;
-    data_chunk_buf.write(&event_buf)?;
+    data_chunk_buf.write_all(&event_buf.len().to_be_bytes())?;
+    data_chunk_buf.write_all(&event_buf)?;
     Ok(())
 }
 
@@ -358,7 +358,7 @@ fn event_to_cbor(
     event_type: String,
     table_schema: &TableSchema,
     data: Value,
-    mut data_chunk_buf: &mut [u8],
+    data_chunk_buf: &mut Vec<u8>,
 ) -> Result<(), anyhow::Error> {
     let now = Utc::now();
     let event = Event {
@@ -369,8 +369,8 @@ fn event_to_cbor(
     };
     let mut event_buf = vec![];
     serde_cbor::to_writer(&mut event_buf, &event)?;
-    data_chunk_buf.write(&event_buf.len().to_be_bytes())?;
-    data_chunk_buf.write(&event_buf)?;
+    data_chunk_buf.write_all(&event_buf.len().to_be_bytes())?;
+    data_chunk_buf.write_all(&event_buf)?;
     Ok(())
 }
 
