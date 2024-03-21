@@ -1,10 +1,19 @@
-use std::{collections::BTreeMap, error::Error, io::Write};
+use std::{
+    collections::{BTreeMap, HashMap},
+    error::Error,
+    io::Write,
+    str::from_utf8,
+    time::{Duration, UNIX_EPOCH},
+};
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3 as s3;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::StreamExt;
-use pg_replicate::{ReplicationClient, TableSchema};
+use pg_replicate::{ReplicationClient, ReplicationClientError, TableSchema};
+use postgres_protocol::message::backend::{
+    LogicalReplicationMessage, RelationBody, ReplicationMessage, Tuple, TupleData,
+};
 use s3::{
     config::Credentials,
     primitives::ByteStream,
@@ -48,15 +57,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = aws_sdk_s3::Client::from_conf(s3_config);
 
     let bucket_name = "test-rust-s3";
+    let mut rel_id_to_schema = HashMap::new();
     for schema in &schemas {
+        rel_id_to_schema.insert(schema.relation_id, schema);
         if !table_copy_done(&client, schema, bucket_name).await? {
             delete_partial_table_copy(&client, schema, bucket_name).await?;
             copy_table(&client, schema, &repl_client, bucket_name).await?;
         }
     }
 
+    repl_client.commit_txn().await?;
+
+    copy_realtime_changes(
+        &client,
+        bucket_name,
+        &repl_client,
+        &rel_id_to_schema,
+        publication,
+    )
+    .await?;
+
     Ok(())
 }
+
+const ROWS_PER_DATA_CHUNK: u32 = 10;
 
 async fn copy_table(
     client: &Client,
@@ -66,7 +90,6 @@ async fn copy_table(
 ) -> Result<(), anyhow::Error> {
     let mut row_count: u32 = 0;
     let mut data_chunk_count: u32 = 0;
-    const ROWS_PER_DATA_CHUNK: u32 = 10;
 
     let mut data_chunk_buf = vec![];
 
@@ -79,18 +102,15 @@ async fn copy_table(
     tokio::pin!(rows);
     while let Some(row) = rows.next().await {
         let row = row?;
-        row_to_cbor_buf(row, table_schema, &mut data_chunk_buf)?;
+        binary_copy_out_row_to_cbor_buf(row, table_schema, &mut data_chunk_buf)?;
         row_count += 1;
         if row_count == ROWS_PER_DATA_CHUNK {
             data_chunk_count += 1;
-            save_data_chunk(
-                client,
-                table_schema,
-                data_chunk_buf.clone(),
-                data_chunk_count,
-                bucket_name,
-            )
-            .await?;
+            let s3_path = format!(
+                "table_copies/{}.{}/{}.dat",
+                table_schema.table.schema, table_schema.table.name, data_chunk_count
+            );
+            save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
             data_chunk_buf.clear();
             row_count = 0;
         }
@@ -98,14 +118,11 @@ async fn copy_table(
 
     if !data_chunk_buf.is_empty() {
         data_chunk_count += 1;
-        save_data_chunk(
-            client,
-            table_schema,
-            data_chunk_buf.clone(),
-            data_chunk_count,
-            bucket_name,
-        )
-        .await?;
+        let s3_path = format!(
+            "table_copies/{}.{}/{}.dat",
+            table_schema.table.schema, table_schema.table.name, data_chunk_count
+        );
+        save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
     }
 
     mark_table_copy_done(table_schema, bucket_name, client).await?;
@@ -113,7 +130,246 @@ async fn copy_table(
     Ok(())
 }
 
-fn row_to_cbor_buf(
+async fn copy_realtime_changes(
+    client: &Client,
+    bucket_name: &str,
+    repl_client: &ReplicationClient,
+    rel_id_to_schema: &HashMap<u32, &TableSchema>,
+    publication: &str,
+) -> Result<(), anyhow::Error> {
+    let mut row_count: u32 = 0;
+    let mut data_chunk_count: u32 = 0;
+    let logical_stream = repl_client.start_replication_slot(publication).await?;
+
+    tokio::pin!(logical_stream);
+
+    const TIME_SEC_CONVERSION: u64 = 946_684_800;
+    let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
+
+    let mut data_chunk_buf = vec![];
+    let mut last_lsn = repl_client.consistent_point;
+
+    while let Some(replication_msg) = logical_stream.next().await {
+        match replication_msg? {
+            ReplicationMessage::XLogData(xlog_data) => match xlog_data.into_data() {
+                LogicalReplicationMessage::Begin(_) => {}
+                LogicalReplicationMessage::Commit(commit) => {
+                    last_lsn = commit.commit_lsn().into();
+                }
+                LogicalReplicationMessage::Origin(_) => {}
+                LogicalReplicationMessage::Relation(relation) => {
+                    match rel_id_to_schema.get(&relation.rel_id()) {
+                        Some(schema) => {
+                            let data = relation_body_to_event_data(&relation);
+                            let event_type = "relation".to_string();
+                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            try_save_data_chunk(
+                                &mut row_count,
+                                &mut data_chunk_count,
+                                client,
+                                &mut data_chunk_buf,
+                                bucket_name,
+                            )
+                            .await?;
+                        }
+                        None => {
+                            return Err(ReplicationClientError::RelationIdNotFound(
+                                relation.rel_id(),
+                            ))?;
+                        }
+                    }
+                }
+                LogicalReplicationMessage::Type(_) => {}
+                LogicalReplicationMessage::Insert(insert) => {
+                    match rel_id_to_schema.get(&insert.rel_id()) {
+                        Some(schema) => {
+                            let data = get_data(schema, insert.tuple());
+                            let event_type = "insert".to_string();
+                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            try_save_data_chunk(
+                                &mut row_count,
+                                &mut data_chunk_count,
+                                client,
+                                &mut data_chunk_buf,
+                                bucket_name,
+                            )
+                            .await?;
+                        }
+                        None => {
+                            return Err(ReplicationClientError::RelationIdNotFound(
+                                insert.rel_id(),
+                            ))?;
+                        }
+                    }
+                }
+                LogicalReplicationMessage::Update(update) => {
+                    match rel_id_to_schema.get(&update.rel_id()) {
+                        Some(schema) => {
+                            let data = get_data(schema, update.new_tuple());
+                            let event_type = "update".to_string();
+                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            try_save_data_chunk(
+                                &mut row_count,
+                                &mut data_chunk_count,
+                                client,
+                                &mut data_chunk_buf,
+                                bucket_name,
+                            )
+                            .await?;
+                        }
+                        None => {
+                            return Err(ReplicationClientError::RelationIdNotFound(
+                                update.rel_id(),
+                            ))?;
+                        }
+                    }
+                }
+                LogicalReplicationMessage::Delete(delete) => {
+                    match rel_id_to_schema.get(&delete.rel_id()) {
+                        Some(schema) => {
+                            let tuple = delete
+                                .key_tuple()
+                                .or(delete.old_tuple())
+                                .expect("no tuple found in delete message");
+                            let data = get_data(schema, tuple);
+                            let event_type = "delete".to_string();
+                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            try_save_data_chunk(
+                                &mut row_count,
+                                &mut data_chunk_count,
+                                client,
+                                &mut data_chunk_buf,
+                                bucket_name,
+                            )
+                            .await?;
+                        }
+                        None => {
+                            return Err(ReplicationClientError::RelationIdNotFound(
+                                delete.rel_id(),
+                            ))?;
+                        }
+                    }
+                }
+                LogicalReplicationMessage::Truncate(_) => {}
+                msg => {
+                    return Err(ReplicationClientError::UnsupportedLogicalReplicationMessage(msg))?
+                }
+            },
+            ReplicationMessage::PrimaryKeepAlive(keepalive) => {
+                if keepalive.reply() == 1 {
+                    let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
+                    logical_stream
+                        .as_mut()
+                        .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)
+                        .await?;
+                }
+            }
+            msg => return Err(ReplicationClientError::UnsupportedReplicationMessage(msg))?,
+        }
+    }
+
+    Ok(())
+}
+
+async fn try_save_data_chunk(
+    row_count: &mut u32,
+    data_chunk_count: &mut u32,
+    client: &Client,
+    data_chunk_buf: &mut Vec<u8>,
+    bucket_name: &str,
+) -> Result<(), anyhow::Error> {
+    *row_count += 1;
+    if *row_count == ROWS_PER_DATA_CHUNK {
+        *data_chunk_count += 1;
+        let s3_path = format!("realtime_changes/{}.dat", data_chunk_count);
+        save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
+        data_chunk_buf.clear();
+        *row_count = 0;
+    }
+    Ok(())
+}
+
+fn relation_body_to_event_data(relation: &RelationBody) -> Value {
+    let schema = relation.namespace().expect("invalid relation namespace");
+    let table = relation.name().expect("invalid relation name");
+    let cols: Vec<Value> = relation
+        .columns()
+        .iter()
+        .map(|col| {
+            let name = col.name().expect("invalid column name");
+            let mut map = BTreeMap::new();
+            map.insert(
+                Value::Text("name".to_string()),
+                Value::Text(name.to_string()),
+            );
+            map.insert(
+                Value::Text("identity".to_string()),
+                Value::Bool(col.flags() == 1),
+            );
+            map.insert(
+                Value::Text("type_id".to_string()),
+                Value::Integer(col.type_id() as i128),
+            );
+            map.insert(
+                Value::Text("type_modifier".to_string()),
+                Value::Integer(col.type_modifier() as i128),
+            );
+            Value::Map(map)
+            // json!({ "name": name, "identity": col.flags() == 1, "type_id": col.type_id(), "type_modifier": col.type_modifier() })
+        })
+        .collect();
+    let mut map = BTreeMap::new();
+    map.insert(
+        Value::Text("schema".to_string()),
+        Value::Text(schema.to_string()),
+    );
+    map.insert(
+        Value::Text("table".to_string()),
+        Value::Text(table.to_string()),
+    );
+    map.insert(Value::Text("columns".to_string()), Value::Array(cols));
+    Value::Map(map)
+    // json!({"schema": schema, "table": table, "columns": cols })
+}
+
+// async fn save_realtime_row<'a>(event: &RowEvent<'a>, table_schema: &TableSchema) {
+//     let (data, event_type) = match event {
+//         RowEvent::Insert(row) => match row {
+//             pg_replicate::Row::CopyOut(_row) => {
+//                 unreachable!()
+//             }
+//             pg_replicate::Row::Insert(insert) => {
+//                 let data = get_data(table_schema, insert.tuple());
+//                 (data, "insert".to_string())
+//             }
+//         },
+//         RowEvent::Update(update) => {
+//             let data = get_data(table_schema, update.new_tuple());
+//             (data, "update".to_string())
+//         }
+//         RowEvent::Delete(delete) => {
+//             let tuple = delete
+//                 .key_tuple()
+//                 .or(delete.old_tuple())
+//                 .expect("no tuple found in delete message");
+//             let data = get_data(table_schema, tuple);
+//             (data, "delete".to_string())
+//         }
+//         RowEvent::Relation(relation) => {
+//             let data = relation_body_to_event_data(relation);
+//             (data, "relation".to_string())
+//         }
+//     };
+//     let now = Utc::now();
+//     let event = Event {
+//         event_type,
+//         timestamp: now,
+//         relation_id: table_schema.relation_id,
+//         data,
+//     };
+// }
+
+fn binary_copy_out_row_to_cbor_buf(
     row: BinaryCopyOutRow,
     table_schema: &TableSchema,
     mut data_chunk_buf: &mut [u8],
@@ -130,6 +386,38 @@ fn row_to_cbor_buf(
         relation_id: table_schema.relation_id,
         data: Value::Map(data_map),
     };
+    let mut event_buf = vec![];
+    serde_cbor::to_writer(&mut event_buf, &event)?;
+    data_chunk_buf.write(&event_buf.len().to_be_bytes())?;
+    data_chunk_buf.write(&event_buf)?;
+    Ok(())
+}
+
+fn event_to_cbor(
+    event_type: String,
+    table_schema: &TableSchema,
+    data: Value,
+    mut data_chunk_buf: &mut [u8],
+) -> Result<(), anyhow::Error> {
+    let now = Utc::now();
+    let event = Event {
+        event_type,
+        timestamp: now,
+        relation_id: table_schema.relation_id,
+        data,
+    };
+    // let event =
+    //     serde_json::to_string(&event).expect("failed to convert event to json string");
+    // println!("{event}");
+    // serde_cbor::to_writer(&events_file, &event)
+    //     .expect("failed to write event to cbor file");
+    // println!("saved event");
+    // let mut vec = vec![];
+    // serde_cbor::to_writer(&mut vec, &event).expect("failed to write event");
+    // events_file
+    //     .write(&vec.len().to_be_bytes())
+    //     .expect("failed to write to events file");
+    // events_file.write(&vec).expect("failed to write");
     let mut event_buf = vec![];
     serde_cbor::to_writer(&mut event_buf, &event)?;
     data_chunk_buf.write(&event_buf.len().to_be_bytes())?;
@@ -159,20 +447,15 @@ async fn mark_table_copy_done(
 
 async fn save_data_chunk(
     client: &Client,
-    table_schema: &TableSchema,
     data_chunk_buf: Vec<u8>,
-    data_chunk_count: u32,
     bucket_name: &str,
+    path: String,
 ) -> Result<(), anyhow::Error> {
-    let s3_path = format!(
-        "table_copies/{}.{}/{}.dat",
-        table_schema.table.schema, table_schema.table.name, data_chunk_count
-    );
     let byte_stream = ByteStream::from(data_chunk_buf.clone());
     client
         .put_object()
         .bucket(bucket_name)
-        .key(s3_path)
+        .key(path)
         .body(byte_stream)
         .send()
         .await?;
@@ -287,4 +570,43 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Valu
         }
         ref typ => Err(anyhow::anyhow!("unsupported type {typ:?}")),
     }
+}
+
+fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Value {
+    let val = match val {
+        TupleData::Null => {
+            return Value::Null;
+        }
+        TupleData::UnchangedToast => panic!("unchanged toast"),
+        TupleData::Text(bytes) => from_utf8(&bytes[..]).expect("failed to get val"),
+    };
+    match *typ {
+        Type::INT4 => {
+            let val: i32 = val.parse().expect("value not i32");
+            Value::Integer(val.into())
+        }
+        Type::VARCHAR => Value::Text(val.to_string()),
+        Type::TIMESTAMP => {
+            let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")
+                .expect("invalid timestamp");
+            Value::Integer(
+                val.and_utc()
+                    .timestamp_nanos_opt()
+                    .expect("failed to get timestamp nanos") as i128,
+            )
+        }
+        ref typ => {
+            panic!("unsupported type {typ:?}")
+        }
+    }
+}
+
+fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Value {
+    let data = tuple.tuple_data();
+    let mut data_map = BTreeMap::new();
+    for (i, attr) in table_schema.attributes.iter().enumerate() {
+        let val = get_val_from_tuple_data(&attr.typ, &data[i]);
+        data_map.insert(Value::Text(attr.name.clone()), val);
+    }
+    Value::Map(data_map)
 }

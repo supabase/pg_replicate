@@ -18,7 +18,7 @@ use tokio_postgres::{
 
 pub struct ReplicationClient {
     slot_name: String,
-    consistent_point: PgLsn,
+    pub consistent_point: PgLsn,
     postgres_client: Client,
 }
 
@@ -271,7 +271,7 @@ impl ReplicationClient {
         Ok(())
     }
 
-    async fn commit_txn(&self) -> Result<(), ReplicationClientError> {
+    pub async fn commit_txn(&self) -> Result<(), ReplicationClientError> {
         self.postgres_client.simple_query("COMMIT;").await?;
         Ok(())
     }
@@ -473,7 +473,7 @@ impl ReplicationClient {
         Ok(())
     }
 
-    async fn start_replication_slot(
+    pub async fn start_replication_slot(
         &self,
         publication: &str,
     ) -> Result<LogicalReplicationStream, ReplicationClientError> {
