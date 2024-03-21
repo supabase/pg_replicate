@@ -29,6 +29,7 @@ struct Event {
     event_type: String,
     timestamp: DateTime<Utc>,
     relation_id: u32,
+    last_lsn: u64,
     data: Value,
 }
 
@@ -222,7 +223,13 @@ async fn copy_realtime_changes(
                         Some(schema) => {
                             let data = relation_body_to_event_data(&relation);
                             let event_type = "relation".to_string();
-                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            event_to_cbor(
+                                event_type,
+                                schema,
+                                data,
+                                &mut data_chunk_buf,
+                                last_lsn.into(),
+                            )?;
                             try_save_data_chunk(
                                 &mut row_count,
                                 &mut data_chunk_count,
@@ -245,7 +252,13 @@ async fn copy_realtime_changes(
                         Some(schema) => {
                             let data = get_data(schema, insert.tuple());
                             let event_type = "insert".to_string();
-                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            event_to_cbor(
+                                event_type,
+                                schema,
+                                data,
+                                &mut data_chunk_buf,
+                                last_lsn.into(),
+                            )?;
                             try_save_data_chunk(
                                 &mut row_count,
                                 &mut data_chunk_count,
@@ -267,7 +280,13 @@ async fn copy_realtime_changes(
                         Some(schema) => {
                             let data = get_data(schema, update.new_tuple());
                             let event_type = "update".to_string();
-                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            event_to_cbor(
+                                event_type,
+                                schema,
+                                data,
+                                &mut data_chunk_buf,
+                                last_lsn.into(),
+                            )?;
                             try_save_data_chunk(
                                 &mut row_count,
                                 &mut data_chunk_count,
@@ -293,7 +312,13 @@ async fn copy_realtime_changes(
                                 .expect("no tuple found in delete message");
                             let data = get_data(schema, tuple);
                             let event_type = "delete".to_string();
-                            event_to_cbor(event_type, schema, data, &mut data_chunk_buf)?;
+                            event_to_cbor(
+                                event_type,
+                                schema,
+                                data,
+                                &mut data_chunk_buf,
+                                last_lsn.into(),
+                            )?;
                             try_save_data_chunk(
                                 &mut row_count,
                                 &mut data_chunk_count,
@@ -406,6 +431,7 @@ fn binary_copy_out_row_to_cbor_buf(
         timestamp: now,
         relation_id: table_schema.relation_id,
         data: Value::Map(data_map),
+        last_lsn: 0,
     };
     let mut event_buf = vec![];
     serde_cbor::to_writer(&mut event_buf, &event)?;
@@ -419,6 +445,7 @@ fn event_to_cbor(
     table_schema: &TableSchema,
     data: Value,
     data_chunk_buf: &mut Vec<u8>,
+    last_lsn: u64,
 ) -> Result<(), anyhow::Error> {
     let now = Utc::now();
     let event = Event {
@@ -426,6 +453,7 @@ fn event_to_cbor(
         timestamp: now,
         relation_id: table_schema.relation_id,
         data,
+        last_lsn,
     };
     let mut event_buf = vec![];
     serde_cbor::to_writer(&mut event_buf, &event)?;
