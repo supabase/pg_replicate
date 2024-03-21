@@ -315,7 +315,6 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
                 Value::Integer(col.type_modifier() as i128),
             );
             Value::Map(map)
-            // json!({ "name": name, "identity": col.flags() == 1, "type_id": col.type_id(), "type_modifier": col.type_modifier() })
         })
         .collect();
     let mut map = BTreeMap::new();
@@ -329,45 +328,7 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
     );
     map.insert(Value::Text("columns".to_string()), Value::Array(cols));
     Value::Map(map)
-    // json!({"schema": schema, "table": table, "columns": cols })
 }
-
-// async fn save_realtime_row<'a>(event: &RowEvent<'a>, table_schema: &TableSchema) {
-//     let (data, event_type) = match event {
-//         RowEvent::Insert(row) => match row {
-//             pg_replicate::Row::CopyOut(_row) => {
-//                 unreachable!()
-//             }
-//             pg_replicate::Row::Insert(insert) => {
-//                 let data = get_data(table_schema, insert.tuple());
-//                 (data, "insert".to_string())
-//             }
-//         },
-//         RowEvent::Update(update) => {
-//             let data = get_data(table_schema, update.new_tuple());
-//             (data, "update".to_string())
-//         }
-//         RowEvent::Delete(delete) => {
-//             let tuple = delete
-//                 .key_tuple()
-//                 .or(delete.old_tuple())
-//                 .expect("no tuple found in delete message");
-//             let data = get_data(table_schema, tuple);
-//             (data, "delete".to_string())
-//         }
-//         RowEvent::Relation(relation) => {
-//             let data = relation_body_to_event_data(relation);
-//             (data, "relation".to_string())
-//         }
-//     };
-//     let now = Utc::now();
-//     let event = Event {
-//         event_type,
-//         timestamp: now,
-//         relation_id: table_schema.relation_id,
-//         data,
-//     };
-// }
 
 fn binary_copy_out_row_to_cbor_buf(
     row: BinaryCopyOutRow,
@@ -406,18 +367,6 @@ fn event_to_cbor(
         relation_id: table_schema.relation_id,
         data,
     };
-    // let event =
-    //     serde_json::to_string(&event).expect("failed to convert event to json string");
-    // println!("{event}");
-    // serde_cbor::to_writer(&events_file, &event)
-    //     .expect("failed to write event to cbor file");
-    // println!("saved event");
-    // let mut vec = vec![];
-    // serde_cbor::to_writer(&mut vec, &event).expect("failed to write event");
-    // events_file
-    //     .write(&vec.len().to_be_bytes())
-    //     .expect("failed to write to events file");
-    // events_file.write(&vec).expect("failed to write");
     let mut event_buf = vec![];
     serde_cbor::to_writer(&mut event_buf, &event)?;
     data_chunk_buf.write(&event_buf.len().to_be_bytes())?;
