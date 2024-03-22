@@ -137,8 +137,8 @@ async fn get_relatime_resumption_data(
     client: &Client,
     bucket_name: &str,
 ) -> Result<Option<(u64, u32)>, anyhow::Error> {
-    let s3_prefix = format!("realtime_changes/",);
-    let objects = list_objects(client, bucket_name, &s3_prefix).await?;
+    let s3_prefix = "realtime_changes/";
+    let objects = list_objects(client, bucket_name, s3_prefix).await?;
     if objects.is_empty() {
         return Ok(None);
     }
@@ -147,7 +147,7 @@ async fn get_relatime_resumption_data(
         .map(|o| {
             let key: u32 = o
                 .key
-                .strip_prefix(&s3_prefix)
+                .strip_prefix(s3_prefix)
                 .expect("wrong prefix")
                 .parse()
                 .expect("key not a number");
@@ -167,7 +167,7 @@ async fn get_relatime_resumption_data(
 
     let mut v = vec![];
     while let Some(bytes) = last_file.body.try_next().await? {
-        v.write(&bytes)?;
+        v.write_all(&bytes)?;
     }
 
     let mut start = 0;
@@ -561,23 +561,22 @@ async fn table_copy_done(
         table_schema.table.schema, table_schema.table.name
     );
 
-    match client
+    if let Err(e) = client
         .get_object()
         .bucket(bucket_name)
         .key(s3_path)
         .send()
         .await
     {
-        Err(e) => {
-            if e.raw_response()
-                .expect("no raw response")
-                .status()
-                .is_client_error()
-            {
-                return Ok(false);
-            }
+        match e
+            .raw_response()
+            .expect("no raw response")
+            .status()
+            .is_client_error()
+        {
+            true => return Ok(false),
+            false => (),
         }
-        _ => {}
     }
 
     Ok(true)

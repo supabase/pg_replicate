@@ -64,9 +64,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         serde_cbor::to_writer(&mut vec, &event)?;
         // println!("SCHEMA: {vec:#?}");
         events_file
-            .write(&vec.len().to_le_bytes())
+            .write_all(&vec.len().to_le_bytes())
             .expect("failed to write to events file");
-        events_file.write(&vec)?;
+        events_file.write_all(&vec)?;
         // println!("saved schema");
     }
 
@@ -95,9 +95,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let mut vec = vec![];
                     serde_cbor::to_writer(&mut vec, &event).expect("failed to write insert event");
                     events_file
-                        .write(&vec.len().to_be_bytes())
+                        .write_all(&vec.len().to_be_bytes())
                         .expect("failed to write to events file");
-                    events_file.write(&vec).expect("failed to write");
+                    events_file.write_all(&vec).expect("failed to write");
                 }
                 pg_replicate::Row::Insert(_insert) => {
                     unreachable!()
@@ -154,9 +154,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut vec = vec![];
             serde_cbor::to_writer(&mut vec, &event).expect("failed to write event");
             events_file
-                .write(&vec.len().to_be_bytes())
+                .write_all(&vec.len().to_be_bytes())
                 .expect("failed to write to events file");
-            events_file.write(&vec).expect("failed to write");
+            events_file.write_all(&vec).expect("failed to write");
         })
         .await?;
 
