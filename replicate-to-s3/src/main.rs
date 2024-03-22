@@ -46,14 +46,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = aws_sdk_s3::Client::from_conf(s3_config);
 
     let bucket_name = "test-rust-s3";
-    let res = get_relatime_resumption_data(&client, bucket_name).await?;
-    println!("{res:?}");
+    let resumption_data = get_relatime_resumption_data(&client, bucket_name).await?;
+    let last_lsn = resumption_data.map(|(lsn, _)| lsn.into());
+    let data_chunk_count = resumption_data.map(|(_, c)| c);
     let mut repl_client = ReplicationClient::new(
         "localhost".to_string(),
         8080,
         "pagila".to_string(),
         "raminder.singh".to_string(),
         "temp_slot".to_string(),
+        last_lsn,
     )
     .await?;
 
@@ -77,6 +79,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &mut repl_client,
         &rel_id_to_schema,
         publication,
+        data_chunk_count,
     )
     .await?;
 
@@ -193,9 +196,10 @@ async fn copy_realtime_changes(
     repl_client: &mut ReplicationClient,
     rel_id_to_schema: &HashMap<u32, &TableSchema>,
     publication: &str,
+    data_chunk_count: Option<u32>,
 ) -> Result<(), anyhow::Error> {
     let mut row_count: u32 = 0;
-    let mut data_chunk_count: u32 = 0;
+    let mut data_chunk_count: u32 = data_chunk_count.unwrap_or(0);
     let logical_stream = repl_client.start_replication_slot(publication).await?;
 
     tokio::pin!(logical_stream);

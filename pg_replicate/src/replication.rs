@@ -79,12 +79,21 @@ impl ReplicationClient {
         dbname: String,
         user: String,
         slot_name: String,
+        last_lsn: Option<PgLsn>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         let postgres_client = Self::connect(&host, port, &dbname, &user).await?;
-        let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
+        // let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
+        let consistent_point = Self::create_slot_if_missing(&postgres_client, &slot_name).await?;
+        let last_lsn = last_lsn.unwrap_or(consistent_point);
+        if last_lsn < consistent_point {
+            return Err(ReplicationClientError::CantResume(
+                last_lsn,
+                consistent_point,
+            ));
+        }
         Ok(ReplicationClient {
             slot_name,
-            last_lsn: consistent_point,
+            last_lsn,
             postgres_client,
         })
     }
@@ -334,7 +343,7 @@ impl ReplicationClient {
         Ok(row_stream)
     }
 
-    async fn start_table_copy(
+    async fn create_slot_if_missing(
         client: &Client,
         slot_name: &str,
     ) -> Result<PgLsn, ReplicationClientError> {
