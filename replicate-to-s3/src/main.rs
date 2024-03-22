@@ -69,7 +69,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     repl_client.commit_txn().await?;
 
-    get_relatime_resumption_data(&client, bucket_name).await?;
+    let res = get_relatime_resumption_data(&client, bucket_name).await?;
+    println!("{res:?}");
     copy_realtime_changes(
         &client,
         bucket_name,
@@ -135,11 +136,11 @@ async fn copy_table(
 async fn get_relatime_resumption_data(
     client: &Client,
     bucket_name: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<Option<(u64, u32)>, anyhow::Error> {
     let s3_prefix = format!("realtime_changes/",);
     let objects = list_objects(client, bucket_name, &s3_prefix).await?;
     if objects.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let mut file_names: Vec<u32> = objects
         .iter()
@@ -181,14 +182,9 @@ async fn get_relatime_resumption_data(
         }
         start = new_start;
     }
-    println!("LAST RECORD: {:?}, LEN: {}", v, v.len());
     let event: Event = serde_cbor::from_reader(v)?;
-    println!("EVENT: {event:#?}");
-    // let size: [u8; 8] = (&v[..8]).try_into()?;
-    // let size = usize::from_be_bytes(size);
-    // println!("LAST OBJ: {size}");
 
-    Ok(())
+    Ok(Some((event.last_lsn, last_file_name)))
 }
 
 async fn copy_realtime_changes(
