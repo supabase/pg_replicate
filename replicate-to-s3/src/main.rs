@@ -35,18 +35,6 @@ struct Event {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let repl_client = ReplicationClient::new(
-        "localhost".to_string(),
-        8080,
-        "pagila".to_string(),
-        "raminder.singh".to_string(),
-        "temp_slot".to_string(),
-    )
-    .await?;
-
-    let publication = "actor_pub";
-    let schemas = repl_client.get_schemas(publication).await?;
-
     let credentials = Credentials::new("admin", "password", None, None, "example");
     let s3_config = aws_sdk_s3::config::Builder::new()
         .behavior_version(BehaviorVersion::latest())
@@ -58,6 +46,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = aws_sdk_s3::Client::from_conf(s3_config);
 
     let bucket_name = "test-rust-s3";
+    let res = get_relatime_resumption_data(&client, bucket_name).await?;
+    println!("{res:?}");
+    let mut repl_client = ReplicationClient::new(
+        "localhost".to_string(),
+        8080,
+        "pagila".to_string(),
+        "raminder.singh".to_string(),
+        "temp_slot".to_string(),
+    )
+    .await?;
+
+    let publication = "actor_pub";
+    let schemas = repl_client.get_schemas(publication).await?;
+
     let mut rel_id_to_schema = HashMap::new();
     for schema in &schemas {
         rel_id_to_schema.insert(schema.relation_id, schema);
@@ -69,12 +71,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     repl_client.commit_txn().await?;
 
-    let res = get_relatime_resumption_data(&client, bucket_name).await?;
-    println!("{res:?}");
     copy_realtime_changes(
         &client,
         bucket_name,
-        &repl_client,
+        &mut repl_client,
         &rel_id_to_schema,
         publication,
     )
@@ -190,7 +190,7 @@ async fn get_relatime_resumption_data(
 async fn copy_realtime_changes(
     client: &Client,
     bucket_name: &str,
-    repl_client: &ReplicationClient,
+    repl_client: &mut ReplicationClient,
     rel_id_to_schema: &HashMap<u32, &TableSchema>,
     publication: &str,
 ) -> Result<(), anyhow::Error> {
@@ -204,14 +204,13 @@ async fn copy_realtime_changes(
     let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
     let mut data_chunk_buf = vec![];
-    let mut last_lsn = repl_client.consistent_point;
 
     while let Some(replication_msg) = logical_stream.next().await {
         match replication_msg? {
             ReplicationMessage::XLogData(xlog_data) => match xlog_data.into_data() {
                 LogicalReplicationMessage::Begin(_) => {}
                 LogicalReplicationMessage::Commit(commit) => {
-                    last_lsn = commit.commit_lsn().into();
+                    repl_client.last_lsn = commit.commit_lsn().into();
                 }
                 LogicalReplicationMessage::Origin(_) => {}
                 LogicalReplicationMessage::Relation(relation) => {
@@ -224,7 +223,7 @@ async fn copy_realtime_changes(
                                 schema,
                                 data,
                                 &mut data_chunk_buf,
-                                last_lsn.into(),
+                                repl_client.last_lsn.into(),
                             )?;
                             try_save_data_chunk(
                                 &mut row_count,
@@ -253,7 +252,7 @@ async fn copy_realtime_changes(
                                 schema,
                                 data,
                                 &mut data_chunk_buf,
-                                last_lsn.into(),
+                                repl_client.last_lsn.into(),
                             )?;
                             try_save_data_chunk(
                                 &mut row_count,
@@ -281,7 +280,7 @@ async fn copy_realtime_changes(
                                 schema,
                                 data,
                                 &mut data_chunk_buf,
-                                last_lsn.into(),
+                                repl_client.last_lsn.into(),
                             )?;
                             try_save_data_chunk(
                                 &mut row_count,
@@ -313,7 +312,7 @@ async fn copy_realtime_changes(
                                 schema,
                                 data,
                                 &mut data_chunk_buf,
-                                last_lsn.into(),
+                                repl_client.last_lsn.into(),
                             )?;
                             try_save_data_chunk(
                                 &mut row_count,
@@ -341,7 +340,13 @@ async fn copy_realtime_changes(
                     let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
                     logical_stream
                         .as_mut()
-                        .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)
+                        .standby_status_update(
+                            repl_client.last_lsn,
+                            repl_client.last_lsn,
+                            repl_client.last_lsn,
+                            ts,
+                            0,
+                        )
                         .await?;
                 }
             }

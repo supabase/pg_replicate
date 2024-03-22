@@ -18,7 +18,7 @@ use tokio_postgres::{
 
 pub struct ReplicationClient {
     slot_name: String,
-    pub consistent_point: PgLsn,
+    pub last_lsn: PgLsn,
     postgres_client: Client,
 }
 
@@ -35,6 +35,9 @@ pub enum ReplicationClientError {
 
     #[error("relation id {0} not found")]
     RelationIdNotFound(u32),
+
+    #[error("resumption lsn {0} is older than the slot lsn {1}")]
+    CantResume(PgLsn, PgLsn),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -81,7 +84,7 @@ impl ReplicationClient {
         let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
         Ok(ReplicationClient {
             slot_name,
-            consistent_point,
+            last_lsn: consistent_point,
             postgres_client,
         })
     }
@@ -397,7 +400,7 @@ impl ReplicationClient {
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
-        let mut last_lsn = self.consistent_point;
+        let mut last_lsn = self.last_lsn;
 
         while let Some(replication_msg) = logical_stream.next().await {
             match replication_msg? {
@@ -480,7 +483,7 @@ impl ReplicationClient {
         let options = format!("(\"proto_version\" '1', \"publication_names\" '{publication}')");
         let query = format!(
             r#"START_REPLICATION SLOT "{}" LOGICAL {} {}"#,
-            self.slot_name, self.consistent_point, options
+            self.slot_name, self.last_lsn, options
         );
         let copy_stream = self
             .postgres_client
