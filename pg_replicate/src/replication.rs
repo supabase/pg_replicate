@@ -19,7 +19,9 @@ use tokio_postgres::{
 pub struct ReplicationClient {
     slot_name: String,
     pub last_lsn: PgLsn,
+    resume_lsn: Option<PgLsn>,
     postgres_client: Client,
+    skipping_events: bool,
 }
 
 #[derive(Debug, Error)]
@@ -79,23 +81,38 @@ impl ReplicationClient {
         dbname: String,
         user: String,
         slot_name: String,
-        last_lsn: Option<PgLsn>,
+        resume_lsn: Option<PgLsn>,
+        skipping_events: bool,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         let postgres_client = Self::connect(&host, port, &dbname, &user).await?;
         // let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
         let consistent_point = Self::create_slot_if_missing(&postgres_client, &slot_name).await?;
-        let last_lsn = last_lsn.unwrap_or(consistent_point);
-        if last_lsn < consistent_point {
-            return Err(ReplicationClientError::CantResume(
-                last_lsn,
-                consistent_point,
-            ));
+        let lsn = resume_lsn.unwrap_or(consistent_point);
+        if lsn < consistent_point {
+            return Err(ReplicationClientError::CantResume(lsn, consistent_point));
         }
         Ok(ReplicationClient {
             slot_name,
-            last_lsn,
+            last_lsn: lsn,
+            resume_lsn,
             postgres_client,
+            skipping_events,
         })
+    }
+
+    pub fn should_skip(&self, lsn: PgLsn) -> bool {
+        if self.skipping_events {
+            if let Some(resume_lsn) = self.resume_lsn {
+                if lsn <= resume_lsn {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn stop_skipping(&mut self) {
+        self.skipping_events = false;
     }
 
     pub async fn connect(

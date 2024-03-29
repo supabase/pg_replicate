@@ -12,7 +12,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::StreamExt;
 use pg_replicate::{ReplicationClient, ReplicationClientError, TableSchema};
 use postgres_protocol::message::backend::{
-    LogicalReplicationMessage, RelationBody, ReplicationMessage, Tuple, TupleData,
+    BeginBody, LogicalReplicationMessage, RelationBody, ReplicationMessage, Tuple, TupleData,
 };
 use s3::{
     config::Credentials,
@@ -22,13 +22,26 @@ use s3::{
 };
 use serde::{Deserialize, Serialize};
 use serde_cbor::Value;
-use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
+use tokio_postgres::{
+    binary_copy::BinaryCopyOutRow,
+    types::{PgLsn, Type},
+};
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+enum EventType {
+    Begin,
+    Relation,
+    Insert,
+    Update,
+    Delete,
+    Commit,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Event {
-    event_type: String,
+    event_type: EventType,
     timestamp: DateTime<Utc>,
-    relation_id: u32,
+    relation_id: Option<u32>,
     last_lsn: u64,
     data: Value,
 }
@@ -47,8 +60,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let bucket_name = "test-rust-s3";
     let resumption_data = get_relatime_resumption_data(&client, bucket_name).await?;
-    let last_lsn = resumption_data.map(|(lsn, _)| lsn.into());
-    let data_chunk_count = resumption_data.map(|(_, c)| c);
+    let last_lsn = resumption_data.map(|(lsn, _, _)| lsn.into());
+    let data_chunk_count = resumption_data.map(|(_, _, c)| c);
+    let last_event_type = resumption_data.map(|(_, et, _)| et);
     let mut repl_client = ReplicationClient::new(
         "localhost".to_string(),
         8080,
@@ -56,6 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "raminder.singh".to_string(),
         "temp_slot".to_string(),
         last_lsn,
+        !matches!(last_event_type, Some(EventType::Commit)),
     )
     .await?;
 
@@ -139,7 +154,7 @@ async fn copy_table(
 async fn get_relatime_resumption_data(
     client: &Client,
     bucket_name: &str,
-) -> Result<Option<(u64, u32)>, anyhow::Error> {
+) -> Result<Option<(u64, EventType, u32)>, anyhow::Error> {
     let s3_prefix = "realtime_changes/";
     let objects = list_objects(client, bucket_name, s3_prefix).await?;
     if objects.is_empty() {
@@ -187,7 +202,7 @@ async fn get_relatime_resumption_data(
     }
     let event: Event = serde_cbor::from_reader(v)?;
 
-    Ok(Some((event.last_lsn, last_file_name)))
+    Ok(Some((event.last_lsn, event.event_type, last_file_name)))
 }
 
 async fn copy_realtime_changes(
@@ -211,134 +226,176 @@ async fn copy_realtime_changes(
 
     while let Some(replication_msg) = logical_stream.next().await {
         match replication_msg? {
-            ReplicationMessage::XLogData(xlog_data) => match xlog_data.into_data() {
-                LogicalReplicationMessage::Begin(_) => {}
-                LogicalReplicationMessage::Commit(commit) => {
-                    repl_client.last_lsn = commit.commit_lsn().into();
-                }
-                LogicalReplicationMessage::Origin(_) => {}
-                LogicalReplicationMessage::Relation(relation) => {
-                    match rel_id_to_schema.get(&relation.rel_id()) {
-                        Some(schema) => {
-                            let data = relation_body_to_event_data(&relation);
-                            let event_type = "relation".to_string();
-                            event_to_cbor(
-                                event_type,
-                                schema,
-                                data,
-                                &mut data_chunk_buf,
-                                repl_client.last_lsn.into(),
-                            )?;
-                            try_save_data_chunk(
-                                &mut row_count,
-                                &mut data_chunk_count,
-                                client,
-                                &mut data_chunk_buf,
-                                bucket_name,
-                            )
-                            .await?;
+            ReplicationMessage::XLogData(xlog_data) => {
+                let wal_end_lsn: PgLsn = xlog_data.wal_end().into();
+                match xlog_data.into_data() {
+                    LogicalReplicationMessage::Begin(begin) => {
+                        if repl_client.should_skip(wal_end_lsn) {
+                            continue;
                         }
-                        None => {
-                            return Err(ReplicationClientError::RelationIdNotFound(
-                                relation.rel_id(),
-                            ))?;
+                        let data = begin_body_to_event_data(&begin);
+                        let event_type = EventType::Begin;
+                        event_to_cbor(
+                            event_type,
+                            None,
+                            data,
+                            &mut data_chunk_buf,
+                            repl_client.last_lsn.into(),
+                        )?;
+                        try_save_data_chunk(
+                            &mut row_count,
+                            &mut data_chunk_count,
+                            client,
+                            &mut data_chunk_buf,
+                            bucket_name,
+                        )
+                        .await?;
+                    }
+                    LogicalReplicationMessage::Commit(commit) => {
+                        if repl_client.should_skip(wal_end_lsn) {
+                            repl_client.stop_skipping();
+                            continue;
+                        }
+                        repl_client.last_lsn = commit.commit_lsn().into();
+                    }
+                    LogicalReplicationMessage::Origin(_) => {}
+                    LogicalReplicationMessage::Relation(relation) => {
+                        if repl_client.should_skip(wal_end_lsn) {
+                            continue;
+                        }
+                        match rel_id_to_schema.get(&relation.rel_id()) {
+                            Some(schema) => {
+                                let data = relation_body_to_event_data(&relation);
+                                let event_type = EventType::Relation;
+                                event_to_cbor(
+                                    event_type,
+                                    Some(schema),
+                                    data,
+                                    &mut data_chunk_buf,
+                                    repl_client.last_lsn.into(),
+                                )?;
+                                try_save_data_chunk(
+                                    &mut row_count,
+                                    &mut data_chunk_count,
+                                    client,
+                                    &mut data_chunk_buf,
+                                    bucket_name,
+                                )
+                                .await?;
+                            }
+                            None => {
+                                return Err(ReplicationClientError::RelationIdNotFound(
+                                    relation.rel_id(),
+                                ))?;
+                            }
                         }
                     }
-                }
-                LogicalReplicationMessage::Type(_) => {}
-                LogicalReplicationMessage::Insert(insert) => {
-                    match rel_id_to_schema.get(&insert.rel_id()) {
-                        Some(schema) => {
-                            let data = get_data(schema, insert.tuple());
-                            let event_type = "insert".to_string();
-                            event_to_cbor(
-                                event_type,
-                                schema,
-                                data,
-                                &mut data_chunk_buf,
-                                repl_client.last_lsn.into(),
-                            )?;
-                            try_save_data_chunk(
-                                &mut row_count,
-                                &mut data_chunk_count,
-                                client,
-                                &mut data_chunk_buf,
-                                bucket_name,
-                            )
-                            .await?;
+                    LogicalReplicationMessage::Type(_) => {}
+                    LogicalReplicationMessage::Insert(insert) => {
+                        if repl_client.should_skip(wal_end_lsn) {
+                            continue;
                         }
-                        None => {
-                            return Err(ReplicationClientError::RelationIdNotFound(
-                                insert.rel_id(),
-                            ))?;
-                        }
-                    }
-                }
-                LogicalReplicationMessage::Update(update) => {
-                    match rel_id_to_schema.get(&update.rel_id()) {
-                        Some(schema) => {
-                            let data = get_data(schema, update.new_tuple());
-                            let event_type = "update".to_string();
-                            event_to_cbor(
-                                event_type,
-                                schema,
-                                data,
-                                &mut data_chunk_buf,
-                                repl_client.last_lsn.into(),
-                            )?;
-                            try_save_data_chunk(
-                                &mut row_count,
-                                &mut data_chunk_count,
-                                client,
-                                &mut data_chunk_buf,
-                                bucket_name,
-                            )
-                            .await?;
-                        }
-                        None => {
-                            return Err(ReplicationClientError::RelationIdNotFound(
-                                update.rel_id(),
-                            ))?;
+                        match rel_id_to_schema.get(&insert.rel_id()) {
+                            Some(schema) => {
+                                let data = get_data(schema, insert.tuple());
+                                let event_type = EventType::Insert;
+                                event_to_cbor(
+                                    event_type,
+                                    Some(schema),
+                                    data,
+                                    &mut data_chunk_buf,
+                                    repl_client.last_lsn.into(),
+                                )?;
+                                try_save_data_chunk(
+                                    &mut row_count,
+                                    &mut data_chunk_count,
+                                    client,
+                                    &mut data_chunk_buf,
+                                    bucket_name,
+                                )
+                                .await?;
+                            }
+                            None => {
+                                return Err(ReplicationClientError::RelationIdNotFound(
+                                    insert.rel_id(),
+                                ))?;
+                            }
                         }
                     }
-                }
-                LogicalReplicationMessage::Delete(delete) => {
-                    match rel_id_to_schema.get(&delete.rel_id()) {
-                        Some(schema) => {
-                            let tuple = delete
-                                .key_tuple()
-                                .or(delete.old_tuple())
-                                .expect("no tuple found in delete message");
-                            let data = get_data(schema, tuple);
-                            let event_type = "delete".to_string();
-                            event_to_cbor(
-                                event_type,
-                                schema,
-                                data,
-                                &mut data_chunk_buf,
-                                repl_client.last_lsn.into(),
-                            )?;
-                            try_save_data_chunk(
-                                &mut row_count,
-                                &mut data_chunk_count,
-                                client,
-                                &mut data_chunk_buf,
-                                bucket_name,
-                            )
-                            .await?;
+                    LogicalReplicationMessage::Update(update) => {
+                        if repl_client.should_skip(wal_end_lsn) {
+                            continue;
                         }
-                        None => {
-                            return Err(ReplicationClientError::RelationIdNotFound(
-                                delete.rel_id(),
-                            ))?;
+                        match rel_id_to_schema.get(&update.rel_id()) {
+                            Some(schema) => {
+                                let data = get_data(schema, update.new_tuple());
+                                let event_type = EventType::Update;
+                                event_to_cbor(
+                                    event_type,
+                                    Some(schema),
+                                    data,
+                                    &mut data_chunk_buf,
+                                    repl_client.last_lsn.into(),
+                                )?;
+                                try_save_data_chunk(
+                                    &mut row_count,
+                                    &mut data_chunk_count,
+                                    client,
+                                    &mut data_chunk_buf,
+                                    bucket_name,
+                                )
+                                .await?;
+                            }
+                            None => {
+                                return Err(ReplicationClientError::RelationIdNotFound(
+                                    update.rel_id(),
+                                ))?;
+                            }
                         }
                     }
+                    LogicalReplicationMessage::Delete(delete) => {
+                        if repl_client.should_skip(wal_end_lsn) {
+                            continue;
+                        }
+                        match rel_id_to_schema.get(&delete.rel_id()) {
+                            Some(schema) => {
+                                let tuple = delete
+                                    .key_tuple()
+                                    .or(delete.old_tuple())
+                                    .expect("no tuple found in delete message");
+                                let data = get_data(schema, tuple);
+                                let event_type = EventType::Delete;
+                                event_to_cbor(
+                                    event_type,
+                                    Some(schema),
+                                    data,
+                                    &mut data_chunk_buf,
+                                    repl_client.last_lsn.into(),
+                                )?;
+                                try_save_data_chunk(
+                                    &mut row_count,
+                                    &mut data_chunk_count,
+                                    client,
+                                    &mut data_chunk_buf,
+                                    bucket_name,
+                                )
+                                .await?;
+                            }
+                            None => {
+                                return Err(ReplicationClientError::RelationIdNotFound(
+                                    delete.rel_id(),
+                                ))?;
+                            }
+                        }
+                    }
+                    LogicalReplicationMessage::Truncate(_) => {}
+                    msg => {
+                        return Err(
+                            ReplicationClientError::UnsupportedLogicalReplicationMessage(msg),
+                        )?
+                    }
                 }
-                LogicalReplicationMessage::Truncate(_) => {}
-                msg => {
-                    return Err(ReplicationClientError::UnsupportedLogicalReplicationMessage(msg))?
-                }
-            },
+            }
             ReplicationMessage::PrimaryKeepAlive(keepalive) => {
                 if keepalive.reply() == 1 {
                     let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
@@ -377,6 +434,23 @@ async fn try_save_data_chunk(
         *row_count = 0;
     }
     Ok(())
+}
+
+fn begin_body_to_event_data(begin: &BeginBody) -> Value {
+    let mut map = BTreeMap::new();
+    map.insert(
+        Value::Text("final_lsn".to_string()),
+        Value::Integer(begin.final_lsn().into()),
+    );
+    map.insert(
+        Value::Text("timestamp".to_string()),
+        Value::Integer(begin.timestamp().into()),
+    );
+    map.insert(
+        Value::Text("xid".to_string()),
+        Value::Integer(begin.xid().into()),
+    );
+    Value::Map(map)
 }
 
 fn relation_body_to_event_data(relation: &RelationBody) -> Value {
@@ -432,9 +506,9 @@ fn binary_copy_out_row_to_cbor_buf(
         data_map.insert(Value::Text(attr.name.clone()), val);
     }
     let event = Event {
-        event_type: "insert".to_string(),
+        event_type: EventType::Insert,
         timestamp: now,
-        relation_id: table_schema.relation_id,
+        relation_id: Some(table_schema.relation_id),
         data: Value::Map(data_map),
         last_lsn: 0,
     };
@@ -446,8 +520,8 @@ fn binary_copy_out_row_to_cbor_buf(
 }
 
 fn event_to_cbor(
-    event_type: String,
-    table_schema: &TableSchema,
+    event_type: EventType,
+    table_schema: Option<&TableSchema>,
     data: Value,
     data_chunk_buf: &mut Vec<u8>,
     last_lsn: u64,
@@ -456,7 +530,7 @@ fn event_to_cbor(
     let event = Event {
         event_type,
         timestamp: now,
-        relation_id: table_schema.relation_id,
+        relation_id: table_schema.map(|ts| ts.relation_id),
         data,
         last_lsn,
     };
