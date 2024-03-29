@@ -1,5 +1,6 @@
 mod replication;
 
 pub use replication::{
-    Attribute, ReplicationClient, ReplicationClientError, Row, RowEvent, Table, TableSchema,
+    Attribute, EventType, ReplicationClient, ReplicationClientError, ResumptionData, Row, RowEvent,
+    Table, TableSchema,
 };
