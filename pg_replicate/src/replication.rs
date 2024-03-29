@@ -20,6 +20,7 @@ pub struct ReplicationClient {
     slot_name: String,
     consistent_point: PgLsn,
     postgres_client: Client,
+    resume_lsn: PgLsn,
 }
 
 #[derive(Debug, Error)]
@@ -76,13 +77,16 @@ impl ReplicationClient {
         dbname: String,
         user: String,
         slot_name: String,
+        resume_lsn: Option<PgLsn>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         let postgres_client = Self::connect(&host, port, &dbname, &user).await?;
         let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
+        let resume_lsn = resume_lsn.unwrap_or(consistent_point);
         Ok(ReplicationClient {
             slot_name,
             consistent_point,
             postgres_client,
+            resume_lsn,
         })
     }
 
@@ -480,7 +484,7 @@ impl ReplicationClient {
         let options = format!("(\"proto_version\" '1', \"publication_names\" '{publication}')");
         let query = format!(
             r#"START_REPLICATION SLOT "{}" LOGICAL {} {}"#,
-            self.slot_name, self.consistent_point, options
+            self.slot_name, self.resume_lsn, options
         );
         let copy_stream = self
             .postgres_client
