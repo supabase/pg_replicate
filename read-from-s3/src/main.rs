@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = aws_sdk_s3::Client::from_conf(s3_config);
     let bucket_name = "test-rust-s3";
     read_table_copies(&client, bucket_name).await?;
-
+    print_realtime_changes(&client, bucket_name).await?;
     Ok(())
 }
 
@@ -78,7 +78,36 @@ pub async fn read_table_copies(client: &Client, bucket_name: &str) -> Result<(),
     Ok(())
 }
 
-pub async fn print_events_in_file(
+async fn print_realtime_changes(client: &Client, bucket_name: &str) -> Result<(), anyhow::Error> {
+    let s3_prefix = "realtime_changes/";
+    let objects = list_objects(client, bucket_name, s3_prefix).await?;
+    let mut realtime_files = vec![];
+    for obj in &objects {
+        let tokens: Vec<&str> = obj.key.split('/').collect();
+        if tokens.len() == 2 {
+            realtime_files.push(tokens[1]);
+        } else {
+            //todo: error?
+        }
+    }
+
+    let mut files: Vec<u32> = realtime_files
+        .iter()
+        .map(|file| {
+            let file_int: u32 = file.parse().expect("file is not an integer");
+            file_int
+        })
+        .collect();
+
+    files.sort();
+    for file in files {
+        let file_name = format!("realtime_changes/{file}");
+        print_events_in_file(client, bucket_name, &file_name).await?;
+    }
+    Ok(())
+}
+
+async fn print_events_in_file(
     client: &Client,
     bucket_name: &str,
     file_name: &str,
