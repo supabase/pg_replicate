@@ -7,6 +7,7 @@ use futures::StreamExt;
 use postgres_protocol::message::backend::{
     DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody, ReplicationMessage, UpdateBody,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::{BinaryCopyOutRow, BinaryCopyOutStream},
@@ -16,12 +17,36 @@ use tokio_postgres::{
     Client, NoTls, SimpleQueryMessage,
 };
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum EventType {
+    Begin,
+    Insert,
+    Update,
+    Delete,
+    Commit,
+    Relation,
+}
+
+#[derive(Debug)]
+pub struct ResumptionData {
+    pub resume_lsn: PgLsn,
+    pub last_event_type: EventType,
+    pub last_file_name: u32,
+    pub skipping_events: bool,
+}
+
+// pub struct ReplicationClient {
+//     slot_name: String,
+//     pub last_lsn: PgLsn,
+//     resume_lsn: Option<PgLsn>,
+//     postgres_client: Client,
+//     skipping_events: bool,
+// }
 pub struct ReplicationClient {
     slot_name: String,
-    pub last_lsn: PgLsn,
-    resume_lsn: Option<PgLsn>,
+    pub consistent_point: PgLsn,
     postgres_client: Client,
-    skipping_events: bool,
+    resumption_data: Option<ResumptionData>,
 }
 
 #[derive(Debug, Error)]
@@ -81,39 +106,69 @@ impl ReplicationClient {
         dbname: String,
         user: String,
         slot_name: String,
-        resume_lsn: Option<PgLsn>,
-        skipping_events: bool,
+        resumption_data: Option<ResumptionData>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         let postgres_client = Self::connect(&host, port, &dbname, &user).await?;
         // let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
         let consistent_point = Self::create_slot_if_missing(&postgres_client, &slot_name).await?;
-        let lsn = resume_lsn.unwrap_or(consistent_point);
-        if lsn < consistent_point {
-            return Err(ReplicationClientError::CantResume(lsn, consistent_point));
-        }
+        // let lsn = resume_lsn.unwrap_or(consistent_point);
+        // if lsn < consistent_point {
+        //     return Err(ReplicationClientError::CantResume(lsn, consistent_point));
+        // }
         Ok(ReplicationClient {
             slot_name,
-            last_lsn: lsn,
-            resume_lsn,
+            consistent_point,
             postgres_client,
-            skipping_events,
+            resumption_data,
         })
     }
 
-    pub fn should_skip(&self, lsn: PgLsn) -> bool {
-        if self.skipping_events {
-            if let Some(resume_lsn) = self.resume_lsn {
-                if lsn <= resume_lsn {
+    pub fn should_skip(&self, current_lsn: PgLsn, current_event_type: EventType) -> bool {
+        if let Some(resumption_data) = &self.resumption_data {
+            if resumption_data.skipping_events {
+                let current_lsn: u64 = current_lsn.into();
+                let resume_lsn: u64 = resumption_data.resume_lsn.into();
+                if current_lsn == 0u64 {
+                    // eprintln!("Not skipping because current_lsn is zero");
+                    return false;
+                }
+                if current_lsn < resume_lsn {
+                    // eprintln!("Skipping because current_lsn < resume_lsn");
+                    return true;
+                }
+                if current_lsn == resume_lsn
+                    && (resumption_data.last_event_type != EventType::Begin
+                        || resumption_data.last_event_type == current_event_type)
+                {
+                    // eprintln!("Skipping because current_lsn == resume_lsn ... ");
                     return true;
                 }
             }
         }
+
+        // eprintln!("Not skipping (default)");
         false
     }
 
-    pub fn stop_skipping(&mut self) {
-        self.skipping_events = false;
+    pub fn stop_skipping_events(&mut self) {
+        if let Some(resumption_data) = &mut self.resumption_data {
+            resumption_data.skipping_events = false;
+        }
     }
+    // pub fn should_skip(&self, lsn: PgLsn) -> bool {
+    //     if self.skipping_events {
+    //         if let Some(resume_lsn) = self.resume_lsn {
+    //             if lsn <= resume_lsn {
+    //                 return true;
+    //             }
+    //         }
+    //     }
+    //     false
+    // }
+
+    // pub fn stop_skipping(&mut self) {
+    //     self.skipping_events = false;
+    // }
 
     pub async fn connect(
         host: &str,
@@ -426,7 +481,8 @@ impl ReplicationClient {
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
-        let mut last_lsn = self.last_lsn;
+        // let mut last_lsn = self.last_lsn;
+        let mut last_lsn = self.consistent_point;
 
         while let Some(replication_msg) = logical_stream.next().await {
             match replication_msg? {
@@ -507,9 +563,14 @@ impl ReplicationClient {
         publication: &str,
     ) -> Result<LogicalReplicationStream, ReplicationClientError> {
         let options = format!("(\"proto_version\" '1', \"publication_names\" '{publication}')");
+        let start_lsn = if let Some(resumption_data) = &self.resumption_data {
+            resumption_data.resume_lsn
+        } else {
+            self.consistent_point
+        };
         let query = format!(
             r#"START_REPLICATION SLOT "{}" LOGICAL {} {}"#,
-            self.slot_name, self.last_lsn, options
+            self.slot_name, start_lsn, options
         );
         let copy_stream = self
             .postgres_client

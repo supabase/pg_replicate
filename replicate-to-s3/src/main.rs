@@ -10,7 +10,9 @@ use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3 as s3;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::StreamExt;
-use pg_replicate::{ReplicationClient, ReplicationClientError, TableSchema};
+use pg_replicate::{
+    EventType, ReplicationClient, ReplicationClientError, ResumptionData, TableSchema,
+};
 use postgres_protocol::message::backend::{
     BeginBody, LogicalReplicationMessage, RelationBody, ReplicationMessage, Tuple, TupleData,
 };
@@ -26,16 +28,6 @@ use tokio_postgres::{
     binary_copy::BinaryCopyOutRow,
     types::{PgLsn, Type},
 };
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-enum EventType {
-    Begin,
-    Relation,
-    Insert,
-    Update,
-    Delete,
-    Commit,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Event {
@@ -60,17 +52,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let bucket_name = "test-rust-s3";
     let resumption_data = get_relatime_resumption_data(&client, bucket_name).await?;
-    let last_lsn = resumption_data.map(|(lsn, _, _)| lsn.into());
-    let data_chunk_count = resumption_data.map(|(_, _, c)| c);
-    let last_event_type = resumption_data.map(|(_, et, _)| et);
+    // let last_lsn = resumption_data.map(|(lsn, _, _)| lsn);
+    // let data_chunk_count = resumption_data.map(|(_, _, c)| c);
+    let data_chunk_count = resumption_data.as_ref().map(|rd| rd.last_file_name);
+    // let last_event_type = resumption_data.map(|(_, et, _)| et);
     let mut repl_client = ReplicationClient::new(
         "localhost".to_string(),
         8080,
         "pagila".to_string(),
         "raminder.singh".to_string(),
         "temp_slot".to_string(),
-        last_lsn,
-        !matches!(last_event_type, Some(EventType::Commit)),
+        resumption_data, // last_lsn,
+                         // !matches!(last_event_type, Some(EventType::Commit)),
     )
     .await?;
 
@@ -154,7 +147,7 @@ async fn copy_table(
 async fn get_relatime_resumption_data(
     client: &Client,
     bucket_name: &str,
-) -> Result<Option<(u64, EventType, u32)>, anyhow::Error> {
+) -> Result<Option<ResumptionData>, anyhow::Error> {
     let s3_prefix = "realtime_changes/";
     let objects = list_objects(client, bucket_name, s3_prefix).await?;
     if objects.is_empty() {
@@ -202,7 +195,17 @@ async fn get_relatime_resumption_data(
     }
     let event: Event = serde_cbor::from_reader(v)?;
 
-    Ok(Some((event.last_lsn, event.event_type, last_file_name)))
+    Ok(Some(ResumptionData {
+        resume_lsn: event.last_lsn.into(),
+        last_event_type: event.event_type,
+        last_file_name,
+        skipping_events: event.event_type != EventType::Commit,
+    }))
+    // Ok(Some((
+    //     event.last_lsn.into(),
+    //     event.event_type,
+    //     last_file_name,
+    // )))
 }
 
 async fn copy_realtime_changes(
@@ -223,6 +226,7 @@ async fn copy_realtime_changes(
     let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
     let mut data_chunk_buf = vec![];
+    let mut last_lsn = repl_client.consistent_point;
 
     while let Some(replication_msg) = logical_stream.next().await {
         match replication_msg? {
@@ -230,7 +234,7 @@ async fn copy_realtime_changes(
                 let wal_end_lsn: PgLsn = xlog_data.wal_end().into();
                 match xlog_data.into_data() {
                     LogicalReplicationMessage::Begin(begin) => {
-                        if repl_client.should_skip(wal_end_lsn) {
+                        if repl_client.should_skip(wal_end_lsn, EventType::Begin) {
                             continue;
                         }
                         let data = begin_body_to_event_data(&begin);
@@ -240,7 +244,7 @@ async fn copy_realtime_changes(
                             None,
                             data,
                             &mut data_chunk_buf,
-                            repl_client.last_lsn.into(),
+                            last_lsn.into(),
                         )?;
                         try_save_data_chunk(
                             &mut row_count,
@@ -252,15 +256,15 @@ async fn copy_realtime_changes(
                         .await?;
                     }
                     LogicalReplicationMessage::Commit(commit) => {
-                        if repl_client.should_skip(wal_end_lsn) {
-                            repl_client.stop_skipping();
+                        if repl_client.should_skip(wal_end_lsn, EventType::Commit) {
+                            repl_client.stop_skipping_events();
                             continue;
                         }
-                        repl_client.last_lsn = commit.commit_lsn().into();
+                        last_lsn = commit.commit_lsn().into();
                     }
                     LogicalReplicationMessage::Origin(_) => {}
                     LogicalReplicationMessage::Relation(relation) => {
-                        if repl_client.should_skip(wal_end_lsn) {
+                        if repl_client.should_skip(wal_end_lsn, EventType::Relation) {
                             continue;
                         }
                         match rel_id_to_schema.get(&relation.rel_id()) {
@@ -272,7 +276,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    repl_client.last_lsn.into(),
+                                    last_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
@@ -292,7 +296,7 @@ async fn copy_realtime_changes(
                     }
                     LogicalReplicationMessage::Type(_) => {}
                     LogicalReplicationMessage::Insert(insert) => {
-                        if repl_client.should_skip(wal_end_lsn) {
+                        if repl_client.should_skip(wal_end_lsn, EventType::Insert) {
                             continue;
                         }
                         match rel_id_to_schema.get(&insert.rel_id()) {
@@ -304,7 +308,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    repl_client.last_lsn.into(),
+                                    last_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
@@ -323,7 +327,7 @@ async fn copy_realtime_changes(
                         }
                     }
                     LogicalReplicationMessage::Update(update) => {
-                        if repl_client.should_skip(wal_end_lsn) {
+                        if repl_client.should_skip(wal_end_lsn, EventType::Update) {
                             continue;
                         }
                         match rel_id_to_schema.get(&update.rel_id()) {
@@ -335,7 +339,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    repl_client.last_lsn.into(),
+                                    last_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
@@ -354,7 +358,7 @@ async fn copy_realtime_changes(
                         }
                     }
                     LogicalReplicationMessage::Delete(delete) => {
-                        if repl_client.should_skip(wal_end_lsn) {
+                        if repl_client.should_skip(wal_end_lsn, EventType::Delete) {
                             continue;
                         }
                         match rel_id_to_schema.get(&delete.rel_id()) {
@@ -370,7 +374,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    repl_client.last_lsn.into(),
+                                    last_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
@@ -401,13 +405,7 @@ async fn copy_realtime_changes(
                     let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
                     logical_stream
                         .as_mut()
-                        .standby_status_update(
-                            repl_client.last_lsn,
-                            repl_client.last_lsn,
-                            repl_client.last_lsn,
-                            ts,
-                            0,
-                        )
+                        .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)
                         .await?;
                 }
             }
