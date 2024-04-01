@@ -245,7 +245,7 @@ async fn copy_realtime_changes(
                             None,
                             data,
                             &mut data_chunk_buf,
-                            last_lsn.into(),
+                            wal_end_lsn.into(),
                         )?;
                         try_save_data_chunk(
                             &mut row_count,
@@ -268,7 +268,7 @@ async fn copy_realtime_changes(
                             None,
                             data,
                             &mut data_chunk_buf,
-                            last_lsn.into(),
+                            wal_end_lsn.into(),
                         )?;
                         try_save_data_chunk(
                             &mut row_count,
@@ -294,7 +294,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    last_lsn.into(),
+                                    wal_end_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
@@ -326,7 +326,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    last_lsn.into(),
+                                    wal_end_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
@@ -357,7 +357,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    last_lsn.into(),
+                                    wal_end_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
@@ -392,7 +392,7 @@ async fn copy_realtime_changes(
                                     Some(schema),
                                     data,
                                     &mut data_chunk_buf,
-                                    last_lsn.into(),
+                                    wal_end_lsn.into(),
                                 )?;
                                 try_save_data_chunk(
                                     &mut row_count,
