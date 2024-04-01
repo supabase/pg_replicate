@@ -14,7 +14,8 @@ use pg_replicate::{
     EventType, ReplicationClient, ReplicationClientError, ResumptionData, TableSchema,
 };
 use postgres_protocol::message::backend::{
-    BeginBody, LogicalReplicationMessage, RelationBody, ReplicationMessage, Tuple, TupleData,
+    BeginBody, CommitBody, LogicalReplicationMessage, RelationBody, ReplicationMessage, Tuple,
+    TupleData,
 };
 use s3::{
     config::Credentials,
@@ -260,6 +261,23 @@ async fn copy_realtime_changes(
                             repl_client.stop_skipping_events();
                             continue;
                         }
+                        let data = commit_body_to_event_data(&commit);
+                        let event_type = EventType::Commit;
+                        event_to_cbor(
+                            event_type,
+                            None,
+                            data,
+                            &mut data_chunk_buf,
+                            last_lsn.into(),
+                        )?;
+                        try_save_data_chunk(
+                            &mut row_count,
+                            &mut data_chunk_count,
+                            client,
+                            &mut data_chunk_buf,
+                            bucket_name,
+                        )
+                        .await?;
                         last_lsn = commit.commit_lsn().into();
                     }
                     LogicalReplicationMessage::Origin(_) => {}
@@ -447,6 +465,27 @@ fn begin_body_to_event_data(begin: &BeginBody) -> Value {
     map.insert(
         Value::Text("xid".to_string()),
         Value::Integer(begin.xid().into()),
+    );
+    Value::Map(map)
+}
+
+fn commit_body_to_event_data(commit: &CommitBody) -> Value {
+    let mut map = BTreeMap::new();
+    map.insert(
+        Value::Text("commit_lsn".to_string()),
+        Value::Integer(commit.commit_lsn().into()),
+    );
+    map.insert(
+        Value::Text("end_lsn".to_string()),
+        Value::Integer(commit.end_lsn().into()),
+    );
+    map.insert(
+        Value::Text("timestamp".to_string()),
+        Value::Integer(commit.timestamp().into()),
+    );
+    map.insert(
+        Value::Text("flags".to_string()),
+        Value::Integer(commit.flags().into()),
     );
     Value::Map(map)
 }
