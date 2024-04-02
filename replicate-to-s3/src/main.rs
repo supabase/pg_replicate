@@ -247,14 +247,18 @@ async fn copy_realtime_changes(
                             &mut data_chunk_buf,
                             wal_end_lsn.into(),
                         )?;
-                        try_save_data_chunk(
+                        if try_save_data_chunk(
                             &mut row_count,
                             &mut data_chunk_count,
                             client,
                             &mut data_chunk_buf,
                             bucket_name,
                         )
-                        .await?;
+                        .await?
+                            && wal_end_lsn != 0.into()
+                        {
+                            last_lsn = wal_end_lsn
+                        }
                     }
                     LogicalReplicationMessage::Commit(commit) => {
                         if repl_client.should_skip(wal_end_lsn, EventType::Commit) {
@@ -270,15 +274,18 @@ async fn copy_realtime_changes(
                             &mut data_chunk_buf,
                             wal_end_lsn.into(),
                         )?;
-                        try_save_data_chunk(
+                        if try_save_data_chunk(
                             &mut row_count,
                             &mut data_chunk_count,
                             client,
                             &mut data_chunk_buf,
                             bucket_name,
                         )
-                        .await?;
-                        last_lsn = commit.commit_lsn().into();
+                        .await?
+                            && wal_end_lsn != 0.into()
+                        {
+                            last_lsn = wal_end_lsn;
+                        }
                     }
                     LogicalReplicationMessage::Origin(_) => {}
                     LogicalReplicationMessage::Relation(relation) => {
@@ -296,14 +303,18 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                try_save_data_chunk(
+                                if try_save_data_chunk(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                 )
-                                .await?;
+                                .await?
+                                    && wal_end_lsn != 0.into()
+                                {
+                                    last_lsn = wal_end_lsn;
+                                }
                             }
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
@@ -328,14 +339,18 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                try_save_data_chunk(
+                                if try_save_data_chunk(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                 )
-                                .await?;
+                                .await?
+                                    && wal_end_lsn != 0.into()
+                                {
+                                    last_lsn = wal_end_lsn;
+                                }
                             }
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
@@ -359,14 +374,18 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                try_save_data_chunk(
+                                if try_save_data_chunk(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                 )
-                                .await?;
+                                .await?
+                                    && wal_end_lsn != 0.into()
+                                {
+                                    last_lsn = wal_end_lsn;
+                                }
                             }
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
@@ -394,14 +413,18 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                try_save_data_chunk(
+                                if try_save_data_chunk(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                 )
-                                .await?;
+                                .await?
+                                    && wal_end_lsn != 0.into()
+                                {
+                                    last_lsn = wal_end_lsn;
+                                }
                             }
                             None => {
                                 return Err(ReplicationClientError::RelationIdNotFound(
@@ -440,7 +463,7 @@ async fn try_save_data_chunk(
     client: &Client,
     data_chunk_buf: &mut Vec<u8>,
     bucket_name: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<bool, anyhow::Error> {
     *row_count += 1;
     if *row_count == ROWS_PER_DATA_CHUNK {
         *data_chunk_count += 1;
@@ -448,8 +471,10 @@ async fn try_save_data_chunk(
         save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
         data_chunk_buf.clear();
         *row_count = 0;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-    Ok(())
 }
 
 fn begin_body_to_event_data(begin: &BeginBody) -> Value {
