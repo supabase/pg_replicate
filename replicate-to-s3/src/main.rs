@@ -53,18 +53,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let bucket_name = "test-rust-s3";
     let resumption_data = get_relatime_resumption_data(&client, bucket_name).await?;
-    // let last_lsn = resumption_data.map(|(lsn, _, _)| lsn);
-    // let data_chunk_count = resumption_data.map(|(_, _, c)| c);
     let data_chunk_count = resumption_data.as_ref().map(|rd| rd.last_file_name);
-    // let last_event_type = resumption_data.map(|(_, et, _)| et);
     let mut repl_client = ReplicationClient::new(
         "localhost".to_string(),
         8080,
         "pagila".to_string(),
         "raminder.singh".to_string(),
         "temp_slot".to_string(),
-        resumption_data, // last_lsn,
-                         // !matches!(last_event_type, Some(EventType::Commit)),
+        resumption_data,
     )
     .await?;
 
@@ -202,11 +198,6 @@ async fn get_relatime_resumption_data(
         last_file_name,
         skipping_events: event.event_type != EventType::Commit,
     }))
-    // Ok(Some((
-    //     event.last_lsn.into(),
-    //     event.event_type,
-    //     last_file_name,
-    // )))
 }
 
 async fn copy_realtime_changes(
