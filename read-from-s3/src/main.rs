@@ -51,12 +51,11 @@ pub async fn read_table_copies(client: &Client, bucket_name: &str) -> Result<(),
     }
 
     for (key, (done, files)) in table_copy_files {
-        print!("Table {key} ");
-        if done {
-            print!("is ");
-        } else {
-            print!("is not ");
+        if !done {
+            println!("Table {key} is not fully copied.");
+            return Ok(());
         }
+        print!("Table {key} is fully copied with the following files:");
         println!("fully copied with the following files:");
         let mut files: Vec<u32> = files
             .iter()
