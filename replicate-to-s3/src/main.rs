@@ -619,6 +619,10 @@ fn table_schema_to_event_data(table_schema: &TableSchema) -> Value {
                 Value::Bool(attribute.identity),
             );
             map.insert(
+                Value::Text("nullable".to_string()),
+                Value::Bool(attribute.nullable),
+            );
+            map.insert(
                 Value::Text("type_id".to_string()),
                 Value::Integer(attribute.typ.oid() as i128),
             );
