@@ -104,6 +104,22 @@ async fn copy_table(
 
     let mut data_chunk_buf = vec![];
 
+    let path_prefix = format!(
+        "table_copies/{}.{}",
+        table_schema.table.schema, table_schema.table.name
+    );
+
+    write_table_schema_to_buf(table_schema, &mut data_chunk_buf).await?;
+    try_save_data_chunk(
+        &mut row_count,
+        &mut data_chunk_count,
+        client,
+        &mut data_chunk_buf,
+        bucket_name,
+        &path_prefix,
+    )
+    .await?;
+
     let types = table_schema
         .attributes
         .iter()
@@ -114,25 +130,20 @@ async fn copy_table(
     while let Some(row) = rows.next().await {
         let row = row?;
         binary_copy_out_row_to_cbor_buf(row, table_schema, &mut data_chunk_buf)?;
-        row_count += 1;
-        if row_count == ROWS_PER_DATA_CHUNK {
-            data_chunk_count += 1;
-            let s3_path = format!(
-                "table_copies/{}.{}/{}",
-                table_schema.table.schema, table_schema.table.name, data_chunk_count
-            );
-            save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
-            data_chunk_buf.clear();
-            row_count = 0;
-        }
+        try_save_data_chunk(
+            &mut row_count,
+            &mut data_chunk_count,
+            client,
+            &mut data_chunk_buf,
+            bucket_name,
+            &path_prefix,
+        )
+        .await?;
     }
 
     if !data_chunk_buf.is_empty() {
         data_chunk_count += 1;
-        let s3_path = format!(
-            "table_copies/{}.{}/{}",
-            table_schema.table.schema, table_schema.table.name, data_chunk_count
-        );
+        let s3_path = format!("{path_prefix}/{}", data_chunk_count);
         save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
     }
 
@@ -219,6 +230,7 @@ async fn copy_realtime_changes(
 
     let mut data_chunk_buf = vec![];
     let mut last_lsn = repl_client.consistent_point;
+    const REALTIME_CHANGES_PATH_PREFIX: &str = "realtime_changes";
 
     while let Some(replication_msg) = logical_stream.next().await {
         match replication_msg? {
@@ -244,6 +256,7 @@ async fn copy_realtime_changes(
                             client,
                             &mut data_chunk_buf,
                             bucket_name,
+                            REALTIME_CHANGES_PATH_PREFIX,
                         )
                         .await?
                             && wal_end_lsn != 0.into()
@@ -271,6 +284,7 @@ async fn copy_realtime_changes(
                             client,
                             &mut data_chunk_buf,
                             bucket_name,
+                            REALTIME_CHANGES_PATH_PREFIX,
                         )
                         .await?
                             && wal_end_lsn != 0.into()
@@ -300,6 +314,7 @@ async fn copy_realtime_changes(
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
+                                    REALTIME_CHANGES_PATH_PREFIX,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -336,6 +351,7 @@ async fn copy_realtime_changes(
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
+                                    REALTIME_CHANGES_PATH_PREFIX,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -371,6 +387,7 @@ async fn copy_realtime_changes(
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
+                                    REALTIME_CHANGES_PATH_PREFIX,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -410,6 +427,7 @@ async fn copy_realtime_changes(
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
+                                    REALTIME_CHANGES_PATH_PREFIX,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -454,11 +472,12 @@ async fn try_save_data_chunk(
     client: &Client,
     data_chunk_buf: &mut Vec<u8>,
     bucket_name: &str,
+    path_prefix: &str,
 ) -> Result<bool, anyhow::Error> {
     *row_count += 1;
     if *row_count == ROWS_PER_DATA_CHUNK {
         *data_chunk_count += 1;
-        let s3_path = format!("realtime_changes/{}", data_chunk_count);
+        let s3_path = format!("{path_prefix}/{data_chunk_count}");
         save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
         data_chunk_buf.clear();
         *row_count = 0;
@@ -570,6 +589,57 @@ fn binary_copy_out_row_to_cbor_buf(
     data_chunk_buf.write_all(&event_buf.len().to_be_bytes())?;
     data_chunk_buf.write_all(&event_buf)?;
     Ok(())
+}
+
+async fn write_table_schema_to_buf(
+    table_schema: &TableSchema,
+    data_chunk_buf: &mut Vec<u8>,
+) -> Result<(), anyhow::Error> {
+    let data = table_schema_to_event_data(table_schema);
+    let event_type = EventType::Schema;
+    event_to_cbor(event_type, Some(table_schema), data, data_chunk_buf, 0)?;
+    Ok(())
+}
+
+fn table_schema_to_event_data(table_schema: &TableSchema) -> Value {
+    let schema = &table_schema.table.schema;
+    let table = &table_schema.table.name;
+    let cols = table_schema
+        .attributes
+        .iter()
+        .map(|attribute| {
+            let name = attribute.name.to_string();
+            let mut map = BTreeMap::new();
+            map.insert(
+                Value::Text("name".to_string()),
+                Value::Text(name.to_string()),
+            );
+            map.insert(
+                Value::Text("identity".to_string()),
+                Value::Bool(attribute.identity),
+            );
+            map.insert(
+                Value::Text("type_id".to_string()),
+                Value::Integer(attribute.typ.oid() as i128),
+            );
+            map.insert(
+                Value::Text("type_modifier".to_string()),
+                Value::Integer(attribute.type_modifier as i128),
+            );
+            Value::Map(map)
+        })
+        .collect();
+    let mut map = BTreeMap::new();
+    map.insert(
+        Value::Text("schema".to_string()),
+        Value::Text(schema.to_string()),
+    );
+    map.insert(
+        Value::Text("table".to_string()),
+        Value::Text(table.to_string()),
+    );
+    map.insert(Value::Text("columns".to_string()), Value::Array(cols));
+    Value::Map(map)
 }
 
 fn event_to_cbor(

@@ -25,6 +25,7 @@ pub enum EventType {
     Delete,
     Commit,
     Relation,
+    Schema,
 }
 
 #[derive(Debug)]
