@@ -1,5 +1,5 @@
 [package]
-name = "read-from-s3"
+name = "s3-to-stdout"
 version = "0.1.0"
 edition = "2021"
 
