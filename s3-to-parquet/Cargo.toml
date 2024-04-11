@@ -1,0 +1,21 @@
+[package]
+name = "s3-to-parquet"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.20.0"
+anyhow = "1.0"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.11"
+pg_replicate = { path = "../pg_replicate" }
+chrono = { version = "0.4", features = ["serde"] }
+parquet = "50"
+arrow-array = "50"
+tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", features = [
+    "with-chrono-0_4",
+] }
