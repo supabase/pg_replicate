@@ -15,19 +15,15 @@ use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::{config::Credentials, types::ObjectIdentifier, Client};
 use chrono::{DateTime, Utc};
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
-// use main_old::{list_objects, AttributesAndBuilders, ColumnDescriptor, Event};
 use pg_replicate::EventType;
 use serde::{Deserialize, Serialize};
 use serde_cbor::Value;
-
-mod main_old;
 
 pub struct ColumnDescriptor {
     pub name: String,
     pub type_id: u32,
     pub identity: bool,
     pub nullable: bool,
-    // type_modifier: i32,
 }
 
 pub type AttributesAndBuilders = (
@@ -46,7 +42,6 @@ pub struct Event {
 }
 
 struct Row<'a> {
-    // schema: &'a TableSchema,
     attributes: &'a [ColumnDescriptor],
     data: &'a Value,
 }
@@ -104,14 +99,6 @@ impl<'a> PartialEq for Row<'a> {
 impl<'a> PartialOrd for Row<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-        // for attr in self.attributes {
-        //     if attr.identity {
-        //         let this = self.get_identity_col(attr);
-        //         let other = other.get_identity_col(attr);
-        //         return this.partial_cmp(&other);
-        //     }
-        // }
-        // None
     }
 }
 
@@ -172,18 +159,14 @@ impl<'a> PartialEq for HashedValue<'a> {
             (Value::Bytes(b1), Value::Bytes(b2)) => b1 == b2,
             (Value::Float(f1), Value::Float(f2)) => f1 == f2,
             (Value::Integer(i1), Value::Integer(i2)) => i1 == i2,
-            // (Value::Number(n1), Value::Number(n2)) => n1 == n2,
-            // (Value::String(s1), Value::String(s2)) => s1 == s2,
             (Value::Text(t1), Value::Text(t2)) => t1 == t2,
             (Value::Array(a1), Value::Array(a2)) => a1 == a2,
-            // (Value::Object(o1), Value::Object(o2)) => o1 == o2,
             _ => false,
         }
     }
 }
 
 #[tokio::main]
-// async fn main() {
 async fn main() -> Result<(), Box<dyn Error>> {
     let credentials = Credentials::new("admin", "password", None, None, "example");
     let s3_config = aws_sdk_s3::config::Builder::new()
@@ -202,23 +185,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     get_events_from_realtime_changes(&client, bucket_name, &mut relation_id_to_events).await?;
 
     for (relation_id, events) in relation_id_to_events {
-        // println!("Relation ID: {relation_id}");
         let (attributes, mut builders) = relation_id_to_table_data
             .remove(&relation_id)
             .expect("failed to get table data");
-        // let (attributes, mut builders) = relation_id_to_table_data
-        //     .get(&relation_id)
-        //     .expect("failed to get table data");
-        // for event in &events {
-        //     println!("{event:#?}");
-        // }
         let mut rows = BTreeMap::new();
         for event in &events {
             if event.event_type == EventType::Insert || event.event_type == EventType::Update {
-                // let relation_id = event.relation_id;
-                // let schema = relation_id_to_table_schema
-                //     .get(&relation_id)
-                //     .expect("missing schema for relation_id");
                 let row_key = Row {
                     attributes: &attributes,
                     data: &event.data,
@@ -229,10 +201,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
                 rows.insert(row_key, row_value);
             } else if event.event_type == EventType::Delete {
-                // let relation_id = event.relation_id;
-                // let schema = relation_id_to_table_schema
-                //     .get(&relation_id)
-                //     .expect("missing schema for relation_id");
                 let row_key = Row {
                     attributes: &attributes,
                     data: &event.data,
@@ -241,9 +209,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         for row in rows.values() {
-            // let builders = column_builders
-            //     .get_mut(&row.schema.table)
-            //     .expect("no builder found");
             let data = if let Value::Map(data) = row.data {
                 data
             } else {
@@ -252,10 +217,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             insert_in_col(&attributes, &mut builders, data);
         }
 
-        // for (table, builders) in column_builders {
         let batch = create_record_batch(builders);
         write_parquet(batch, &format!("./{relation_id}.parquet"));
-        // }
     }
 
     Ok(())
@@ -371,7 +334,6 @@ async fn get_events_from_table_copies(
     client: &Client,
     bucket_name: &str,
     relation_id_to_events: &mut HashMap<u32, Vec<Event>>,
-    // ) -> Result<HashMap<u32, Vec<Event>>, anyhow::Error> {
 ) -> Result<
     HashMap<u32, (Vec<ColumnDescriptor>, Vec<(String, Box<dyn ArrayBuilder>)>)>,
     anyhow::Error,
@@ -423,14 +385,9 @@ async fn get_events_from_table_copies(
                 );
                 table_data_initialized.insert(key);
             }
-            // if let Some(relation_id) = relation_id {
-            //     let events = relation_id_to_events.entry(relation_id).or_default();
-            //     events.extend(new_events);
-            // }
         }
     }
 
-    // Ok(relation_id_to_events)
     Ok(relation_id_to_table_data)
 }
 
@@ -439,10 +396,6 @@ async fn get_events_from_file(
     bucket_name: &str,
     file_name: &str,
     relation_id_to_events: &mut HashMap<u32, Vec<Event>>,
-    // attributes: &[ColumnDescriptor],
-    // builders: &mut [(String, Box<dyn ArrayBuilder>)],
-    // rows: &mut HashMap<Row<'_>, Row<'_>>,
-    // ) -> Result<(Option<u32>, Vec<Event>), anyhow::Error> {
 ) -> Result<(), anyhow::Error> {
     let mut file_contents = client
         .get_object()
@@ -456,11 +409,6 @@ async fn get_events_from_file(
         v.write_all(&bytes)?;
     }
 
-    // let mut column_descriptors_and_builders: Option<AttributesAndBuilders> = None;
-
-    // let mut events = Vec::new();
-    // let mut relation_id = None;
-
     let mut start = 0;
     loop {
         let size: [u8; 8] = (&v[start..start + 8]).try_into()?;
@@ -468,10 +416,6 @@ async fn get_events_from_file(
         let new_start = start + 8 + size;
         let event_data = &v[start + 8..new_start];
         let event: Event = serde_cbor::from_reader(event_data)?;
-        // if relation_id.is_none() {
-        //     relation_id = event.relation_id;
-        // }
-        // println!("{event:#?}");
         if event.event_type == EventType::Insert
             || event.event_type == EventType::Update
             || event.event_type == EventType::Delete
@@ -481,37 +425,12 @@ async fn get_events_from_file(
                 .or_default();
             events.push(event);
         }
-        // if event.event_type == EventType::Insert {
-        //     if let Value::Map(row) = &event.data {
-        //         insert_in_col(attributes, builders, row);
-        //     } else {
-        //         panic!("event data must be a map");
-        //     }
-        // }
-        // if let Some((attributes, builders)) = column_descriptors_and_builders {
-        //     if event.event_type != EventType::Insert {
-        //         panic!("table copies must have only insert events");
-        //     }
-        //     if let Value::Map(row) = &event.data {
-        //         let builders = insert_in_col(&attributes, builders, row);
-        //         column_descriptors_and_builders = Some((attributes, builders));
-        //     } else {
-        //         panic!("event data must be a map");
-        //     }
-        // } else {
-        //     let column_descriptors = read_column_descriptors(&event);
-        //     let column_builders = create_column_builders_for_table(&column_descriptors);
-
-        //     column_descriptors_and_builders = Some((column_descriptors, column_builders));
-        // }
-        // println!("Event: {event:#?}");
         start = new_start;
         if v.len() <= new_start {
             break;
         }
     }
 
-    // Ok((relation_id, events))
     Ok(())
 }
 
@@ -588,16 +507,6 @@ fn read_column_descriptors(event: &Event) -> Vec<ColumnDescriptor> {
                                 panic!("nullable is not a boolean");
                             };
 
-                            // let type_modifier = m
-                            //     .get(&Value::Text("type_modifier".to_string()))
-                            //     .expect("failed to get type_modifier");
-                            // let type_modifier = if let Value::Integer(type_modifier) = type_modifier
-                            // {
-                            //     *type_modifier as i32
-                            // } else {
-                            //     panic!("type_modifier is not an integer");
-                            // };
-
                             ColumnDescriptor {
                                 name,
                                 type_id,
@@ -642,7 +551,6 @@ fn create_column_builders_for_table(
 async fn get_events_from_realtime_changes(
     client: &Client,
     bucket_name: &str,
-    // max_events: u32,
     relation_id_to_events: &mut HashMap<u32, Vec<Event>>,
 ) -> Result<(), anyhow::Error> {
     let s3_prefix = "realtime_changes/";
@@ -668,7 +576,6 @@ async fn get_events_from_realtime_changes(
     files.sort();
     for file in files {
         let file_name = format!("realtime_changes/{file}");
-        // print_events_in_file(client, bucket_name, &file_name).await?;
         get_events_from_file(client, bucket_name, &file_name, relation_id_to_events).await?;
     }
 
