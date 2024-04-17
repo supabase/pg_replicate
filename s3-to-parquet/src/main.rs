@@ -70,8 +70,34 @@ impl<'a> PartialEq for Row<'a> {
     fn eq(&self, other: &Self) -> bool {
         for attr in self.attributes {
             if attr.identity {
-                let this = HashedValue { value: self.data };
-                let other = HashedValue { value: other.data };
+                let this = if let Value::Map(m) = self.data {
+                    if let Some(value) = m.get(&Value::Text(attr.name.clone())) {
+                        if let Value::Integer(i) = value {
+                            i
+                        } else {
+                            panic!("identity is not integer");
+                        }
+                    } else {
+                        panic!("attribute not found");
+                    }
+                } else {
+                    panic!("identity is not a map in eq");
+                };
+                let other = if let Value::Map(m) = other.data {
+                    if let Some(value) = m.get(&Value::Text(attr.name.clone())) {
+                        if let Value::Integer(i) = value {
+                            i
+                        } else {
+                            panic!("identity is not integer");
+                        }
+                    } else {
+                        panic!("attribute not found");
+                    }
+                } else {
+                    panic!("identity is not a map in eq");
+                };
+                // let this = HashedValue { value: self.data };
+                // let other = HashedValue { value: other.data };
                 if this != other {
                     return false;
                 }
@@ -122,6 +148,9 @@ impl<'a> PartialEq for HashedValue<'a> {
         match (self.value, other.value) {
             (Value::Null, Value::Null) => true,
             (Value::Bool(b1), Value::Bool(b2)) => b1 == b2,
+            (Value::Bytes(b1), Value::Bytes(b2)) => b1 == b2,
+            (Value::Float(f1), Value::Float(f2)) => f1 == f2,
+            (Value::Integer(i1), Value::Integer(i2)) => i1 == i2,
             // (Value::Number(n1), Value::Number(n2)) => n1 == n2,
             // (Value::String(s1), Value::String(s2)) => s1 == s2,
             (Value::Text(t1), Value::Text(t2)) => t1 == t2,
