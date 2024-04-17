@@ -44,10 +44,30 @@ pub struct Event {
     pub last_lsn: u64,
     pub data: Value,
 }
+
 struct Row<'a> {
     // schema: &'a TableSchema,
     attributes: &'a [ColumnDescriptor],
     data: &'a Value,
+}
+
+impl<'a> Row<'a> {
+    fn get_identity_col(&self, attr: &ColumnDescriptor) -> i128 {
+        let this = if let Value::Map(m) = self.data {
+            if let Some(value) = m.get(&Value::Text(attr.name.clone())) {
+                if let Value::Integer(i) = value {
+                    i
+                } else {
+                    panic!("identity is not integer");
+                }
+            } else {
+                panic!("attribute not found");
+            }
+        } else {
+            panic!("identity is not a map in eq");
+        };
+        *this
+    }
 }
 
 impl<'a> Hash for Row<'a> {
@@ -70,40 +90,41 @@ impl<'a> PartialEq for Row<'a> {
     fn eq(&self, other: &Self) -> bool {
         for attr in self.attributes {
             if attr.identity {
-                let this = if let Value::Map(m) = self.data {
-                    if let Some(value) = m.get(&Value::Text(attr.name.clone())) {
-                        if let Value::Integer(i) = value {
-                            i
-                        } else {
-                            panic!("identity is not integer");
-                        }
-                    } else {
-                        panic!("attribute not found");
-                    }
-                } else {
-                    panic!("identity is not a map in eq");
-                };
-                let other = if let Value::Map(m) = other.data {
-                    if let Some(value) = m.get(&Value::Text(attr.name.clone())) {
-                        if let Value::Integer(i) = value {
-                            i
-                        } else {
-                            panic!("identity is not integer");
-                        }
-                    } else {
-                        panic!("attribute not found");
-                    }
-                } else {
-                    panic!("identity is not a map in eq");
-                };
-                // let this = HashedValue { value: self.data };
-                // let other = HashedValue { value: other.data };
+                let this = self.get_identity_col(attr);
+                let other = other.get_identity_col(attr);
                 if this != other {
                     return false;
                 }
             }
         }
         true
+    }
+}
+
+impl<'a> PartialOrd for Row<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+        // for attr in self.attributes {
+        //     if attr.identity {
+        //         let this = self.get_identity_col(attr);
+        //         let other = other.get_identity_col(attr);
+        //         return this.partial_cmp(&other);
+        //     }
+        // }
+        // None
+    }
+}
+
+impl<'a> Ord for Row<'a> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        for attr in self.attributes {
+            if attr.identity {
+                let this = self.get_identity_col(attr);
+                let other = other.get_identity_col(attr);
+                return this.cmp(&other);
+            }
+        }
+        panic!("");
     }
 }
 
@@ -191,7 +212,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // for event in &events {
         //     println!("{event:#?}");
         // }
-        let mut rows = HashMap::new();
+        let mut rows = BTreeMap::new();
         for event in &events {
             if event.event_type == EventType::Insert || event.event_type == EventType::Update {
                 // let relation_id = event.relation_id;
