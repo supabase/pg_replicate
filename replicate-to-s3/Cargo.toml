@@ -7,3 +7,16 @@ edition = "2021"
 
 [dependencies]
 pg_replicate = { path = "../pg_replicate" }
+tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", features = [
+    "with-chrono-0_4",
+] }
+postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres" }
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.20.0"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.11"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+anyhow = "1.0"
+clap = { version = "4.5.4", features = ["derive"] }

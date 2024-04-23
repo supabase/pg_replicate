@@ -1,7 +1,7 @@
 use std::{collections::HashMap, error::Error, str::from_utf8};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use pg_replicate::{EventType, ReplicationClient, ResumptionData, RowEvent, TableSchema};
+use pg_replicate::{ReplicationClient, RowEvent, TableSchema};
 use postgres_protocol::message::backend::{RelationBody, Tuple, TupleData};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -17,23 +17,13 @@ struct Event {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let resume_lsn_str = "0/345EC20";
-    // let resume_lsn_str = "0/3462390";
-    // let resume_lsn_str = "0/34623C0";
-    let resume_lsn = resume_lsn_str.parse().expect("failed to parse resume lsn");
-    let last_event_type = EventType::Begin;
-    let skipping_events = last_event_type != EventType::Commit;
-    let mut repl_client = ReplicationClient::new(
+    let repl_client = ReplicationClient::new(
         "localhost".to_string(),
         8080,
         "pagila".to_string(),
         "raminder.singh".to_string(),
         "temp_slot".to_string(),
-        Some(ResumptionData {
-            resume_lsn,
-            last_event_type,
-            skipping_events,
-        }),
+        None,
     )
     .await?;
 
