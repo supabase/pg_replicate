@@ -15,6 +15,7 @@ aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.20.0"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
+# TODO: replace serde_cbor with another library as it is not maintained
 serde_cbor = "0.11"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
