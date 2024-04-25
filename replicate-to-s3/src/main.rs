@@ -225,7 +225,7 @@ async fn copy_realtime_changes(
                                 let event_type = EventType::Relation;
                                 event_to_cbor(
                                     event_type,
-                                    Some(schema),
+                                    Some(schema.relation_id),
                                     data,
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
@@ -262,7 +262,7 @@ async fn copy_realtime_changes(
                                 let event_type = EventType::Insert;
                                 event_to_cbor(
                                     event_type,
-                                    Some(schema),
+                                    Some(schema.relation_id),
                                     data,
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
@@ -298,7 +298,7 @@ async fn copy_realtime_changes(
                                 let event_type = EventType::Update;
                                 event_to_cbor(
                                     event_type,
-                                    Some(schema),
+                                    Some(schema.relation_id),
                                     data,
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
@@ -338,7 +338,7 @@ async fn copy_realtime_changes(
                                 let event_type = EventType::Delete;
                                 event_to_cbor(
                                     event_type,
-                                    Some(schema),
+                                    Some(schema.relation_id),
                                     data,
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
@@ -390,6 +390,7 @@ async fn copy_realtime_changes(
 
 fn begin_body_to_event_data(begin: &BeginBody) -> Value {
     let mut map = BTreeMap::new();
+
     map.insert(
         Value::Text("final_lsn".to_string()),
         Value::Integer(begin.final_lsn().into()),
@@ -402,11 +403,13 @@ fn begin_body_to_event_data(begin: &BeginBody) -> Value {
         Value::Text("xid".to_string()),
         Value::Integer(begin.xid().into()),
     );
+
     Value::Map(map)
 }
 
 fn commit_body_to_event_data(commit: &CommitBody) -> Value {
     let mut map = BTreeMap::new();
+
     map.insert(
         Value::Text("commit_lsn".to_string()),
         Value::Integer(commit.commit_lsn().into()),
@@ -423,12 +426,14 @@ fn commit_body_to_event_data(commit: &CommitBody) -> Value {
         Value::Text("flags".to_string()),
         Value::Integer(commit.flags().into()),
     );
+
     Value::Map(map)
 }
 
 fn relation_body_to_event_data(relation: &RelationBody) -> Value {
     let schema = relation.namespace().expect("invalid relation namespace");
     let table = relation.name().expect("invalid relation name");
+
     let cols: Vec<Value> = relation
         .columns()
         .iter()
@@ -454,7 +459,9 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
             Value::Map(map)
         })
         .collect();
+
     let mut map = BTreeMap::new();
+
     map.insert(
         Value::Text("schema".to_string()),
         Value::Text(schema.to_string()),
@@ -464,16 +471,19 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
         Value::Text(table.to_string()),
     );
     map.insert(Value::Text("columns".to_string()), Value::Array(cols));
+
     Value::Map(map)
 }
 
 fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Value {
     let data = tuple.tuple_data();
     let mut data_map = BTreeMap::new();
+
     for (i, attr) in table_schema.attributes.iter().enumerate() {
         let val = get_val_from_tuple_data(&attr.typ, &data[i]);
         data_map.insert(Value::Text(attr.name.clone()), val);
     }
+
     Value::Map(data_map)
 }
 
@@ -735,10 +745,12 @@ fn binary_copy_out_row_to_cbor_buf(
 ) -> Result<(), anyhow::Error> {
     let now = Utc::now();
     let mut data_map = BTreeMap::new();
+
     for (i, attr) in table_schema.attributes.iter().enumerate() {
         let val = get_val_from_row(&attr.typ, &row, i)?;
         data_map.insert(Value::Text(attr.name.clone()), val);
     }
+
     let event = Event {
         event_type: EventType::Insert,
         timestamp: now,
@@ -746,10 +758,12 @@ fn binary_copy_out_row_to_cbor_buf(
         data: Value::Map(data_map),
         last_lsn: 0,
     };
+
     let mut event_buf = vec![];
     serde_cbor::to_writer(&mut event_buf, &event)?;
     data_chunk_buf.write_all(&event_buf.len().to_be_bytes())?;
     data_chunk_buf.write_all(&event_buf)?;
+
     Ok(())
 }
 
@@ -780,8 +794,15 @@ async fn write_table_schema_to_buf(
     data_chunk_buf: &mut Vec<u8>,
 ) -> Result<(), anyhow::Error> {
     let data = table_schema_to_event_data(table_schema);
-    let event_type = EventType::Schema;
-    event_to_cbor(event_type, Some(table_schema), data, data_chunk_buf, 0)?;
+
+    event_to_cbor(
+        EventType::Schema,
+        Some(table_schema.relation_id),
+        data,
+        data_chunk_buf,
+        0,
+    )?;
+
     Ok(())
 }
 
@@ -832,7 +853,7 @@ fn table_schema_to_event_data(table_schema: &TableSchema) -> Value {
 
 fn event_to_cbor(
     event_type: EventType,
-    table_schema: Option<&TableSchema>,
+    relation_id: Option<u32>,
     data: Value,
     data_chunk_buf: &mut Vec<u8>,
     last_lsn: u64,
@@ -841,7 +862,7 @@ fn event_to_cbor(
     let event = Event {
         event_type,
         timestamp: now,
-        relation_id: table_schema.map(|ts| ts.relation_id),
+        relation_id,
         data,
         last_lsn,
     };
@@ -879,7 +900,8 @@ async fn save_data_chunk(
     bucket_name: &str,
     path: String,
 ) -> Result<(), anyhow::Error> {
-    let byte_stream = ByteStream::from(data_chunk_buf.clone());
+    let byte_stream = ByteStream::from(data_chunk_buf);
+
     client
         .put_object()
         .bucket(bucket_name)
