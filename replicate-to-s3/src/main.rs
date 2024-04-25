@@ -58,6 +58,8 @@ struct Args {
     db_slot_name: String,
     #[arg(long)]
     publication_name: String,
+    #[arg(long)]
+    events_per_file: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -68,8 +70,6 @@ struct Event {
     last_lsn: u64,
     data: Value,
 }
-
-const ROWS_PER_DATA_CHUNK: u32 = 10;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -114,7 +114,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         relation_id_to_schema.insert(schema.relation_id, schema);
         if !table_copy_done(&s3_client, schema, &args.s3_bucket_name).await? {
             delete_partial_table_copy(&s3_client, schema, &args.s3_bucket_name).await?;
-            copy_table(&s3_client, schema, &db_client, &args.s3_bucket_name).await?;
+            copy_table(
+                &s3_client,
+                schema,
+                &db_client,
+                &args.s3_bucket_name,
+                args.events_per_file,
+            )
+            .await?;
         }
     }
 
@@ -127,6 +134,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &relation_id_to_schema,
         &args.publication_name,
         data_chunk_count,
+        args.events_per_file,
     )
     .await?;
 
@@ -140,6 +148,7 @@ async fn copy_realtime_changes(
     rel_id_to_schema: &HashMap<u32, &TableSchema>,
     publication: &str,
     data_chunk_count: Option<u32>,
+    events_per_file: u32,
 ) -> Result<(), anyhow::Error> {
     let mut row_count: u32 = 0;
     let mut data_chunk_count: u32 = data_chunk_count.unwrap_or(0);
@@ -172,13 +181,14 @@ async fn copy_realtime_changes(
                             &mut data_chunk_buf,
                             wal_end_lsn.into(),
                         )?;
-                        if try_save_data_chunk(
+                        if try_save_file(
                             &mut row_count,
                             &mut data_chunk_count,
                             client,
                             &mut data_chunk_buf,
                             bucket_name,
                             REALTIME_CHANGES_PATH_PREFIX,
+                            events_per_file,
                         )
                         .await?
                             && wal_end_lsn != 0.into()
@@ -200,13 +210,14 @@ async fn copy_realtime_changes(
                             &mut data_chunk_buf,
                             wal_end_lsn.into(),
                         )?;
-                        if try_save_data_chunk(
+                        if try_save_file(
                             &mut row_count,
                             &mut data_chunk_count,
                             client,
                             &mut data_chunk_buf,
                             bucket_name,
                             REALTIME_CHANGES_PATH_PREFIX,
+                            events_per_file,
                         )
                         .await?
                             && wal_end_lsn != 0.into()
@@ -230,13 +241,14 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                if try_save_data_chunk(
+                                if try_save_file(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                     REALTIME_CHANGES_PATH_PREFIX,
+                                    events_per_file,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -267,13 +279,14 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                if try_save_data_chunk(
+                                if try_save_file(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                     REALTIME_CHANGES_PATH_PREFIX,
+                                    events_per_file,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -303,13 +316,14 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                if try_save_data_chunk(
+                                if try_save_file(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                     REALTIME_CHANGES_PATH_PREFIX,
+                                    events_per_file,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -343,13 +357,14 @@ async fn copy_realtime_changes(
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                if try_save_data_chunk(
+                                if try_save_file(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
                                     REALTIME_CHANGES_PATH_PREFIX,
+                                    events_per_file,
                                 )
                                 .await?
                                     && wal_end_lsn != 0.into()
@@ -684,6 +699,7 @@ async fn copy_table(
     table_schema: &TableSchema,
     repl_client: &ReplicationClient,
     bucket_name: &str,
+    events_per_file: u32,
 ) -> Result<(), anyhow::Error> {
     let mut row_count: u32 = 0;
     let mut data_chunk_count: u32 = 0;
@@ -696,13 +712,14 @@ async fn copy_table(
     );
 
     write_table_schema_to_buf(table_schema, &mut data_chunk_buf).await?;
-    try_save_data_chunk(
+    try_save_file(
         &mut row_count,
         &mut data_chunk_count,
         client,
         &mut data_chunk_buf,
         bucket_name,
         &path_prefix,
+        events_per_file,
     )
     .await?;
 
@@ -716,13 +733,14 @@ async fn copy_table(
     while let Some(row) = rows.next().await {
         let row = row?;
         binary_copy_out_row_to_cbor_buf(row, table_schema, &mut data_chunk_buf)?;
-        try_save_data_chunk(
+        try_save_file(
             &mut row_count,
             &mut data_chunk_count,
             client,
             &mut data_chunk_buf,
             bucket_name,
             &path_prefix,
+            events_per_file,
         )
         .await?;
     }
@@ -730,7 +748,7 @@ async fn copy_table(
     if !data_chunk_buf.is_empty() {
         data_chunk_count += 1;
         let s3_path = format!("{path_prefix}/{}", data_chunk_count);
-        save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
+        save_file(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
     }
 
     mark_table_copy_done(table_schema, bucket_name, client).await?;
@@ -873,19 +891,20 @@ fn event_to_cbor(
     Ok(())
 }
 
-async fn try_save_data_chunk(
+async fn try_save_file(
     row_count: &mut u32,
     data_chunk_count: &mut u32,
     client: &Client,
     data_chunk_buf: &mut Vec<u8>,
     bucket_name: &str,
     path_prefix: &str,
+    events_per_file: u32,
 ) -> Result<bool, anyhow::Error> {
     *row_count += 1;
-    if *row_count == ROWS_PER_DATA_CHUNK {
+    if *row_count == events_per_file {
         *data_chunk_count += 1;
         let s3_path = format!("{path_prefix}/{data_chunk_count}");
-        save_data_chunk(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
+        save_file(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
         data_chunk_buf.clear();
         *row_count = 0;
         Ok(true)
@@ -894,13 +913,13 @@ async fn try_save_data_chunk(
     }
 }
 
-async fn save_data_chunk(
+async fn save_file(
     client: &Client,
-    data_chunk_buf: Vec<u8>,
+    data: Vec<u8>,
     bucket_name: &str,
     path: String,
 ) -> Result<(), anyhow::Error> {
-    let byte_stream = ByteStream::from(data_chunk_buf);
+    let byte_stream = ByteStream::from(data);
 
     client
         .put_object()
