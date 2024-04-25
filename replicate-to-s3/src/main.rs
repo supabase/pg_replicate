@@ -3,7 +3,7 @@ use std::{
     error::Error,
     io::Write,
     str::from_utf8,
-    time::{Duration, UNIX_EPOCH},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use anyhow::anyhow;
@@ -26,6 +26,7 @@ use postgres_protocol::message::backend::{
 };
 use serde::{Deserialize, Serialize};
 use serde_cbor::Value;
+use tokio::time::timeout;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutRow,
     types::{PgLsn, Type},
@@ -60,6 +61,8 @@ struct Args {
     publication_name: String,
     #[arg(long)]
     events_per_file: u32,
+    #[arg(long)]
+    buffer_fill_wait_period_secs: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -135,6 +138,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &args.publication_name,
         data_chunk_count,
         args.events_per_file,
+        args.buffer_fill_wait_period_secs,
     )
     .await?;
 
@@ -149,6 +153,7 @@ async fn copy_realtime_changes(
     publication: &str,
     data_chunk_count: Option<u32>,
     events_per_file: u32,
+    buffer_fill_wait_period_secs: u64,
 ) -> Result<(), anyhow::Error> {
     let mut row_count: u32 = 0;
     let mut data_chunk_count: u32 = data_chunk_count.unwrap_or(0);
@@ -161,242 +166,272 @@ async fn copy_realtime_changes(
 
     let mut data_chunk_buf = vec![];
     let mut last_lsn = repl_client.consistent_point;
-    const REALTIME_CHANGES_PATH_PREFIX: &str = "realtime_changes";
 
-    while let Some(replication_msg) = logical_stream.next().await {
-        match replication_msg? {
-            ReplicationMessage::XLogData(xlog_data) => {
-                let wal_end_lsn: PgLsn = xlog_data.wal_end().into();
-                match xlog_data.into_data() {
-                    LogicalReplicationMessage::Begin(begin) => {
-                        if repl_client.should_skip(wal_end_lsn, EventType::Begin) {
-                            continue;
-                        }
-                        let data = begin_body_to_event_data(&begin);
-                        let event_type = EventType::Begin;
-                        event_to_cbor(
-                            event_type,
-                            None,
-                            data,
-                            &mut data_chunk_buf,
-                            wal_end_lsn.into(),
-                        )?;
-                        if try_save_file(
-                            &mut row_count,
-                            &mut data_chunk_count,
-                            client,
-                            &mut data_chunk_buf,
-                            bucket_name,
-                            REALTIME_CHANGES_PATH_PREFIX,
-                            events_per_file,
-                        )
-                        .await?
-                            && wal_end_lsn != 0.into()
-                        {
-                            last_lsn = wal_end_lsn
-                        }
+    let mut timeout_period = Duration::from_secs(buffer_fill_wait_period_secs);
+    loop {
+        let mut file_saved = false;
+        let wait_start_time = Instant::now();
+        let replication_msg_or_timeout = timeout(timeout_period, logical_stream.next()).await;
+        match replication_msg_or_timeout {
+            Ok(replication_msg_or_timeout) => {
+                let replication_msg = match replication_msg_or_timeout {
+                    Some(replication_msg) => replication_msg,
+                    None => {
+                        break;
                     }
-                    LogicalReplicationMessage::Commit(commit) => {
-                        if repl_client.should_skip(wal_end_lsn, EventType::Commit) {
-                            repl_client.stop_skipping_events();
-                            continue;
-                        }
-                        let data = commit_body_to_event_data(&commit);
-                        let event_type = EventType::Commit;
-                        event_to_cbor(
-                            event_type,
-                            None,
-                            data,
-                            &mut data_chunk_buf,
-                            wal_end_lsn.into(),
-                        )?;
-                        if try_save_file(
-                            &mut row_count,
-                            &mut data_chunk_count,
-                            client,
-                            &mut data_chunk_buf,
-                            bucket_name,
-                            REALTIME_CHANGES_PATH_PREFIX,
-                            events_per_file,
-                        )
-                        .await?
-                            && wal_end_lsn != 0.into()
-                        {
-                            last_lsn = wal_end_lsn;
-                        }
-                    }
-                    LogicalReplicationMessage::Origin(_) => {}
-                    LogicalReplicationMessage::Relation(relation) => {
-                        if repl_client.should_skip(wal_end_lsn, EventType::Relation) {
-                            continue;
-                        }
-                        match rel_id_to_schema.get(&relation.rel_id()) {
-                            Some(schema) => {
-                                let data = relation_body_to_event_data(&relation);
-                                let event_type = EventType::Relation;
+                };
+                match replication_msg? {
+                    ReplicationMessage::XLogData(xlog_data) => {
+                        let wal_end_lsn: PgLsn = xlog_data.wal_end().into();
+                        match xlog_data.into_data() {
+                            LogicalReplicationMessage::Begin(begin) => {
+                                if repl_client.should_skip(wal_end_lsn, EventType::Begin) {
+                                    continue;
+                                }
+                                let data = begin_body_to_event_data(&begin);
+                                let event_type = EventType::Begin;
                                 event_to_cbor(
                                     event_type,
-                                    Some(schema.relation_id),
+                                    None,
                                     data,
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                if try_save_file(
+                                file_saved = try_save_file(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
-                                    REALTIME_CHANGES_PATH_PREFIX,
+                                    REALTIME_CHANGES_PREFIX,
                                     events_per_file,
                                 )
-                                .await?
-                                    && wal_end_lsn != 0.into()
-                                {
-                                    last_lsn = wal_end_lsn;
+                                .await?;
+                                if file_saved && wal_end_lsn != 0.into() {
+                                    last_lsn = wal_end_lsn
                                 }
                             }
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    relation.rel_id(),
-                                ))?;
-                            }
-                        }
-                    }
-                    LogicalReplicationMessage::Type(_) => {}
-                    LogicalReplicationMessage::Insert(insert) => {
-                        if repl_client.should_skip(wal_end_lsn, EventType::Insert) {
-                            continue;
-                        }
-                        match rel_id_to_schema.get(&insert.rel_id()) {
-                            Some(schema) => {
-                                let data = get_data(schema, insert.tuple());
-                                let event_type = EventType::Insert;
+                            LogicalReplicationMessage::Commit(commit) => {
+                                if repl_client.should_skip(wal_end_lsn, EventType::Commit) {
+                                    repl_client.stop_skipping_events();
+                                    continue;
+                                }
+                                let data = commit_body_to_event_data(&commit);
+                                let event_type = EventType::Commit;
                                 event_to_cbor(
                                     event_type,
-                                    Some(schema.relation_id),
+                                    None,
                                     data,
                                     &mut data_chunk_buf,
                                     wal_end_lsn.into(),
                                 )?;
-                                if try_save_file(
+                                file_saved = try_save_file(
                                     &mut row_count,
                                     &mut data_chunk_count,
                                     client,
                                     &mut data_chunk_buf,
                                     bucket_name,
-                                    REALTIME_CHANGES_PATH_PREFIX,
+                                    REALTIME_CHANGES_PREFIX,
                                     events_per_file,
                                 )
-                                .await?
-                                    && wal_end_lsn != 0.into()
-                                {
+                                .await?;
+                                if file_saved && wal_end_lsn != 0.into() {
                                     last_lsn = wal_end_lsn;
                                 }
                             }
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    insert.rel_id(),
-                                ))?;
-                            }
-                        }
-                    }
-                    LogicalReplicationMessage::Update(update) => {
-                        if repl_client.should_skip(wal_end_lsn, EventType::Update) {
-                            continue;
-                        }
-                        match rel_id_to_schema.get(&update.rel_id()) {
-                            Some(schema) => {
-                                let data = get_data(schema, update.new_tuple());
-                                let event_type = EventType::Update;
-                                event_to_cbor(
-                                    event_type,
-                                    Some(schema.relation_id),
-                                    data,
-                                    &mut data_chunk_buf,
-                                    wal_end_lsn.into(),
-                                )?;
-                                if try_save_file(
-                                    &mut row_count,
-                                    &mut data_chunk_count,
-                                    client,
-                                    &mut data_chunk_buf,
-                                    bucket_name,
-                                    REALTIME_CHANGES_PATH_PREFIX,
-                                    events_per_file,
-                                )
-                                .await?
-                                    && wal_end_lsn != 0.into()
-                                {
-                                    last_lsn = wal_end_lsn;
+                            LogicalReplicationMessage::Origin(_) => {}
+                            LogicalReplicationMessage::Relation(relation) => {
+                                if repl_client.should_skip(wal_end_lsn, EventType::Relation) {
+                                    continue;
+                                }
+                                match rel_id_to_schema.get(&relation.rel_id()) {
+                                    Some(schema) => {
+                                        let data = relation_body_to_event_data(&relation);
+                                        let event_type = EventType::Relation;
+                                        event_to_cbor(
+                                            event_type,
+                                            Some(schema.relation_id),
+                                            data,
+                                            &mut data_chunk_buf,
+                                            wal_end_lsn.into(),
+                                        )?;
+                                        file_saved = try_save_file(
+                                            &mut row_count,
+                                            &mut data_chunk_count,
+                                            client,
+                                            &mut data_chunk_buf,
+                                            bucket_name,
+                                            REALTIME_CHANGES_PREFIX,
+                                            events_per_file,
+                                        )
+                                        .await?;
+                                        if file_saved && wal_end_lsn != 0.into() {
+                                            last_lsn = wal_end_lsn;
+                                        }
+                                    }
+                                    None => {
+                                        return Err(ReplicationClientError::RelationIdNotFound(
+                                            relation.rel_id(),
+                                        ))?;
+                                    }
                                 }
                             }
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    update.rel_id(),
-                                ))?;
-                            }
-                        }
-                    }
-                    LogicalReplicationMessage::Delete(delete) => {
-                        if repl_client.should_skip(wal_end_lsn, EventType::Delete) {
-                            continue;
-                        }
-                        match rel_id_to_schema.get(&delete.rel_id()) {
-                            Some(schema) => {
-                                let tuple = delete
-                                    .key_tuple()
-                                    .or(delete.old_tuple())
-                                    .expect("no tuple found in delete message");
-                                let data = get_data(schema, tuple);
-                                let event_type = EventType::Delete;
-                                event_to_cbor(
-                                    event_type,
-                                    Some(schema.relation_id),
-                                    data,
-                                    &mut data_chunk_buf,
-                                    wal_end_lsn.into(),
-                                )?;
-                                if try_save_file(
-                                    &mut row_count,
-                                    &mut data_chunk_count,
-                                    client,
-                                    &mut data_chunk_buf,
-                                    bucket_name,
-                                    REALTIME_CHANGES_PATH_PREFIX,
-                                    events_per_file,
-                                )
-                                .await?
-                                    && wal_end_lsn != 0.into()
-                                {
-                                    last_lsn = wal_end_lsn;
+                            LogicalReplicationMessage::Type(_) => {}
+                            LogicalReplicationMessage::Insert(insert) => {
+                                if repl_client.should_skip(wal_end_lsn, EventType::Insert) {
+                                    continue;
+                                }
+                                match rel_id_to_schema.get(&insert.rel_id()) {
+                                    Some(schema) => {
+                                        let data = get_data(schema, insert.tuple());
+                                        let event_type = EventType::Insert;
+                                        event_to_cbor(
+                                            event_type,
+                                            Some(schema.relation_id),
+                                            data,
+                                            &mut data_chunk_buf,
+                                            wal_end_lsn.into(),
+                                        )?;
+                                        file_saved = try_save_file(
+                                            &mut row_count,
+                                            &mut data_chunk_count,
+                                            client,
+                                            &mut data_chunk_buf,
+                                            bucket_name,
+                                            REALTIME_CHANGES_PREFIX,
+                                            events_per_file,
+                                        )
+                                        .await?;
+                                        if file_saved && wal_end_lsn != 0.into() {
+                                            last_lsn = wal_end_lsn;
+                                        };
+                                    }
+                                    None => {
+                                        return Err(ReplicationClientError::RelationIdNotFound(
+                                            insert.rel_id(),
+                                        ))?;
+                                    }
                                 }
                             }
-                            None => {
-                                return Err(ReplicationClientError::RelationIdNotFound(
-                                    delete.rel_id(),
-                                ))?;
+                            LogicalReplicationMessage::Update(update) => {
+                                if repl_client.should_skip(wal_end_lsn, EventType::Update) {
+                                    continue;
+                                }
+                                match rel_id_to_schema.get(&update.rel_id()) {
+                                    Some(schema) => {
+                                        let data = get_data(schema, update.new_tuple());
+                                        let event_type = EventType::Update;
+                                        event_to_cbor(
+                                            event_type,
+                                            Some(schema.relation_id),
+                                            data,
+                                            &mut data_chunk_buf,
+                                            wal_end_lsn.into(),
+                                        )?;
+                                        file_saved = try_save_file(
+                                            &mut row_count,
+                                            &mut data_chunk_count,
+                                            client,
+                                            &mut data_chunk_buf,
+                                            bucket_name,
+                                            REALTIME_CHANGES_PREFIX,
+                                            events_per_file,
+                                        )
+                                        .await?;
+                                        if file_saved && wal_end_lsn != 0.into() {
+                                            last_lsn = wal_end_lsn;
+                                        };
+                                    }
+                                    None => {
+                                        return Err(ReplicationClientError::RelationIdNotFound(
+                                            update.rel_id(),
+                                        ))?;
+                                    }
+                                }
+                            }
+                            LogicalReplicationMessage::Delete(delete) => {
+                                if repl_client.should_skip(wal_end_lsn, EventType::Delete) {
+                                    continue;
+                                }
+                                match rel_id_to_schema.get(&delete.rel_id()) {
+                                    Some(schema) => {
+                                        let tuple = delete
+                                            .key_tuple()
+                                            .or(delete.old_tuple())
+                                            .expect("no tuple found in delete message");
+                                        let data = get_data(schema, tuple);
+                                        let event_type = EventType::Delete;
+                                        event_to_cbor(
+                                            event_type,
+                                            Some(schema.relation_id),
+                                            data,
+                                            &mut data_chunk_buf,
+                                            wal_end_lsn.into(),
+                                        )?;
+                                        file_saved = try_save_file(
+                                            &mut row_count,
+                                            &mut data_chunk_count,
+                                            client,
+                                            &mut data_chunk_buf,
+                                            bucket_name,
+                                            REALTIME_CHANGES_PREFIX,
+                                            events_per_file,
+                                        )
+                                        .await?;
+                                        if file_saved && wal_end_lsn != 0.into() {
+                                            last_lsn = wal_end_lsn;
+                                        };
+                                    }
+                                    None => {
+                                        return Err(ReplicationClientError::RelationIdNotFound(
+                                            delete.rel_id(),
+                                        ))?;
+                                    }
+                                }
+                            }
+                            LogicalReplicationMessage::Truncate(_) => {}
+                            msg => {
+                                return Err(
+                                    ReplicationClientError::UnsupportedLogicalReplicationMessage(
+                                        msg,
+                                    ),
+                                )?
                             }
                         }
                     }
-                    LogicalReplicationMessage::Truncate(_) => {}
-                    msg => {
-                        return Err(
-                            ReplicationClientError::UnsupportedLogicalReplicationMessage(msg),
-                        )?
+                    ReplicationMessage::PrimaryKeepAlive(keepalive) => {
+                        if keepalive.reply() == 1 {
+                            let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
+                            logical_stream
+                                .as_mut()
+                                .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)
+                                .await?;
+                        }
+                        let spent = wait_start_time.elapsed();
+                        timeout_period = timeout_period - spent;
                     }
+                    msg => return Err(ReplicationClientError::UnsupportedReplicationMessage(msg))?,
                 }
             }
-            ReplicationMessage::PrimaryKeepAlive(keepalive) => {
-                if keepalive.reply() == 1 {
-                    let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
-                    logical_stream
-                        .as_mut()
-                        .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)
-                        .await?;
+            Err(_) => {
+                if !data_chunk_buf.is_empty() {
+                    save_file(
+                        client,
+                        data_chunk_buf.clone(),
+                        bucket_name,
+                        REALTIME_CHANGES_PREFIX,
+                        &mut data_chunk_count,
+                    )
+                    .await?;
+                    file_saved = true;
                 }
+                timeout_period = Duration::from_secs(buffer_fill_wait_period_secs);
             }
-            msg => return Err(ReplicationClientError::UnsupportedReplicationMessage(msg))?,
+        };
+
+        if file_saved {
+            row_count = 0;
+            data_chunk_buf.clear();
         }
     }
 
@@ -707,7 +742,7 @@ async fn copy_table(
     let mut data_chunk_buf = vec![];
 
     let path_prefix = format!(
-        "table_copies/{}.{}",
+        "table_copies/{}.{}/",
         table_schema.table.schema, table_schema.table.name
     );
 
@@ -746,9 +781,14 @@ async fn copy_table(
     }
 
     if !data_chunk_buf.is_empty() {
-        data_chunk_count += 1;
-        let s3_path = format!("{path_prefix}/{}", data_chunk_count);
-        save_file(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
+        save_file(
+            client,
+            data_chunk_buf.clone(),
+            bucket_name,
+            &path_prefix,
+            &mut data_chunk_count,
+        )
+        .await?;
     }
 
     mark_table_copy_done(table_schema, bucket_name, client).await?;
@@ -902,11 +942,14 @@ async fn try_save_file(
 ) -> Result<bool, anyhow::Error> {
     *row_count += 1;
     if *row_count == events_per_file {
-        *data_chunk_count += 1;
-        let s3_path = format!("{path_prefix}/{data_chunk_count}");
-        save_file(client, data_chunk_buf.clone(), bucket_name, s3_path).await?;
-        data_chunk_buf.clear();
-        *row_count = 0;
+        save_file(
+            client,
+            data_chunk_buf.clone(),
+            bucket_name,
+            path_prefix,
+            data_chunk_count,
+        )
+        .await?;
         Ok(true)
     } else {
         Ok(false)
@@ -917,8 +960,12 @@ async fn save_file(
     client: &Client,
     data: Vec<u8>,
     bucket_name: &str,
-    path: String,
+    path_prefix: &str,
+    data_chunk_count: &mut u32,
 ) -> Result<(), anyhow::Error> {
+    *data_chunk_count += 1;
+    let path = format!("{path_prefix}{data_chunk_count}");
+
     let byte_stream = ByteStream::from(data);
 
     client
