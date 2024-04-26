@@ -810,9 +810,17 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Valu
             let val = row.get::<&str>(i);
             Ok(Value::Text(val.to_string()))
         }
+        Type::INT2 => {
+            let val = row.get::<i16>(i);
+            Ok(Value::Integer(val.into()))
+        }
         Type::INT4 => {
             let val = row.get::<i32>(i);
-            Ok(Value::Integer(val as i128))
+            Ok(Value::Integer(val.into()))
+        }
+        Type::INT8 => {
+            let val = row.get::<i64>(i);
+            Ok(Value::Integer(val.into()))
         }
         Type::TIMESTAMP => {
             let val = row.get::<NaiveDateTime>(i);
@@ -845,9 +853,19 @@ fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Result<Value, anyhow:
             let val = from_utf8(bytes)?;
             Ok(Value::Text(val.to_string()))
         }
+        Type::INT2 => {
+            let val = from_utf8(bytes)?;
+            let val: i16 = val.parse()?;
+            Ok(Value::Integer(val.into()))
+        }
         Type::INT4 => {
             let val = from_utf8(bytes)?;
             let val: i32 = val.parse()?;
+            Ok(Value::Integer(val.into()))
+        }
+        Type::INT8 => {
+            let val = from_utf8(bytes)?;
+            let val: i64 = val.parse()?;
             Ok(Value::Integer(val.into()))
         }
         Type::TIMESTAMP => {
