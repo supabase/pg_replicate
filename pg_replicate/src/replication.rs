@@ -67,6 +67,7 @@ pub struct Table {
     pub name: String,
 }
 
+#[derive(Debug)]
 pub struct Attribute {
     pub name: String,
     pub typ: Type,
@@ -75,6 +76,7 @@ pub struct Attribute {
     pub identity: bool,
 }
 
+#[derive(Debug)]
 pub struct TableSchema {
     pub table: Table,
     pub relation_id: u32,
@@ -141,6 +143,7 @@ impl ReplicationClient {
         }
     }
 
+    //TODO: reconnect when connection is lost
     pub async fn connect(
         host: &str,
         port: u16,

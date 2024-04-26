@@ -283,7 +283,7 @@ async fn copy_realtime_changes(
                                 }
                                 match rel_id_to_schema.get(&insert.rel_id()) {
                                     Some(schema) => {
-                                        let data = get_data(schema, insert.tuple());
+                                        let data = get_data(schema, insert.tuple())?;
                                         let event_type = EventType::Insert;
                                         event_to_cbor(
                                             event_type,
@@ -319,7 +319,7 @@ async fn copy_realtime_changes(
                                 }
                                 match rel_id_to_schema.get(&update.rel_id()) {
                                     Some(schema) => {
-                                        let data = get_data(schema, update.new_tuple());
+                                        let data = get_data(schema, update.new_tuple())?;
                                         let event_type = EventType::Update;
                                         event_to_cbor(
                                             event_type,
@@ -359,7 +359,7 @@ async fn copy_realtime_changes(
                                             .key_tuple()
                                             .or(delete.old_tuple())
                                             .expect("no tuple found in delete message");
-                                        let data = get_data(schema, tuple);
+                                        let data = get_data(schema, tuple)?;
                                         let event_type = EventType::Delete;
                                         event_to_cbor(
                                             event_type,
@@ -525,45 +525,16 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
     Value::Map(map)
 }
 
-fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Value {
+fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Result<Value, anyhow::Error> {
     let data = tuple.tuple_data();
     let mut data_map = BTreeMap::new();
 
     for (i, attr) in table_schema.attributes.iter().enumerate() {
-        let val = get_val_from_tuple_data(&attr.typ, &data[i]);
+        let val = get_val_from_tuple_data(&attr.typ, &data[i])?;
         data_map.insert(Value::Text(attr.name.clone()), val);
     }
 
-    Value::Map(data_map)
-}
-
-fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Value {
-    let val = match val {
-        TupleData::Null => {
-            return Value::Null;
-        }
-        TupleData::UnchangedToast => panic!("unchanged toast"),
-        TupleData::Text(bytes) => from_utf8(&bytes[..]).expect("failed to get val"),
-    };
-    match *typ {
-        Type::INT4 => {
-            let val: i32 = val.parse().expect("value not i32");
-            Value::Integer(val.into())
-        }
-        Type::VARCHAR => Value::Text(val.to_string()),
-        Type::TIMESTAMP => {
-            let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")
-                .expect("invalid timestamp");
-            Value::Integer(
-                val.and_utc()
-                    .timestamp_nanos_opt()
-                    .expect("failed to get timestamp nanos") as i128,
-            )
-        }
-        ref typ => {
-            panic!("unsupported type {typ:?}")
-        }
-    }
+    Ok(Value::Map(data_map))
 }
 
 const REALTIME_CHANGES_PREFIX: &str = "realtime_changes/";
@@ -827,6 +798,14 @@ fn binary_copy_out_row_to_cbor_buf(
 
 fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Value, anyhow::Error> {
     match *typ {
+        Type::BOOL => {
+            let val = row.get::<bool>(i);
+            Ok(Value::Bool(val))
+        }
+        Type::BYTEA => {
+            let bytes = row.get(i);
+            Ok(Value::Bytes(bytes))
+        }
         Type::INT4 => {
             let val = row.get::<i32>(i);
             Ok(Value::Integer(val as i128))
@@ -844,6 +823,44 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Valu
             ))
         }
         ref typ => Err(anyhow::anyhow!("unsupported type {typ:?}")),
+    }
+}
+
+fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Result<Value, anyhow::Error> {
+    let bytes = match val {
+        TupleData::Null => {
+            return Ok(Value::Null);
+        }
+        TupleData::UnchangedToast => panic!("unchanged toast"),
+        TupleData::Text(bytes) => &bytes[..],
+    };
+    match *typ {
+        Type::BOOL => {
+            let val = from_utf8(bytes)?;
+            let val: bool = val.parse()?;
+            Ok(Value::Bool(val))
+        }
+        Type::BYTEA => Ok(Value::Bytes(bytes.to_vec())),
+        Type::INT4 => {
+            let val = from_utf8(bytes)?;
+            let val: i32 = val.parse()?;
+            Ok(Value::Integer(val.into()))
+        }
+        Type::VARCHAR => {
+            let val = from_utf8(bytes)?;
+            Ok(Value::Text(val.to_string()))
+        }
+        Type::TIMESTAMP => {
+            let val = from_utf8(bytes)?;
+            let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")
+                .expect("invalid timestamp");
+            Ok(Value::Integer(
+                val.and_utc()
+                    .timestamp_nanos_opt()
+                    .expect("failed to get timestamp nanos") as i128,
+            ))
+        }
+        ref typ => Err(anyhow!("unsupported type {typ:?}")),
     }
 }
 
