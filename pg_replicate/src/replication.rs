@@ -103,12 +103,7 @@ impl ReplicationClient {
         resumption_data: Option<ResumptionData>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         let postgres_client = Self::connect(&host, port, &dbname, &user).await?;
-        // let consistent_point = Self::start_table_copy(&postgres_client, &slot_name).await?;
         let consistent_point = Self::create_slot_if_missing(&postgres_client, &slot_name).await?;
-        // let lsn = resume_lsn.unwrap_or(consistent_point);
-        // if lsn < consistent_point {
-        //     return Err(ReplicationClientError::CantResume(lsn, consistent_point));
-        // }
         Ok(ReplicationClient {
             slot_name,
             consistent_point,
@@ -123,24 +118,20 @@ impl ReplicationClient {
                 let current_lsn: u64 = current_lsn.into();
                 let resume_lsn: u64 = resumption_data.resume_lsn.into();
                 if current_lsn == 0u64 {
-                    // eprintln!("Not skipping because current_lsn is zero");
                     return false;
                 }
                 if current_lsn < resume_lsn {
-                    // eprintln!("Skipping because current_lsn < resume_lsn");
                     return true;
                 }
                 if current_lsn == resume_lsn
                     && (resumption_data.last_event_type != EventType::Begin
                         || resumption_data.last_event_type == current_event_type)
                 {
-                    // eprintln!("Skipping because current_lsn == resume_lsn ... ");
                     return true;
                 }
             }
         }
 
-        // eprintln!("Not skipping (default)");
         false
     }
 
@@ -149,20 +140,6 @@ impl ReplicationClient {
             resumption_data.skipping_events = false;
         }
     }
-    // pub fn should_skip(&self, lsn: PgLsn) -> bool {
-    //     if self.skipping_events {
-    //         if let Some(resume_lsn) = self.resume_lsn {
-    //             if lsn <= resume_lsn {
-    //                 return true;
-    //             }
-    //         }
-    //     }
-    //     false
-    // }
-
-    // pub fn stop_skipping(&mut self) {
-    //     self.skipping_events = false;
-    // }
 
     pub async fn connect(
         host: &str,
@@ -475,7 +452,6 @@ impl ReplicationClient {
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
-        // let mut last_lsn = self.last_lsn;
         let mut last_lsn = self.consistent_point;
 
         while let Some(replication_msg) = logical_stream.next().await {
