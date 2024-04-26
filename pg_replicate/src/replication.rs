@@ -298,6 +298,7 @@ impl ReplicationClient {
         publication: &str,
     ) -> Result<Vec<TableSchema>, ReplicationClientError> {
         let tables = self.get_publication_tables(publication).await?;
+
         let mut schema = Vec::new();
 
         for table in tables {

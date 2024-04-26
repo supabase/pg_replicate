@@ -806,6 +806,10 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Valu
             let bytes = row.get(i);
             Ok(Value::Bytes(bytes))
         }
+        Type::BPCHAR => {
+            let val = row.get::<&str>(i);
+            Ok(Value::Text(val.to_string()))
+        }
         Type::INT4 => {
             let val = row.get::<i32>(i);
             Ok(Value::Integer(val as i128))
@@ -841,6 +845,10 @@ fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Result<Value, anyhow:
             Ok(Value::Bool(val))
         }
         Type::BYTEA => Ok(Value::Bytes(bytes.to_vec())),
+        Type::BPCHAR => {
+            let val = from_utf8(bytes)?;
+            Ok(Value::Text(val.to_string()))
+        }
         Type::INT4 => {
             let val = from_utf8(bytes)?;
             let val: i32 = val.parse()?;
