@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     error::Error,
     io::Write,
     str::from_utf8,
@@ -15,6 +15,7 @@ use aws_sdk_s3::{
     Client,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
+use ciborium::Value;
 use clap::Parser;
 use futures::StreamExt;
 use pg_replicate::{
@@ -25,7 +26,6 @@ use postgres_protocol::message::backend::{
     TupleData,
 };
 use serde::{Deserialize, Serialize};
-use serde_cbor::Value;
 use tokio::time::timeout;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutRow,
@@ -439,43 +439,43 @@ async fn copy_realtime_changes(
 }
 
 fn begin_body_to_event_data(begin: &BeginBody) -> Value {
-    let mut map = BTreeMap::new();
+    let mut map = Vec::new();
 
-    map.insert(
+    map.push((
         Value::Text("final_lsn".to_string()),
         Value::Integer(begin.final_lsn().into()),
-    );
-    map.insert(
+    ));
+    map.push((
         Value::Text("timestamp".to_string()),
         Value::Integer(begin.timestamp().into()),
-    );
-    map.insert(
+    ));
+    map.push((
         Value::Text("xid".to_string()),
         Value::Integer(begin.xid().into()),
-    );
+    ));
 
     Value::Map(map)
 }
 
 fn commit_body_to_event_data(commit: &CommitBody) -> Value {
-    let mut map = BTreeMap::new();
+    let mut map = Vec::new();
 
-    map.insert(
+    map.push((
         Value::Text("commit_lsn".to_string()),
         Value::Integer(commit.commit_lsn().into()),
-    );
-    map.insert(
+    ));
+    map.push((
         Value::Text("end_lsn".to_string()),
         Value::Integer(commit.end_lsn().into()),
-    );
-    map.insert(
+    ));
+    map.push((
         Value::Text("timestamp".to_string()),
         Value::Integer(commit.timestamp().into()),
-    );
-    map.insert(
+    ));
+    map.push((
         Value::Text("flags".to_string()),
         Value::Integer(commit.flags().into()),
-    );
+    ));
 
     Value::Map(map)
 }
@@ -489,49 +489,49 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
         .iter()
         .map(|col| {
             let name = col.name().expect("invalid column name");
-            let mut map = BTreeMap::new();
-            map.insert(
+            let mut map = Vec::new();
+            map.push((
                 Value::Text("name".to_string()),
                 Value::Text(name.to_string()),
-            );
-            map.insert(
+            ));
+            map.push((
                 Value::Text("identity".to_string()),
                 Value::Bool(col.flags() == 1),
-            );
-            map.insert(
+            ));
+            map.push((
                 Value::Text("type_id".to_string()),
-                Value::Integer(col.type_id() as i128),
-            );
-            map.insert(
+                Value::Integer(col.type_id().into()),
+            ));
+            map.push((
                 Value::Text("type_modifier".to_string()),
-                Value::Integer(col.type_modifier() as i128),
-            );
+                Value::Integer(col.type_modifier().into()),
+            ));
             Value::Map(map)
         })
         .collect();
 
-    let mut map = BTreeMap::new();
+    let mut map = Vec::new();
 
-    map.insert(
+    map.push((
         Value::Text("schema".to_string()),
         Value::Text(schema.to_string()),
-    );
-    map.insert(
+    ));
+    map.push((
         Value::Text("table".to_string()),
         Value::Text(table.to_string()),
-    );
-    map.insert(Value::Text("columns".to_string()), Value::Array(cols));
+    ));
+    map.push((Value::Text("columns".to_string()), Value::Array(cols)));
 
     Value::Map(map)
 }
 
 fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Result<Value, anyhow::Error> {
     let data = tuple.tuple_data();
-    let mut data_map = BTreeMap::new();
+    let mut data_map = Vec::new();
 
     for (i, attr) in table_schema.attributes.iter().enumerate() {
         let val = get_val_from_tuple_data(&attr.typ, &data[i])?;
-        data_map.insert(Value::Text(attr.name.clone()), val);
+        data_map.push((Value::Text(attr.name.clone()), val));
     }
 
     Ok(Value::Map(data_map))
@@ -575,7 +575,7 @@ async fn get_relatime_resumption_data(
         start = new_start;
     }
 
-    let event: Event = serde_cbor::from_reader(v)?;
+    let event: Event = ciborium::from_reader(v)?;
 
     Ok(Some(ResumptionData {
         resume_lsn: event.last_lsn.into(),
@@ -773,11 +773,11 @@ fn binary_copy_out_row_to_cbor_buf(
     data_chunk_buf: &mut Vec<u8>,
 ) -> Result<(), anyhow::Error> {
     let now = Utc::now();
-    let mut data_map = BTreeMap::new();
+    let mut data_map = Vec::new();
 
     for (i, attr) in table_schema.attributes.iter().enumerate() {
         let val = get_val_from_row(&attr.typ, &row, i)?;
-        data_map.insert(Value::Text(attr.name.clone()), val);
+        data_map.push((Value::Text(attr.name.clone()), val));
     }
 
     let event = Event {
@@ -789,7 +789,7 @@ fn binary_copy_out_row_to_cbor_buf(
     };
 
     let mut event_buf = vec![];
-    serde_cbor::to_writer(&mut event_buf, &event)?;
+    ciborium::into_writer(&event, &mut event_buf)?;
     data_chunk_buf.write_all(&event_buf.len().to_be_bytes())?;
     data_chunk_buf.write_all(&event_buf)?;
 
@@ -827,7 +827,8 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Valu
             Ok(Value::Integer(
                 val.and_utc()
                     .timestamp_nanos_opt()
-                    .expect("failed to get timestamp nanos") as i128,
+                    .ok_or(anyhow!("failed to get timestamp nanos"))?
+                    .into(),
             ))
         }
         ref typ => Err(anyhow::anyhow!("unsupported type {typ:?}")),
@@ -875,7 +876,8 @@ fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Result<Value, anyhow:
             Ok(Value::Integer(
                 val.and_utc()
                     .timestamp_nanos_opt()
-                    .expect("failed to get timestamp nanos") as i128,
+                    .ok_or(anyhow!("failed to get timestamp nanos"))?
+                    .into(),
             ))
         }
         ref typ => Err(anyhow!("unsupported type {typ:?}")),
@@ -907,40 +909,40 @@ fn table_schema_to_event_data(table_schema: &TableSchema) -> Value {
         .iter()
         .map(|attribute| {
             let name = attribute.name.to_string();
-            let mut map = BTreeMap::new();
-            map.insert(
+            let mut map = Vec::new();
+            map.push((
                 Value::Text("name".to_string()),
                 Value::Text(name.to_string()),
-            );
-            map.insert(
+            ));
+            map.push((
                 Value::Text("identity".to_string()),
                 Value::Bool(attribute.identity),
-            );
-            map.insert(
+            ));
+            map.push((
                 Value::Text("nullable".to_string()),
                 Value::Bool(attribute.nullable),
-            );
-            map.insert(
+            ));
+            map.push((
                 Value::Text("type_id".to_string()),
-                Value::Integer(attribute.typ.oid() as i128),
-            );
-            map.insert(
+                Value::Integer(attribute.typ.oid().into()),
+            ));
+            map.push((
                 Value::Text("type_modifier".to_string()),
-                Value::Integer(attribute.type_modifier as i128),
-            );
+                Value::Integer(attribute.type_modifier.into()),
+            ));
             Value::Map(map)
         })
         .collect();
-    let mut map = BTreeMap::new();
-    map.insert(
+    let mut map = Vec::new();
+    map.push((
         Value::Text("schema".to_string()),
         Value::Text(schema.to_string()),
-    );
-    map.insert(
+    ));
+    map.push((
         Value::Text("table".to_string()),
         Value::Text(table.to_string()),
-    );
-    map.insert(Value::Text("columns".to_string()), Value::Array(cols));
+    ));
+    map.push((Value::Text("columns".to_string()), Value::Array(cols)));
     Value::Map(map)
 }
 
@@ -960,7 +962,7 @@ fn event_to_cbor(
         last_lsn,
     };
     let mut event_buf = vec![];
-    serde_cbor::to_writer(&mut event_buf, &event)?;
+    ciborium::into_writer(&event, &mut event_buf)?;
     data_chunk_buf.write_all(&event_buf.len().to_be_bytes())?;
     data_chunk_buf.write_all(&event_buf)?;
     Ok(())
