@@ -62,6 +62,21 @@ pub enum ReplicationClientError {
 
     #[error("system time error: {0}")]
     SystemTime(#[from] SystemTimeError),
+
+    #[error("invalid data in column {0} in {1} table")]
+    InvalidColumn(String, String),
+
+    #[error("oid column is not a valid u32")]
+    OidColumnNotU32,
+
+    #[error("type modifier column is not a valid u32")]
+    TypeModifierColumnNotI32,
+
+    #[error("consistent point is not a valid PgLsn")]
+    ConsistentPointNotPgLsn,
+
+    #[error("expected simple query message, got command complete")]
+    ExpectedSimpleQueryMessage,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -176,30 +191,35 @@ impl ReplicationClient {
         //TODO: use a non-replication connection to avoid SQL injection
         let publication_query =
             format!("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{publication}';");
-        let tables = self
+
+        let mut tables = vec![];
+        for msg in self
             .postgres_client
             .simple_query(&publication_query)
             .await?
-            .into_iter()
-            .filter_map(|msg| {
-                if let SimpleQueryMessage::Row(row) = msg {
-                    let schema = row
-                        .get(0)
-                        .expect("failed to read schemaname column")
-                        .to_string();
-                    let table = row
-                        .get(1)
-                        .expect("failed to read tablename column")
-                        .to_string();
-                    Some(Table {
-                        schema,
-                        name: table,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        {
+            if let SimpleQueryMessage::Row(row) = msg {
+                let schema = row
+                    .get(0)
+                    .ok_or(ReplicationClientError::InvalidColumn(
+                        "schemaname".to_string(),
+                        "pg_publication_tables".to_string(),
+                    ))?
+                    .to_string();
+                let table = row
+                    .get(1)
+                    .ok_or(ReplicationClientError::InvalidColumn(
+                        "tablename".to_string(),
+                        "pg_publication_tables".to_string(),
+                    ))?
+                    .to_string();
+                tables.push(Table {
+                    schema,
+                    name: table,
+                })
+            }
+        }
+
         Ok(tables)
     }
 
@@ -214,25 +234,21 @@ impl ReplicationClient {
             table.schema, table.name
         );
 
-        let rel_id = self
-            .postgres_client
-            .simple_query(&rel_id_query)
-            .await?
-            .into_iter()
-            .find_map(|msg| {
-                if let SimpleQueryMessage::Row(row) = msg {
-                    Some(
-                        row.get(0)
-                            .expect("failed to read oid columns from pg_namesapce")
-                            .parse::<u32>()
-                            .expect("oid column in pg_namespace is not a valid u32"),
-                    )
-                } else {
-                    None
-                }
-            });
+        for msg in self.postgres_client.simple_query(&rel_id_query).await? {
+            if let SimpleQueryMessage::Row(row) = msg {
+                return Ok(Some(
+                    row.get(0)
+                        .ok_or(ReplicationClientError::InvalidColumn(
+                            "oid".to_string(),
+                            "pg_namespace".to_string(),
+                        ))?
+                        .parse::<u32>()
+                        .map_err(|_| ReplicationClientError::OidColumnNotU32)?,
+                ));
+            }
+        }
 
-        Ok(rel_id)
+        Ok(None)
     }
 
     async fn get_table_attributes(
@@ -255,43 +271,57 @@ impl ReplicationClient {
             relation_id, relation_id
         );
 
-        let attributes = self
-            .postgres_client
-            .simple_query(&col_info_query)
-            .await?
-            .into_iter()
-            .filter_map(|msg| {
-                if let SimpleQueryMessage::Row(row) = msg {
-                    let name = row
-                        .get(0)
-                        .expect("failed to get attribute name")
-                        .to_string();
-                    let typ = Type::from_oid(
-                        row.get(1)
-                            .expect("failed to get attribute oid")
-                            .parse()
-                            .expect("attribute oid is not a valid u32"),
-                    )
-                    .expect("attribute is not valid oid");
-                    let type_modifier = row
-                        .get(2)
-                        .expect("failed to get type modifier")
+        let mut attributes = vec![];
+
+        for msg in self.postgres_client.simple_query(&col_info_query).await? {
+            if let SimpleQueryMessage::Row(row) = msg {
+                let name = row
+                    .get(0)
+                    .ok_or(ReplicationClientError::InvalidColumn(
+                        "attname".to_string(),
+                        "pg_attribute".to_string(),
+                    ))?
+                    .to_string();
+
+                let typ = Type::from_oid(
+                    row.get(1)
+                        .ok_or(ReplicationClientError::InvalidColumn(
+                            "atttipid".to_string(),
+                            "pg_attribute".to_string(),
+                        ))?
                         .parse()
-                        .expect("type modifier is not an i32");
-                    let nullable = row.get(3).expect("failed to get attribute nullability") == "f";
-                    let identity = row.get(4).expect("failed to get is_identity column") == "t";
-                    Some(Attribute {
-                        name,
-                        typ,
-                        type_modifier,
-                        nullable,
-                        identity,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+                        .map_err(|_| ReplicationClientError::OidColumnNotU32)?,
+                )
+                .ok_or(ReplicationClientError::OidColumnNotU32)?;
+
+                let type_modifier = row
+                    .get(2)
+                    .ok_or(ReplicationClientError::InvalidColumn(
+                        "atttypmod".to_string(),
+                        "pg_attribute".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| ReplicationClientError::TypeModifierColumnNotI32)?;
+
+                let nullable = row.get(3).ok_or(ReplicationClientError::InvalidColumn(
+                    "attnotnull".to_string(),
+                    "pg_attribute".to_string(),
+                ))? == "f";
+
+                let identity = row.get(4).ok_or(ReplicationClientError::InvalidColumn(
+                    "attnum".to_string(),
+                    "pg_attribute".to_string(),
+                ))? == "t";
+
+                attributes.push(Attribute {
+                    name,
+                    typ,
+                    type_modifier,
+                    nullable,
+                    identity,
+                });
+            }
+        }
 
         Ok(attributes)
     }
@@ -349,12 +379,16 @@ impl ReplicationClient {
         let slot_query = client.simple_query(&query).await?;
         let consistent_point: PgLsn = if let SimpleQueryMessage::Row(row) = &slot_query[0] {
             row.get("consistent_point")
-                .expect("failed to get consistent_point")
+                .ok_or(ReplicationClientError::InvalidColumn(
+                    "consistent_point".to_string(),
+                    "create_replication_slot".to_string(),
+                ))?
                 .parse()
-                .expect("failed to parse consistent_point")
+                .map_err(|_| ReplicationClientError::ConsistentPointNotPgLsn)?
         } else {
-            panic!("unexpected query message");
+            return Err(ReplicationClientError::ExpectedSimpleQueryMessage);
         };
+
         Ok(consistent_point)
     }
 
@@ -366,15 +400,21 @@ impl ReplicationClient {
             r#"select confirmed_flush_lsn from pg_replication_slots where slot_name = '{}';"#,
             slot_name
         );
+
         let query_result = client.simple_query(&query).await?;
+
         let confirmed_flush_lsn: PgLsn = if let SimpleQueryMessage::Row(row) = &query_result[0] {
             row.get("confirmed_flush_lsn")
-                .expect("failed to get confirmed_flush_lsn column")
+                .ok_or(ReplicationClientError::InvalidColumn(
+                    "confirmed_flush_lsn".to_string(),
+                    "pg_replication_slots".to_string(),
+                ))?
                 .parse()
-                .expect("failed to parse confirmed_flush_lsn")
+                .map_err(|_| ReplicationClientError::ConsistentPointNotPgLsn)?
         } else {
             return Ok(None);
         };
+
         Ok(Some(confirmed_flush_lsn))
     }
 
