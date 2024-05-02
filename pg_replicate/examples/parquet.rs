@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     for (table, builders) in column_builders {
         let batch = create_record_batch(builders);
-        write_parquet(batch, &format!("./{}.{}.parquet", table.schema, table.name));
+        write_parquet(batch, &format!("./{}.{}.parquet", table.schema, table.name))?;
     }
 
     Ok(())
@@ -70,23 +70,24 @@ fn create_record_batch(builders: Vec<(String, Box<dyn ArrayBuilder>)>) -> Record
     RecordBatch::try_from_iter(cols).expect("failed to create record batch")
 }
 
-fn write_parquet(batch: RecordBatch, file_name: &str) {
+fn write_parquet(batch: RecordBatch, file_name: &str) -> Result<(), anyhow::Error> {
     let file = File::options()
         .read(true)
         .write(true)
         .create_new(true)
-        .open(file_name)
-        .unwrap();
+        .open(file_name)?;
 
     let props = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
         .build();
 
-    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
+    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
 
     writer.write(&batch).expect("Writing batch");
 
-    writer.close().unwrap();
+    writer.close()?;
+
+    Ok(())
 }
 
 fn insert_in_col(

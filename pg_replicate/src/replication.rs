@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    time::{Duration, UNIX_EPOCH},
+    time::{Duration, SystemTimeError, UNIX_EPOCH},
 };
 
 use futures::StreamExt;
@@ -59,6 +59,9 @@ pub enum ReplicationClientError {
 
     #[error("resumption lsn {0} is older than the slot lsn {1}")]
     CantResume(PgLsn, PgLsn),
+
+    #[error("system time error: {0}")]
+    SystemTime(#[from] SystemTimeError),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -518,7 +521,7 @@ impl ReplicationClient {
                 },
                 ReplicationMessage::PrimaryKeepAlive(keepalive) => {
                     if keepalive.reply() == 1 {
-                        let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
+                        let ts = postgres_epoch.elapsed()?.as_micros() as i64;
                         logical_stream
                             .as_mut()
                             .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)

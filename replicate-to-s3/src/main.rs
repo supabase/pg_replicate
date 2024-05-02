@@ -401,7 +401,7 @@ async fn copy_realtime_changes(
                     }
                     ReplicationMessage::PrimaryKeepAlive(keepalive) => {
                         if keepalive.reply() == 1 {
-                            let ts = postgres_epoch.elapsed().unwrap().as_micros() as i64;
+                            let ts = postgres_epoch.elapsed()?.as_micros() as i64;
                             logical_stream
                                 .as_mut()
                                 .standby_status_update(last_lsn, last_lsn, last_lsn, ts, 0)
