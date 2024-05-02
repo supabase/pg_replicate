@@ -810,6 +810,11 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Valu
             let val = row.get::<&str>(i);
             Ok(Value::Text(val.to_string()))
         }
+        Type::JSON | Type::JSONB => {
+            let val = row.get::<serde_json::Value>(i);
+            let val = json_to_cbor_value(&val);
+            Ok(val)
+        }
         Type::INT2 => {
             let val = row.get::<i16>(i);
             Ok(Value::Integer(val.into()))
@@ -832,6 +837,36 @@ fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Result<Valu
             ))
         }
         ref typ => Err(anyhow::anyhow!("unsupported type {typ:?}")),
+    }
+}
+
+fn json_to_cbor_value(val: &serde_json::Value) -> Value {
+    match val {
+        serde_json::Value::Null => Value::Null,
+        serde_json::Value::Bool(b) => Value::Bool(*b),
+        serde_json::Value::Number(n) => {
+            if n.is_i64() {
+                Value::Integer(n.as_i64().unwrap().into())
+            } else if n.is_u64() {
+                Value::Integer(n.as_u64().unwrap().into())
+            } else if n.is_f64() {
+                Value::Float(n.as_f64().unwrap())
+            } else {
+                panic!("invalid json number")
+            }
+        }
+        serde_json::Value::String(s) => Value::Text(s.clone()),
+        serde_json::Value::Array(a) => {
+            let a = a.iter().map(json_to_cbor_value).collect();
+            Value::Array(a)
+        }
+        serde_json::Value::Object(o) => {
+            let o = o
+                .iter()
+                .map(|(k, v)| (Value::Text(k.clone()), json_to_cbor_value(v)))
+                .collect();
+            Value::Map(o)
+        }
     }
 }
 

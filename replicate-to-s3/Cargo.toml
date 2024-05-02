@@ -6,9 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+serde_json = { version = "1.0" }
 pg_replicate = { path = "../pg_replicate" }
 tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", features = [
     "with-chrono-0_4",
+    "with-serde_json-1",
 ] }
 postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres" }
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
