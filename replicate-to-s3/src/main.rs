@@ -248,7 +248,7 @@ async fn copy_realtime_changes(
                                 }
                                 match rel_id_to_schema.get(&relation.rel_id()) {
                                     Some(schema) => {
-                                        let data = relation_body_to_event_data(&relation);
+                                        let data = relation_body_to_event_data(&relation)?;
                                         let event_type = EventType::Relation;
                                         event_to_cbor(
                                             event_type,
@@ -482,35 +482,51 @@ fn commit_body_to_event_data(commit: &CommitBody) -> Value {
     Value::Map(map)
 }
 
-fn relation_body_to_event_data(relation: &RelationBody) -> Value {
-    let schema = relation.namespace().expect("invalid relation namespace");
-    let table = relation.name().expect("invalid relation name");
+#[derive(Debug, Error)]
+enum RelationBodyParseError {
+    #[error("invalid namespace")]
+    InvalidNamespace,
 
-    let cols: Vec<Value> = relation
-        .columns()
-        .iter()
-        .map(|col| {
-            let name = col.name().expect("invalid column name");
-            let mut map = Vec::new();
-            map.push((
-                Value::Text("name".to_string()),
-                Value::Text(name.to_string()),
-            ));
-            map.push((
-                Value::Text("identity".to_string()),
-                Value::Bool(col.flags() == 1),
-            ));
-            map.push((
-                Value::Text("type_id".to_string()),
-                Value::Integer(col.type_id().into()),
-            ));
-            map.push((
-                Value::Text("type_modifier".to_string()),
-                Value::Integer(col.type_modifier().into()),
-            ));
-            Value::Map(map)
-        })
-        .collect();
+    #[error("invalid relation name")]
+    InvalidRelationName,
+
+    #[error("invalid column name")]
+    InvalidColumnName,
+}
+
+fn relation_body_to_event_data(relation: &RelationBody) -> Result<Value, RelationBodyParseError> {
+    let schema = relation
+        .namespace()
+        .map_err(|_| RelationBodyParseError::InvalidNamespace)?;
+    let table = relation
+        .name()
+        .map_err(|_| RelationBodyParseError::InvalidRelationName)?;
+
+    let mut cols = vec![];
+    for col in relation.columns().iter() {
+        let name = col
+            .name()
+            .map_err(|_| RelationBodyParseError::InvalidColumnName)?;
+        let mut map = Vec::new();
+        map.push((
+            Value::Text("name".to_string()),
+            Value::Text(name.to_string()),
+        ));
+        map.push((
+            Value::Text("identity".to_string()),
+            Value::Bool(col.flags() == 1),
+        ));
+        map.push((
+            Value::Text("type_id".to_string()),
+            Value::Integer(col.type_id().into()),
+        ));
+        map.push((
+            Value::Text("type_modifier".to_string()),
+            Value::Integer(col.type_modifier().into()),
+        ));
+
+        cols.push(Value::Map(map));
+    }
 
     let mut map = Vec::new();
 
@@ -524,7 +540,7 @@ fn relation_body_to_event_data(relation: &RelationBody) -> Value {
     ));
     map.push((Value::Text("columns".to_string()), Value::Array(cols)));
 
-    Value::Map(map)
+    Ok(Value::Map(map))
 }
 
 fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Result<Value, anyhow::Error> {
