@@ -69,6 +69,9 @@ pub enum ReplicationClientError {
     #[error("oid column is not a valid u32")]
     OidColumnNotU32,
 
+    #[error("unsupported column type with oid {0} in relation id {1}")]
+    UnsupportedType(u32, u32),
+
     #[error("type modifier column is not a valid u32")]
     TypeModifierColumnNotI32,
 
@@ -286,16 +289,16 @@ impl ReplicationClient {
                     ))?
                     .to_string();
 
-                let typ = Type::from_oid(
-                    row.get(1)
-                        .ok_or(ReplicationClientError::InvalidColumn(
-                            "atttipid".to_string(),
-                            "pg_attribute".to_string(),
-                        ))?
-                        .parse()
-                        .map_err(|_| ReplicationClientError::OidColumnNotU32)?,
-                )
-                .ok_or(ReplicationClientError::OidColumnNotU32)?;
+                let typoid = row
+                    .get(1)
+                    .ok_or(ReplicationClientError::InvalidColumn(
+                        "atttipid".to_string(),
+                        "pg_attribute".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| ReplicationClientError::OidColumnNotU32)?;
+                let typ = Type::from_oid(typoid)
+                    .ok_or(ReplicationClientError::UnsupportedType(typoid, relation_id))?;
 
                 let type_modifier = row
                     .get(2)
@@ -340,12 +343,24 @@ impl ReplicationClient {
         for table in tables {
             let relation_id = self.get_relation_id(&table).await?;
             if let Some(relation_id) = relation_id {
-                let attributes = self.get_table_attributes(relation_id).await?;
-                schema.push(TableSchema {
-                    table,
-                    relation_id,
-                    attributes,
-                });
+                match self.get_table_attributes(relation_id).await {
+                    Ok(attributes) => {
+                        schema.push(TableSchema {
+                            table,
+                            relation_id,
+                            attributes,
+                        });
+                    }
+                    Err(e) => match e {
+                        ReplicationClientError::UnsupportedType(column_type_oid, relation_id) => {
+                            //TODO: do proper logging instead of println
+                            println!("Column type {column_type_oid} in relation {relation_id} not supported. Ignoring relation.");
+                        }
+                        e => {
+                            return Err(e);
+                        }
+                    },
+                }
             } else {
                 //TODO: handle missing relation_id case
             }
