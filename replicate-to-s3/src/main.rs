@@ -2,7 +2,8 @@ use std::{
     collections::HashMap,
     error::Error,
     io::Write,
-    str::from_utf8,
+    num::ParseIntError,
+    str::{from_utf8, ParseBoolError, Utf8Error},
     time::{Duration, Instant, UNIX_EPOCH},
 };
 
@@ -26,6 +27,7 @@ use postgres_protocol::message::backend::{
     TupleData,
 };
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tokio::time::timeout;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutRow,
@@ -870,12 +872,36 @@ fn json_to_cbor_value(val: &serde_json::Value) -> Value {
     }
 }
 
-fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Result<Value, anyhow::Error> {
+#[derive(Debug, Error)]
+enum TupleDataParseError {
+    #[error("missing toast value")]
+    MissingToastValue,
+
+    #[error("invalid string value")]
+    InvalidStr(#[from] Utf8Error),
+
+    #[error("invalid bool value")]
+    InvalidBool(#[from] ParseBoolError),
+
+    #[error("invalid int value")]
+    InvalidInt(#[from] ParseIntError),
+
+    #[error("invalid timestamp value")]
+    InvalidTimestamp(#[from] chrono::ParseError),
+
+    #[error("unsupported type")]
+    UnsupportedType(String),
+
+    #[error("out of range timestamp")]
+    OutOfRangeTimestamp,
+}
+
+fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Result<Value, TupleDataParseError> {
     let bytes = match val {
         TupleData::Null => {
             return Ok(Value::Null);
         }
-        TupleData::UnchangedToast => panic!("unchanged toast"),
+        TupleData::UnchangedToast => return Err(TupleDataParseError::MissingToastValue),
         TupleData::Text(bytes) => &bytes[..],
     };
     match *typ {
@@ -906,16 +932,15 @@ fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Result<Value, anyhow:
         }
         Type::TIMESTAMP => {
             let val = from_utf8(bytes)?;
-            let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")
-                .expect("invalid timestamp");
+            let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")?;
             Ok(Value::Integer(
                 val.and_utc()
                     .timestamp_nanos_opt()
-                    .ok_or(anyhow!("failed to get timestamp nanos"))?
+                    .ok_or(TupleDataParseError::OutOfRangeTimestamp)?
                     .into(),
             ))
         }
-        ref typ => Err(anyhow!("unsupported type {typ:?}")),
+        ref typ => Err(TupleDataParseError::UnsupportedType(typ.to_string())),
     }
 }
 
