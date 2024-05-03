@@ -863,16 +863,17 @@ fn json_to_cbor_value(val: &serde_json::Value) -> Value {
         serde_json::Value::Null => Value::Null,
         serde_json::Value::Bool(b) => Value::Bool(*b),
         serde_json::Value::Number(n) => {
-            if n.is_i64() {
-                Value::Integer(n.as_i64().unwrap().into())
-            } else if n.is_u64() {
-                Value::Integer(n.as_u64().unwrap().into())
-            } else if n.is_f64() {
-                Value::Float(n.as_f64().unwrap())
+            if let Some(val) = n.as_i64() {
+                Value::Integer(val.into())
+            } else if let Some(val) = n.as_u64() {
+                Value::Integer(val.into())
+            } else if let Some(val) = n.as_f64() {
+                Value::Float(val)
             } else {
                 panic!("invalid json number")
             }
         }
+
         serde_json::Value::String(s) => Value::Text(s.clone()),
         serde_json::Value::Array(a) => {
             let a = a.iter().map(json_to_cbor_value).collect();
