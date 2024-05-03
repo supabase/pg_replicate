@@ -360,7 +360,7 @@ async fn copy_realtime_changes(
                                         let tuple = delete
                                             .key_tuple()
                                             .or(delete.old_tuple())
-                                            .expect("no tuple found in delete message");
+                                            .ok_or(anyhow!("no tuple found in delete message"))?;
                                         let data = get_data(schema, tuple)?;
                                         let event_type = EventType::Delete;
                                         event_to_cbor(
