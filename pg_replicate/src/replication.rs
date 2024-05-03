@@ -77,6 +77,9 @@ pub enum ReplicationClientError {
 
     #[error("expected simple query message, got command complete")]
     ExpectedSimpleQueryMessage,
+
+    #[error("replication slot missing")]
+    ReplicationSlotMissing,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -454,7 +457,7 @@ impl ReplicationClient {
                     {
                         Ok(confirmed_flush_lsn)
                     } else {
-                        panic!("slot {slot_name} should exist")
+                        Err(ReplicationClientError::ReplicationSlotMissing)
                     }
                 }
                 e => Err(e),
