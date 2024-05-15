@@ -1,6 +1,5 @@
-mod replication;
-
-pub use replication::{
-    Attribute, EventType, ReplicationClient, ReplicationClientError, ResumptionData, Row, RowEvent,
-    Table, TableSchema,
-};
+pub mod connectors;
+pub mod conversion;
+mod escape;
+pub mod replication_client;
+pub mod table;

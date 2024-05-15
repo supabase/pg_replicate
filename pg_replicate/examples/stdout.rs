@@ -1,200 +1,210 @@
-use std::{collections::HashMap, error::Error, str::from_utf8};
+use std::error::Error;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
-use pg_replicate::{ReplicationClient, RowEvent, TableSchema};
-use postgres_protocol::message::backend::{RelationBody, Tuple, TupleData};
-use serde::Serialize;
-use serde_json::{json, Map, Value};
-use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
+use clap::{Args, Parser, Subcommand};
+use futures::StreamExt;
+use pg_replicate::{
+    connectors::source::{
+        postgres::{PostgresSource, TableNamesFrom},
+        Source,
+    },
+    conversion::{
+        CdcMessage, JsonConversionError, ReplicationMsgJsonConversionError,
+        ReplicationMsgToCdcMsgConverter, TableRowToJsonConverter,
+    },
+    table::TableName,
+};
+use tokio::pin;
+use tokio_postgres::types::PgLsn;
+use tracing::{error, info};
 
-#[derive(Serialize, Debug)]
-struct Event {
-    event_type: String,
-    timestamp: DateTime<Utc>,
-    relation_id: u32,
-    data: Value,
+#[derive(Debug, Parser)]
+#[command(name = "stdout", version, about, arg_required_else_help = true)]
+struct AppArgs {
+    #[clap(flatten)]
+    db_args: DbArgs,
+
+    #[clap(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Args)]
+struct DbArgs {
+    /// Host on which Postgres is running
+    #[arg(long)]
+    db_host: String,
+
+    /// Port on which Postgres is running
+    #[arg(long)]
+    db_port: u16,
+
+    /// Postgres database name
+    #[arg(long)]
+    db_name: String,
+
+    /// Postgres database user name
+    #[arg(long)]
+    db_username: String,
+
+    /// Postgres database user password
+    #[arg(long)]
+    db_password: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Copy a table
+    CopyTable { schema: String, name: String },
+
+    /// Start a change data capture
+    Cdc {
+        publication: String,
+        slot_name: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let repl_client = ReplicationClient::new(
-        "localhost".to_string(),
-        8080,
-        "pagila".to_string(),
-        "raminder.singh".to_string(),
-        "temp_slot".to_string(),
-        None,
-    )
-    .await?;
-
-    let publication = "actor_pub";
-    let schemas = repl_client.get_schemas(publication).await?;
-
-    let mut rel_id_to_schema = HashMap::new();
-    let now = Utc::now();
-    for schema in &schemas {
-        rel_id_to_schema.insert(schema.relation_id, schema);
-        let event = Event {
-            event_type: "schema".to_string(),
-            timestamp: now,
-            relation_id: schema.relation_id,
-            data: schema_to_event_data(schema),
-        };
-        let event = serde_json::to_string(&event).expect("failed to convert event to json string");
-        println!("{event}");
+    if let Err(e) = main_impl().await {
+        error!("{e}");
     }
-
-    repl_client
-        .get_table_snapshot(&schemas, |event, table_schema| match event {
-            RowEvent::Insert(row) => match row {
-                pg_replicate::Row::CopyOut(row) => {
-                    let now = Utc::now();
-                    let mut data_map = Map::new();
-                    for (i, attr) in table_schema.attributes.iter().enumerate() {
-                        let val = get_val_from_row(&attr.typ, &row, i);
-                        data_map.insert(attr.name.clone(), json!(val));
-                    }
-                    let event = Event {
-                        event_type: "insert".to_string(),
-                        timestamp: now,
-                        relation_id: table_schema.relation_id,
-                        data: Value::Object(data_map),
-                    };
-                    let event = serde_json::to_string(&event)
-                        .expect("failed to convert event to json string");
-                    println!("{event}");
-                }
-                pg_replicate::Row::Insert(_insert) => {
-                    unreachable!()
-                }
-            },
-            RowEvent::Update(_update) => {}
-            RowEvent::Delete(_delete) => {}
-            RowEvent::Relation(_relation) => {}
-        })
-        .await?;
-
-    repl_client
-        .get_realtime_changes(&rel_id_to_schema, publication, |event, table_schema| {
-            let (data, event_type) = match event {
-                RowEvent::Insert(row) => match row {
-                    pg_replicate::Row::CopyOut(_row) => {
-                        unreachable!()
-                    }
-                    pg_replicate::Row::Insert(insert) => {
-                        let data = get_data(table_schema, insert.tuple());
-                        (data, "insert".to_string())
-                    }
-                },
-                RowEvent::Update(update) => {
-                    let data = get_data(table_schema, update.new_tuple());
-                    (data, "update".to_string())
-                }
-                RowEvent::Delete(delete) => {
-                    let tuple = delete
-                        .key_tuple()
-                        .or(delete.old_tuple())
-                        .expect("no tuple found in delete message");
-                    let data = get_data(table_schema, tuple);
-                    (data, "delete".to_string())
-                }
-                RowEvent::Relation(relation) => {
-                    let data = relation_body_to_event_data(relation);
-                    (data, "relation".to_string())
-                }
-            };
-            let now = Utc::now();
-            let event = Event {
-                event_type,
-                timestamp: now,
-                relation_id: table_schema.relation_id,
-                data,
-            };
-            let event =
-                serde_json::to_string(&event).expect("failed to convert event to json string");
-            println!("{event}");
-        })
-        .await?;
 
     Ok(())
 }
 
-fn relation_body_to_event_data(relation: &RelationBody) -> Value {
-    let schema = relation.namespace().expect("invalid relation namespace");
-    let table = relation.name().expect("invalid relation name");
-    let cols: Vec<Value> = relation
-        .columns()
-        .iter()
-        .map(|col| {
-            let name = col.name().expect("invalid column name");
-            json!({ "name": name, "identity": col.flags() == 1, "type_id": col.type_id(), "type_modifier": col.type_modifier() })
-        })
-        .collect();
-    json!({"schema": schema, "table": table, "columns": cols })
-}
+async fn main_impl() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
 
-fn schema_to_event_data(schema: &TableSchema) -> Value {
-    let attrs: Vec<Value> = schema
-        .attributes
-        .iter()
-        .map(|attr| json!({"name": attr.name, "nullable": attr.nullable, "type_oid": attr.typ.oid(), "type_modifier": attr.type_modifier, "identity": attr.identity}))
-        .collect();
-    json!({"schema": schema.table.schema, "table": schema.table.name, "attrs": attrs})
-}
+    let args = AppArgs::parse();
+    let db_args = args.db_args;
 
-fn get_val_from_row(typ: &Type, row: &BinaryCopyOutRow, i: usize) -> Value {
-    match *typ {
-        Type::INT4 => {
-            let val = row.get::<i32>(i);
-            json!(val)
+    match args.command {
+        Command::CopyTable { schema, name } => {
+            let table_names = vec![TableName { schema, name }];
+
+            let postgres_source = PostgresSource::new(
+                &db_args.db_host,
+                db_args.db_port,
+                &db_args.db_name,
+                &db_args.db_username,
+                db_args.db_password,
+                None,
+                TableNamesFrom::Vec(table_names),
+            )
+            .await?;
+
+            let source: &dyn Source<
+                '_,
+                '_,
+                JsonConversionError,
+                TableRowToJsonConverter,
+                ReplicationMsgJsonConversionError,
+                ReplicationMsgToCdcMsgConverter,
+            > = &postgres_source as &dyn Source<_, _, _, _>;
+
+            let table_schemas = source.get_table_schemas();
+            let converter = TableRowToJsonConverter;
+
+            for table_schema in table_schemas.values() {
+                let table_rows = source
+                    .get_table_copy_stream(
+                        &table_schema.table_name,
+                        &table_schema.column_schemas,
+                        &converter,
+                    )
+                    .await?;
+
+                pin!(table_rows);
+
+                while let Some(row) = table_rows.next().await {
+                    let row = row?;
+                    info!("row in json format: {row}");
+                }
+            }
         }
-        Type::VARCHAR => {
-            let val = row.get::<&str>(i);
-            json!(val)
-        }
-        Type::TIMESTAMP => {
-            let val = row.get::<NaiveDateTime>(i);
-            json!(val)
-        }
-        ref typ => {
-            panic!("unsupported type {typ:?}")
+        Command::Cdc {
+            publication,
+            slot_name,
+        } => {
+            let postgres_source = PostgresSource::new(
+                &db_args.db_host,
+                db_args.db_port,
+                &db_args.db_name,
+                &db_args.db_username,
+                db_args.db_password,
+                Some(slot_name),
+                TableNamesFrom::Publication(publication),
+            )
+            .await?;
+
+            let source: &dyn Source<
+                '_,
+                '_,
+                JsonConversionError,
+                TableRowToJsonConverter,
+                ReplicationMsgJsonConversionError,
+                ReplicationMsgToCdcMsgConverter,
+            > = &postgres_source as &dyn Source<_, _, _, _>;
+
+            let table_schemas = source.get_table_schemas();
+            let converter = TableRowToJsonConverter;
+
+            for table_schema in table_schemas.values() {
+                let table_rows = source
+                    .get_table_copy_stream(
+                        &table_schema.table_name,
+                        &table_schema.column_schemas,
+                        &converter,
+                    )
+                    .await?;
+
+                pin!(table_rows);
+
+                while let Some(row) = table_rows.next().await {
+                    let row = row?;
+                    info!("row in json format: {row}");
+                }
+            }
+
+            let converter = ReplicationMsgToCdcMsgConverter;
+
+            let mut last_lsn = PgLsn::from(0);
+
+            let cdc_events = source.get_cdc_stream(last_lsn, &converter).await?;
+
+            pin!(cdc_events);
+
+            while let Some(cdc_event) = cdc_events.next().await {
+                let cdc_event = cdc_event?;
+                match cdc_event {
+                    CdcMessage::Begin(msg) => {
+                        info!("Begin: {msg}");
+                    }
+                    CdcMessage::Commit { lsn, body } => {
+                        last_lsn = lsn;
+                        info!("Commit: {body}");
+                    }
+                    CdcMessage::Insert(msg) => {
+                        info!("Insert: {msg}");
+                    }
+                    CdcMessage::Update(msg) => {
+                        info!("Update: {msg}");
+                    }
+                    CdcMessage::Delete(msg) => {
+                        info!("Delete: {msg}");
+                    }
+                    CdcMessage::Relation(msg) => {
+                        info!("Relation: {msg}");
+                    }
+                    CdcMessage::KeepAliveRequested { reply } => {
+                        if reply {
+                            cdc_events.as_mut().send_status_update(last_lsn).await?;
+                        }
+                        info!("got keep alive msg")
+                    }
+                }
+            }
         }
     }
-}
 
-fn get_val_from_tuple_data(typ: &Type, val: &TupleData) -> Value {
-    let val = match val {
-        TupleData::Null => {
-            return Value::Null;
-        }
-        TupleData::UnchangedToast => panic!("unchanged toast"),
-        TupleData::Text(bytes) => from_utf8(&bytes[..]).expect("failed to get val"),
-    };
-    match *typ {
-        Type::INT4 => {
-            let val: i32 = val.parse().expect("value not i32");
-            Value::Number(val.into())
-        }
-        Type::VARCHAR => {
-            json!(val)
-        }
-        Type::TIMESTAMP => {
-            let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")
-                .expect("invalid timestamp");
-            json!(val)
-        }
-        ref typ => {
-            panic!("unsupported type {typ:?}")
-        }
-    }
-}
-
-fn get_data(table_schema: &TableSchema, tuple: &Tuple) -> Value {
-    let data = tuple.tuple_data();
-    let mut data_map = Map::new();
-    for (i, attr) in table_schema.attributes.iter().enumerate() {
-        let val = get_val_from_tuple_data(&attr.typ, &data[i]);
-        data_map.insert(attr.name.clone(), json!(val));
-    }
-    Value::Object(data_map)
+    Ok(())
 }
