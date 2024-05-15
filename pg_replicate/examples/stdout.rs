@@ -3,13 +3,13 @@ use std::error::Error;
 use clap::{Args, Parser, Subcommand};
 use futures::StreamExt;
 use pg_replicate::{
-    connectors::source::{
-        postgres::{PostgresSource, TableNamesFrom},
-        Source,
-    },
     conversion::{
         CdcMessage, JsonConversionError, ReplicationMsgJsonConversionError,
         ReplicationMsgToCdcMsgConverter, TableRowToJsonConverter,
+    },
+    pipeline::sources::{
+        postgres::{PostgresSource, TableNamesFrom},
+        Source,
     },
     table::TableName,
 };
