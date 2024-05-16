@@ -118,7 +118,7 @@ impl<
         table_name: &TableName,
         column_schemas: &'a [ColumnSchema],
         converter: &'a TR,
-    ) -> Result<TableCopyStream<'a, TR, TE>, SourceError> {
+    ) -> Result<TableCopyStream<'a, TR, TE>, SourceError<TE>> {
         let column_types: Vec<Type> = column_schemas.iter().map(|c| c.typ.clone()).collect();
 
         let stream = self
@@ -139,7 +139,7 @@ impl<
         &'b self,
         start_lsn: PgLsn,
         converter: &'a RM,
-    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError> {
+    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<TE>> {
         self.replication_client
             .commit_txn()
             .await

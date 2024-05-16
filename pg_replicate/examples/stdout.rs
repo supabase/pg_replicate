@@ -7,9 +7,13 @@ use pg_replicate::{
         CdcMessage, JsonConversionError, ReplicationMsgJsonConversionError,
         ReplicationMsgToCdcMsgConverter, TableRowToJsonConverter,
     },
-    pipeline::sources::{
-        postgres::{PostgresSource, TableNamesFrom},
-        Source,
+    pipeline::{
+        sinks::stdout::StdoutSink,
+        sources::{
+            postgres::{PostgresSource, TableNamesFrom},
+            Source,
+        },
+        DataPipeline,
     },
     table::TableName,
 };
@@ -92,34 +96,26 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
             )
             .await?;
 
-            let source: &dyn Source<
+            let stdout_sink = StdoutSink;
+
+            let converter = TableRowToJsonConverter;
+            let pipeline: DataPipeline<
                 '_,
                 '_,
                 JsonConversionError,
                 TableRowToJsonConverter,
                 ReplicationMsgJsonConversionError,
                 ReplicationMsgToCdcMsgConverter,
-            > = &postgres_source as &dyn Source<_, _, _, _>;
+                PostgresSource,
+                StdoutSink,
+            > = DataPipeline::new(
+                postgres_source,
+                stdout_sink,
+                pg_replicate::pipeline::PipelinAction::TableCopiesOnly,
+                converter,
+            );
 
-            let table_schemas = source.get_table_schemas();
-            let converter = TableRowToJsonConverter;
-
-            for table_schema in table_schemas.values() {
-                let table_rows = source
-                    .get_table_copy_stream(
-                        &table_schema.table_name,
-                        &table_schema.column_schemas,
-                        &converter,
-                    )
-                    .await?;
-
-                pin!(table_rows);
-
-                while let Some(row) = table_rows.next().await {
-                    let row = row?;
-                    info!("row in json format: {row}");
-                }
-            }
+            pipeline.start().await?;
         }
         Command::Cdc {
             publication,
