@@ -148,10 +148,6 @@ impl<
         start_lsn: PgLsn,
         converter: &'a RM,
     ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<TE, RE>> {
-        self.replication_client
-            .commit_txn()
-            .await
-            .map_err(PostgresSourceError::ReplicationClient)?;
         let publication = self
             .publication()
             .ok_or(PostgresSourceError::MissingPublication)?;
