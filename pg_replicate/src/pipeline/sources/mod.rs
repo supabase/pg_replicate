@@ -9,17 +9,20 @@ use crate::{
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
-use self::postgres::{CdcStream, PostgresSourceError, TableCopyStream, TableCopyStreamError};
+use self::postgres::{CdcStream, CdcStreamError, PostgresSourceError, TableCopyStream, TableCopyStreamError};
 
 pub mod postgres;
 
 #[derive(Debug, Error)]
-pub enum SourceError<TE> {
+pub enum SourceError<TE, RE> {
     #[error("source error: {0}")]
     Postgres(#[from] PostgresSourceError),
 
     #[error("table copy stream error: {0}")]
     TableCopyStream(#[from] TableCopyStreamError<TE>),
+
+    #[error("cdc stream error: {0}")]
+    CdcStream(#[from] CdcStreamError<RE>)
 }
 
 #[async_trait]
@@ -39,13 +42,13 @@ pub trait Source<
         table_name: &TableName,
         column_schemas: &'a [ColumnSchema],
         converter: &'a TR,
-    ) -> Result<TableCopyStream<'a, TR, TE>, SourceError<TE>>;
+    ) -> Result<TableCopyStream<'a, TR, TE>, SourceError<TE, RE>>;
 
-    async fn commit_transaction(&self) -> Result<(), SourceError<TE>>;
+    async fn commit_transaction(&self) -> Result<(), SourceError<TE, RE>>;
 
     async fn get_cdc_stream(
         &'b self,
         start_lsn: PgLsn,
         converter: &'a RM,
-    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<TE>>;
+    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<TE, RE>>;
 }

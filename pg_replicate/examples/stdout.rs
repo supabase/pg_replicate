@@ -1,25 +1,19 @@
 use std::error::Error;
 
 use clap::{Args, Parser, Subcommand};
-use futures::StreamExt;
 use pg_replicate::{
     conversions::json::{
-        CdcMessage, JsonConversionError, ReplicationMsgJsonConversionError,
-        ReplicationMsgToCdcMsgConverter, TableRowToJsonConverter,
+        JsonConversionError, ReplicationMsgJsonConversionError, ReplicationMsgToCdcMsgConverter,
+        TableRowToJsonConverter,
     },
     pipeline::{
         sinks::stdout::StdoutSink,
-        sources::{
-            postgres::{PostgresSource, TableNamesFrom},
-            Source,
-        },
+        sources::postgres::{PostgresSource, TableNamesFrom},
         DataPipeline,
     },
     table::TableName,
 };
-use tokio::pin;
-use tokio_postgres::types::PgLsn;
-use tracing::{error, info};
+use tracing::error;
 
 #[derive(Debug, Parser)]
 #[command(name = "stdout", version, about, arg_required_else_help = true)]
@@ -98,7 +92,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
 
             let stdout_sink = StdoutSink;
 
-            let converter = TableRowToJsonConverter;
+            let table_row_converter = TableRowToJsonConverter;
+            let cdc_converter = ReplicationMsgToCdcMsgConverter;
             let pipeline: DataPipeline<
                 '_,
                 '_,
@@ -112,7 +107,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
                 postgres_source,
                 stdout_sink,
                 pg_replicate::pipeline::PipelinAction::TableCopiesOnly,
-                converter,
+                table_row_converter,
+                cdc_converter,
             );
 
             pipeline.start().await?;
@@ -132,73 +128,28 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
             )
             .await?;
 
-            let source: &dyn Source<
+            let stdout_sink = StdoutSink;
+
+            let table_row_converter = TableRowToJsonConverter;
+            let cdc_converter = ReplicationMsgToCdcMsgConverter;
+            let pipeline: DataPipeline<
                 '_,
                 '_,
                 JsonConversionError,
                 TableRowToJsonConverter,
                 ReplicationMsgJsonConversionError,
                 ReplicationMsgToCdcMsgConverter,
-            > = &postgres_source as &dyn Source<_, _, _, _>;
+                PostgresSource,
+                StdoutSink,
+            > = DataPipeline::new(
+                postgres_source,
+                stdout_sink,
+                pg_replicate::pipeline::PipelinAction::Both,
+                table_row_converter,
+                cdc_converter,
+            );
 
-            let table_schemas = source.get_table_schemas();
-            let converter = TableRowToJsonConverter;
-
-            for table_schema in table_schemas.values() {
-                let table_rows = source
-                    .get_table_copy_stream(
-                        &table_schema.table_name,
-                        &table_schema.column_schemas,
-                        &converter,
-                    )
-                    .await?;
-
-                pin!(table_rows);
-
-                while let Some(row) = table_rows.next().await {
-                    let row = row?;
-                    info!("row in json format: {row}");
-                }
-            }
-
-            let converter = ReplicationMsgToCdcMsgConverter;
-
-            let mut last_lsn = PgLsn::from(0);
-
-            let cdc_events = source.get_cdc_stream(last_lsn, &converter).await?;
-
-            pin!(cdc_events);
-
-            while let Some(cdc_event) = cdc_events.next().await {
-                let cdc_event = cdc_event?;
-                match cdc_event {
-                    CdcMessage::Begin(msg) => {
-                        info!("Begin: {msg}");
-                    }
-                    CdcMessage::Commit { lsn, body } => {
-                        last_lsn = lsn;
-                        info!("Commit: {body}");
-                    }
-                    CdcMessage::Insert(msg) => {
-                        info!("Insert: {msg}");
-                    }
-                    CdcMessage::Update(msg) => {
-                        info!("Update: {msg}");
-                    }
-                    CdcMessage::Delete(msg) => {
-                        info!("Delete: {msg}");
-                    }
-                    CdcMessage::Relation(msg) => {
-                        info!("Relation: {msg}");
-                    }
-                    CdcMessage::KeepAliveRequested { reply } => {
-                        if reply {
-                            cdc_events.as_mut().send_status_update(last_lsn).await?;
-                        }
-                        info!("got keep alive msg")
-                    }
-                }
-            }
+            pipeline.start().await?;
         }
     }
 

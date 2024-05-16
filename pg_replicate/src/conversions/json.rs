@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::Display,
     num::ParseIntError,
     str::{from_utf8, ParseBoolError, Utf8Error},
 };
@@ -154,6 +155,24 @@ pub enum CdcMessage<V> {
     Delete(V),
     Relation(V),
     KeepAliveRequested { reply: bool },
+}
+
+impl<V: Display> Display for CdcMessage<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CdcMessage::Begin(v) => f.write_fmt(format_args!("Begin: {v}")),
+            CdcMessage::Commit { lsn, body } => {
+                f.write_fmt(format_args!("Commit: lsn: {lsn}, {body}"))
+            }
+            CdcMessage::Insert(v) => f.write_fmt(format_args!("Insert: {v}")),
+            CdcMessage::Update(v) => f.write_fmt(format_args!("Update: {v}")),
+            CdcMessage::Delete(v) => f.write_fmt(format_args!("Delete: {v}")),
+            CdcMessage::Relation(v) => f.write_fmt(format_args!("Relation: {v}")),
+            CdcMessage::KeepAliveRequested { reply } => {
+                f.write_fmt(format_args!("KeepAlive: reply: {reply}"))
+            }
+        }
+    }
 }
 
 pub struct ReplicationMsgToCdcMsgConverter;
