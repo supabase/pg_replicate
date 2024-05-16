@@ -9,7 +9,7 @@ use pg_replicate::{
     pipeline::{
         sinks::stdout::StdoutSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
-        DataPipeline,
+        DataPipeline, PipelinAction,
     },
     table::TableName,
 };
@@ -75,7 +75,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     let args = AppArgs::parse();
     let db_args = args.db_args;
 
-    match args.command {
+    let (postgres_source, action) = match args.command {
         Command::CopyTable { schema, name } => {
             let table_names = vec![TableName { schema, name }];
 
@@ -89,29 +89,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
                 TableNamesFrom::Vec(table_names),
             )
             .await?;
-
-            let stdout_sink = StdoutSink;
-
-            let table_row_converter = TableRowToJsonConverter;
-            let cdc_converter = ReplicationMsgToCdcMsgConverter;
-            let pipeline: DataPipeline<
-                '_,
-                '_,
-                JsonConversionError,
-                TableRowToJsonConverter,
-                ReplicationMsgJsonConversionError,
-                ReplicationMsgToCdcMsgConverter,
-                PostgresSource,
-                StdoutSink,
-            > = DataPipeline::new(
-                postgres_source,
-                stdout_sink,
-                pg_replicate::pipeline::PipelinAction::TableCopiesOnly,
-                table_row_converter,
-                cdc_converter,
-            );
-
-            pipeline.start().await?;
+            (postgres_source, PipelinAction::TableCopiesOnly)
         }
         Command::Cdc {
             publication,
@@ -128,30 +106,32 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
             )
             .await?;
 
-            let stdout_sink = StdoutSink;
-
-            let table_row_converter = TableRowToJsonConverter;
-            let cdc_converter = ReplicationMsgToCdcMsgConverter;
-            let pipeline: DataPipeline<
-                '_,
-                '_,
-                JsonConversionError,
-                TableRowToJsonConverter,
-                ReplicationMsgJsonConversionError,
-                ReplicationMsgToCdcMsgConverter,
-                PostgresSource,
-                StdoutSink,
-            > = DataPipeline::new(
-                postgres_source,
-                stdout_sink,
-                pg_replicate::pipeline::PipelinAction::Both,
-                table_row_converter,
-                cdc_converter,
-            );
-
-            pipeline.start().await?;
+            (postgres_source, PipelinAction::Both)
         }
-    }
+    };
+
+    let stdout_sink = StdoutSink;
+    let table_row_converter = TableRowToJsonConverter;
+    let cdc_converter = ReplicationMsgToCdcMsgConverter;
+
+    let pipeline: DataPipeline<
+        '_,
+        '_,
+        JsonConversionError,
+        TableRowToJsonConverter,
+        ReplicationMsgJsonConversionError,
+        ReplicationMsgToCdcMsgConverter,
+        PostgresSource,
+        StdoutSink,
+    > = DataPipeline::new(
+        postgres_source,
+        stdout_sink,
+        action,
+        table_row_converter,
+        cdc_converter,
+    );
+
+    pipeline.start().await?;
 
     Ok(())
 }
