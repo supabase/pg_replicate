@@ -41,6 +41,8 @@ pub trait Source<
         converter: &'a TR,
     ) -> Result<TableCopyStream<'a, TR, TE>, SourceError<TE>>;
 
+    async fn commit_transaction(&self) -> Result<(), SourceError<TE>>;
+
     async fn get_cdc_stream(
         &'b self,
         start_lsn: PgLsn,

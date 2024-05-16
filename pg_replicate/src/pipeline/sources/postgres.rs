@@ -135,6 +135,14 @@ impl<
         })
     }
 
+    async fn commit_transaction(&self) -> Result<(), SourceError<TE>> {
+        self.replication_client
+            .commit_txn()
+            .await
+            .map_err(PostgresSourceError::ReplicationClient)?;
+        Ok(())
+    }
+
     async fn get_cdc_stream(
         &'b self,
         start_lsn: PgLsn,

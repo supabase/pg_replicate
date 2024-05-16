@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{fmt::Display, marker::PhantomData};
 
 use futures::StreamExt;
 use thiserror::Error;
@@ -39,7 +39,7 @@ pub struct DataPipeline<
     Src: Source<'a, 'b, TE, TR, RE, RM>,
     Snk: Sink<TR::Output>,
 > where
-    TR::Output: Send + Sync,
+    TR::Output: Send + Sync + Display,
 {
     source: Src,
     sink: Snk,
@@ -64,7 +64,7 @@ impl<
         Snk: Sink<TR::Output>,
     > DataPipeline<'a, 'b, TE, TR, RE, RM, Src, Snk>
 where
-    TR::Output: Send + Sync,
+    TR::Output: Send + Sync + Display,
 {
     pub fn new(source: Src, sink: Snk, action: PipelinAction, table_row_converter: TR) -> Self {
         DataPipeline {
@@ -81,32 +81,48 @@ where
         }
     }
 
+    async fn copy_tables(&'a self) -> Result<(), PipelineError<TE>> {
+        let table_schemas = self.source.get_table_schemas();
+
+        for table_schema in table_schemas.values() {
+            let table_rows = self
+                .source
+                .get_table_copy_stream(
+                    &table_schema.table_name,
+                    &table_schema.column_schemas,
+                    &self.table_row_converter,
+                )
+                .await?;
+
+            pin!(table_rows);
+
+            while let Some(row) = table_rows.next().await {
+                let row = row.map_err(|e| SourceError::TableCopyStream(e))?;
+                self.sink.write_table_row(row).await?;
+            }
+
+            self.source.commit_transaction().await?;
+        }
+
+        Ok(())
+    }
+
+    async fn cdc(&self) -> Result<(), PipelineError<TE>> {
+        todo!()
+    }
+
     pub async fn start(&'a self) -> Result<(), PipelineError<TE>> {
         match self.action {
             PipelinAction::TableCopiesOnly => {
-                let table_schemas = self.source.get_table_schemas();
-
-                for table_schema in table_schemas.values() {
-                    let table_rows = self
-                        .source
-                        .get_table_copy_stream(
-                            &table_schema.table_name,
-                            &table_schema.column_schemas,
-                            &self.table_row_converter,
-                        )
-                        .await?;
-
-                    pin!(table_rows);
-
-                    while let Some(row) = table_rows.next().await {
-                        let row = row.map_err(|e| SourceError::TableCopyStream(e))?;
-                        self.sink.write_table_row(row)?;
-                        // info!("row in json format: {row}");
-                    }
-                }
+                self.copy_tables().await?;
             }
-            PipelinAction::CdcOnly => todo!(),
-            PipelinAction::Both => todo!(),
+            PipelinAction::CdcOnly => {
+                self.cdc().await?;
+            }
+            PipelinAction::Both => {
+                self.copy_tables().await?;
+                self.cdc().await?;
+            }
         }
 
         Ok(())

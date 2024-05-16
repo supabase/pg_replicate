@@ -1,3 +1,6 @@
+use std::fmt::Display;
+
+use async_trait::async_trait;
 use thiserror::Error;
 
 pub mod stdout;
@@ -8,7 +11,7 @@ pub enum SinkError {
     SomeError,
 }
 
-// #[async_trait]
-pub trait Sink<TRO: Send + Sync> {
-    fn write_table_row(&self, row: TRO) -> Result<(), SinkError>;
+#[async_trait]
+pub trait Sink<TRO: Send + Sync + Display> {
+    async fn write_table_row(&self, row: TRO) -> Result<(), SinkError>;
 }
