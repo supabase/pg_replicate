@@ -5,7 +5,7 @@ use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
 use crate::{
-    conversion::{TryFromReplicationMessage, TryFromTableRow},
+    conversions::{TryFromReplicationMessage, TryFromTableRow},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 

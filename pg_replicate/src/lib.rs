@@ -1,4 +1,4 @@
-pub mod conversion;
+pub mod conversions;
 mod escape;
 pub mod pipeline;
 pub mod replication_client;

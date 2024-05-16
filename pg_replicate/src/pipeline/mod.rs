@@ -4,7 +4,7 @@ use futures::StreamExt;
 use thiserror::Error;
 use tokio::pin;
 
-use crate::conversion::{TryFromReplicationMessage, TryFromTableRow};
+use crate::conversions::{TryFromReplicationMessage, TryFromTableRow};
 
 use self::{
     sinks::{Sink, SinkError},

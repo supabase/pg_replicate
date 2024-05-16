@@ -3,7 +3,7 @@ use std::error::Error;
 use clap::{Args, Parser, Subcommand};
 use futures::StreamExt;
 use pg_replicate::{
-    conversion::{
+    conversions::json::{
         CdcMessage, JsonConversionError, ReplicationMsgJsonConversionError,
         ReplicationMsgToCdcMsgConverter, TableRowToJsonConverter,
     },

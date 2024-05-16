@@ -17,7 +17,7 @@ use tokio_postgres::{
 };
 
 use crate::{
-    conversion::{TryFromReplicationMessage, TryFromTableRow},
+    conversions::{TryFromReplicationMessage, TryFromTableRow},
     replication_client::{ReplicationClient, ReplicationClientError},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };

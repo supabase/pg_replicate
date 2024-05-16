@@ -18,25 +18,7 @@ use tokio_postgres::{
 
 use crate::table::{ColumnSchema, TableId, TableSchema};
 
-pub trait TryFromTableRow<Err> {
-    type Output;
-
-    fn try_from(
-        &self,
-        row: &BinaryCopyOutRow,
-        column_schemas: &[ColumnSchema],
-    ) -> Result<Self::Output, Err>;
-}
-
-pub trait TryFromReplicationMessage<Err> {
-    type Output;
-
-    fn try_from(
-        &self,
-        message: ReplicationMessage<LogicalReplicationMessage>,
-        table_schemas: &HashMap<TableId, TableSchema>,
-    ) -> Result<Self::Output, Err>;
-}
+use super::{TryFromReplicationMessage, TryFromTableRow};
 
 #[derive(Debug, Error)]
 pub enum JsonConversionError {
