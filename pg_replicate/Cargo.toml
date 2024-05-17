@@ -9,6 +9,7 @@ edition = "2021"
 async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+duckdb = { workspace = true }
 futures = { workspace = true }
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }

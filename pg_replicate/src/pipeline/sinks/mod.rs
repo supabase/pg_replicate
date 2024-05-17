@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use thiserror::Error;
 
+pub mod duckdb;
 pub mod stdout;
 
 #[derive(Debug, Error)]
