@@ -26,6 +26,7 @@ impl Display for TableName {
 
 type TypeModifier = i32;
 
+#[derive(Debug)]
 pub struct ColumnSchema {
     pub name: String,
     pub typ: Type,
@@ -36,6 +37,7 @@ pub struct ColumnSchema {
 
 pub type TableId = u32;
 
+#[derive(Debug)]
 pub struct TableSchema {
     pub table_name: TableName,
     pub table_id: TableId,

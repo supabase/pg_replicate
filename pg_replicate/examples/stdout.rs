@@ -5,7 +5,7 @@ use pg_replicate::{
     pipeline::{
         sinks::stdout::StdoutSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
-        DataPipeline, PipelinAction,
+        DataPipeline, PipelineAction,
     },
     table::TableName,
 };
@@ -85,7 +85,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
                 TableNamesFrom::Vec(table_names),
             )
             .await?;
-            (postgres_source, PipelinAction::TableCopiesOnly)
+            (postgres_source, PipelineAction::TableCopiesOnly)
         }
         Command::Cdc {
             publication,
@@ -102,14 +102,13 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
             )
             .await?;
 
-            (postgres_source, PipelinAction::Both)
+            (postgres_source, PipelineAction::Both)
         }
     };
 
     let stdout_sink = StdoutSink;
 
-    let pipeline: DataPipeline<'_, PostgresSource, StdoutSink> =
-        DataPipeline::new(postgres_source, stdout_sink, action);
+    let pipeline = DataPipeline::new(postgres_source, stdout_sink, action);
 
     pipeline.start().await?;
 

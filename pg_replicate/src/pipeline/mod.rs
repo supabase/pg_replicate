@@ -13,7 +13,7 @@ use self::{
 pub mod sinks;
 pub mod sources;
 
-pub enum PipelinAction {
+pub enum PipelineAction {
     TableCopiesOnly,
     CdcOnly,
     Both,
@@ -31,18 +31,25 @@ pub enum PipelineError {
 pub struct DataPipeline<'a, Src: Source<'a>, Snk: Sink> {
     source: Src,
     sink: Snk,
-    action: PipelinAction,
+    action: PipelineAction,
     phantom_a: PhantomData<&'a Src>,
 }
 
 impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
-    pub fn new(source: Src, sink: Snk, action: PipelinAction) -> Self {
+    pub fn new(source: Src, sink: Snk, action: PipelineAction) -> Self {
         DataPipeline {
             source,
             sink,
             action,
             phantom_a: PhantomData,
         }
+    }
+
+    async fn copy_table_schemas(&'a self) -> Result<(), PipelineError> {
+        let table_schemas = self.source.get_table_schemas();
+        self.sink.write_table_schemas(table_schemas).await?;
+
+        Ok(())
     }
 
     async fn copy_tables(&'a self) -> Result<(), PipelineError> {
@@ -67,7 +74,7 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         Ok(())
     }
 
-    async fn cdc(&'a self) -> Result<(), PipelineError> {
+    async fn copy_cdc_events(&'a self) -> Result<(), PipelineError> {
         let cdc_events = self.source.get_cdc_stream(PgLsn::from(0)).await?;
 
         pin!(cdc_events);
@@ -75,33 +82,6 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         while let Some(cdc_event) = cdc_events.next().await {
             let cdc_event = cdc_event.map_err(SourceError::CdcStream)?;
             self.sink.write_cdc_event(cdc_event).await?;
-            // match cdc_event {
-            //     CdcMessage::Begin(msg) => {
-            //         info!("Begin: {msg}");
-            //     }
-            //     CdcMessage::Commit { lsn, body } => {
-            //         last_lsn = lsn;
-            //         info!("Commit: {body}");
-            //     }
-            //     CdcMessage::Insert(msg) => {
-            //         info!("Insert: {msg}");
-            //     }
-            //     CdcMessage::Update(msg) => {
-            //         info!("Update: {msg}");
-            //     }
-            //     CdcMessage::Delete(msg) => {
-            //         info!("Delete: {msg}");
-            //     }
-            //     CdcMessage::Relation(msg) => {
-            //         info!("Relation: {msg}");
-            //     }
-            //     CdcMessage::KeepAliveRequested { reply } => {
-            //         if reply {
-            //             cdc_events.as_mut().send_status_update(last_lsn).await?;
-            //         }
-            //         info!("got keep alive msg")
-            //     }
-            // }
         }
 
         Ok(())
@@ -109,15 +89,18 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
 
     pub async fn start(&'a self) -> Result<(), PipelineError> {
         match self.action {
-            PipelinAction::TableCopiesOnly => {
+            PipelineAction::TableCopiesOnly => {
+                self.copy_table_schemas().await?;
                 self.copy_tables().await?;
             }
-            PipelinAction::CdcOnly => {
-                self.cdc().await?;
+            PipelineAction::CdcOnly => {
+                self.copy_table_schemas().await?;
+                self.copy_cdc_events().await?;
             }
-            PipelinAction::Both => {
+            PipelineAction::Both => {
+                self.copy_table_schemas().await?;
                 self.copy_tables().await?;
-                self.cdc().await?;
+                self.copy_cdc_events().await?;
             }
         }
 

@@ -1,10 +1,15 @@
+use std::collections::HashMap;
+
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use async_trait::async_trait;
 use duckdb::Connection;
 use tracing::info;
 
-use crate::conversions::{cdc_event::CdcEvent, table_row::TableRow};
+use crate::{
+    conversions::{cdc_event::CdcEvent, table_row::TableRow},
+    table::TableSchema,
+};
 
 use super::{Sink, SinkError};
 
@@ -43,6 +48,14 @@ impl DuckDbSink {
 
 #[async_trait]
 impl Sink for DuckDbSink {
+    async fn write_table_schemas(
+        &self,
+        _table_schemas: &HashMap<u32, TableSchema>,
+    ) -> Result<(), SinkError> {
+        self.tx.send(41).await.expect("failed to send number");
+        Ok(())
+    }
+
     async fn write_table_row(&self, _row: TableRow) -> Result<(), SinkError> {
         self.tx.send(42).await.expect("failed to send number");
         Ok(())
