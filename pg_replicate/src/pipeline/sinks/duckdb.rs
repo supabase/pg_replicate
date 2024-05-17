@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
@@ -8,18 +8,21 @@ use tracing::{error, info};
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    table::TableSchema,
+    table::{TableId, TableSchema},
 };
 
 use super::{Sink, SinkError};
 
-enum DuckDbRequest {
-    CreateTables(HashMap<u32, TableSchema>),
+pub enum DuckDbRequest {
+    CreateTables(HashMap<TableId, TableSchema>),
+    InsertRow(TableRow, TableId),
+    Close,
 }
 
 struct DuckDbExecutor {
-    pub client: DuckDbClient,
-    pub receiver: Receiver<DuckDbRequest>,
+    client: DuckDbClient,
+    receiver: Receiver<DuckDbRequest>,
+    table_schemas: Option<HashMap<TableId, TableSchema>>,
 }
 
 impl DuckDbExecutor {
@@ -29,6 +32,14 @@ impl DuckDbExecutor {
                 match req {
                     DuckDbRequest::CreateTables(table_schemas) => {
                         self.create_tables(&table_schemas);
+                        self.table_schemas = Some(table_schemas);
+                    }
+                    DuckDbRequest::InsertRow(row, table_id) => {
+                        self.insert_row(row, table_id);
+                    }
+                    DuckDbRequest::Close => {
+                        self.close();
+                        break;
                     }
                 }
             }
@@ -62,19 +73,69 @@ impl DuckDbExecutor {
             }
         }
     }
+
+    fn insert_row(&self, table_row: TableRow, table_id: TableId) {
+        let table_schema = self
+            .table_schemas
+            .as_ref()
+            .expect("missing table schemas while inserting a row")
+            .get(&table_id)
+            .expect("missing table id while inserting a row");
+
+        match self.client.insert_row(&table_schema.table_name, &table_row) {
+            Ok(_) => {
+                info!("inserted row");
+            }
+            Err(e) => {
+                error!("DuckDb error: {e}");
+            }
+        }
+    }
+
+    fn close(self) {
+        match self.client.close() {
+            Ok(_) => {
+                info!("closed duckdb client");
+            }
+            Err(e) => {
+                error!("DuckDb error: {e}");
+            }
+        }
+    }
 }
 
 pub struct DuckDbSink {
-    tx: Sender<DuckDbRequest>,
+    sender: Sender<DuckDbRequest>,
 }
 
 impl DuckDbSink {
-    pub async fn new() -> Result<DuckDbSink, duckdb::Error> {
+    pub async fn file<P: AsRef<Path>>(file_name: P) -> Result<DuckDbSink, duckdb::Error> {
+        let (sender, receiver) = channel(32);
+        let client = DuckDbClient::open_file(file_name)?;
+        let executor = DuckDbExecutor {
+            client,
+            receiver,
+            table_schemas: None,
+        };
+        executor.start();
+        Ok(DuckDbSink { sender })
+    }
+
+    pub async fn in_memory() -> Result<DuckDbSink, duckdb::Error> {
         let (sender, receiver) = channel(32);
         let client = DuckDbClient::open_in_memory()?;
-        let executor = DuckDbExecutor { client, receiver };
+        let executor = DuckDbExecutor {
+            client,
+            receiver,
+            table_schemas: None,
+        };
         executor.start();
-        Ok(DuckDbSink { tx: sender })
+        Ok(DuckDbSink { sender })
+    }
+
+    pub async fn close(&self) -> Result<(), SinkError> {
+        self.sender.send(DuckDbRequest::Close).await?;
+        Ok(())
     }
 }
 
@@ -82,15 +143,16 @@ impl DuckDbSink {
 impl Sink for DuckDbSink {
     async fn write_table_schemas(
         &self,
-        table_schemas: HashMap<u32, TableSchema>,
+        table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError> {
         let req = DuckDbRequest::CreateTables(table_schemas);
-        self.tx.send(req).await.expect("failed to send number");
+        self.sender.send(req).await?;
         Ok(())
     }
 
-    async fn write_table_row(&self, _row: TableRow) -> Result<(), SinkError> {
-        // self.tx.send(42).await.expect("failed to send number");
+    async fn write_table_row(&self, row: TableRow, table_id: TableId) -> Result<(), SinkError> {
+        let req = DuckDbRequest::InsertRow(row, table_id);
+        self.sender.send(req).await?;
         Ok(())
     }
 

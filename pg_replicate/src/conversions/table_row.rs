@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use chrono::{DateTime, NaiveDateTime, Utc};
 use thiserror::Error;
 use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
@@ -18,7 +16,7 @@ pub enum Cell {
 
 #[derive(Debug)]
 pub struct TableRow {
-    pub values: HashMap<String, Cell>,
+    pub values: Vec<(String, Cell)>,
 }
 
 #[derive(Debug, Error)]
@@ -83,10 +81,10 @@ impl TableRowConverter {
         row: &tokio_postgres::binary_copy::BinaryCopyOutRow,
         column_schemas: &[crate::table::ColumnSchema],
     ) -> Result<TableRow, TableRowConversionError> {
-        let mut values = HashMap::with_capacity(column_schemas.len());
+        let mut values = Vec::with_capacity(column_schemas.len());
         for (i, column_schema) in column_schemas.iter().enumerate() {
             let value = Self::get_cell_value(row, column_schema, i)?;
-            values.insert(column_schema.name.clone(), value);
+            values.push((column_schema.name.clone(), value));
         }
 
         Ok(TableRow { values })

@@ -45,6 +45,10 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         }
     }
 
+    pub fn sink(self) -> Snk {
+        self.sink
+    }
+
     async fn copy_table_schemas(&'a self) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
         self.sink.write_table_schemas(table_schemas.clone()).await?;
@@ -65,7 +69,9 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
 
             while let Some(row) = table_rows.next().await {
                 let row = row.map_err(SourceError::TableCopyStream)?;
-                self.sink.write_table_row(row).await?;
+                self.sink
+                    .write_table_row(row, table_schema.table_id)
+                    .await?;
             }
 
             self.source.commit_transaction().await?;

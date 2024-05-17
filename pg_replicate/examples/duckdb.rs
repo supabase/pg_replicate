@@ -42,6 +42,10 @@ struct DbArgs {
     /// Postgres database user password
     #[arg(long)]
     db_password: Option<String>,
+
+    /// DuckDb file name
+    #[arg(long)]
+    duckdb_file: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -106,11 +110,13 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let duckdb_sink = DuckDbSink::new().await?;
+    let duckdb_sink = DuckDbSink::file(db_args.duckdb_file).await?;
 
     let pipeline = DataPipeline::new(postgres_source, duckdb_sink, action);
 
     pipeline.start().await?;
+
+    pipeline.sink().close().await?;
 
     Ok(())
 }
