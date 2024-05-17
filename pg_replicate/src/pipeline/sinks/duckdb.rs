@@ -3,44 +3,76 @@ use std::collections::HashMap;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use async_trait::async_trait;
-use duckdb::Connection;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
+    clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
     table::TableSchema,
 };
 
 use super::{Sink, SinkError};
 
-pub struct DuckDbExecutor {
-    pub conn: Connection,
-    pub receiver: Receiver<i32>,
+enum DuckDbRequest {
+    CreateTables(HashMap<u32, TableSchema>),
+}
+
+struct DuckDbExecutor {
+    pub client: DuckDbClient,
+    pub receiver: Receiver<DuckDbRequest>,
 }
 
 impl DuckDbExecutor {
     pub fn start(mut self) {
         tokio::spawn(async move {
-            while let Some(n) = self.receiver.recv().await {
-                let x = self
-                    .conn
-                    .execute("select 1", [])
-                    .expect("failed to execute select query");
-                info!("Got number: {n}, {x}");
+            while let Some(req) = self.receiver.recv().await {
+                match req {
+                    DuckDbRequest::CreateTables(table_schemas) => {
+                        self.create_tables(&table_schemas);
+                    }
+                }
             }
         });
+    }
+
+    fn create_tables(&self, table_schemas: &HashMap<u32, TableSchema>) {
+        for table_schema in table_schemas.values() {
+            let schema = &table_schema.table_name.schema;
+
+            match self.client.create_schema_if_missing(schema) {
+                Ok(_) => {
+                    info!("created schema '{schema}'");
+                }
+                Err(e) => {
+                    error!("DuckDb error: {e}");
+                    return;
+                }
+            }
+
+            match self.client.create_table_if_missing(table_schema) {
+                Ok(_) => {
+                    info!(
+                        "created table '{}.{}'",
+                        table_schema.table_name.schema, table_schema.table_name.name
+                    );
+                }
+                Err(e) => {
+                    error!("DuckDb error: {e}");
+                }
+            }
+        }
     }
 }
 
 pub struct DuckDbSink {
-    pub tx: Sender<i32>,
+    tx: Sender<DuckDbRequest>,
 }
 
 impl DuckDbSink {
     pub async fn new() -> Result<DuckDbSink, duckdb::Error> {
         let (sender, receiver) = channel(32);
-        let conn = Connection::open_in_memory()?;
-        let executor = DuckDbExecutor { conn, receiver };
+        let client = DuckDbClient::open_in_memory()?;
+        let executor = DuckDbExecutor { client, receiver };
         executor.start();
         Ok(DuckDbSink { tx: sender })
     }
@@ -50,19 +82,20 @@ impl DuckDbSink {
 impl Sink for DuckDbSink {
     async fn write_table_schemas(
         &self,
-        _table_schemas: &HashMap<u32, TableSchema>,
+        table_schemas: HashMap<u32, TableSchema>,
     ) -> Result<(), SinkError> {
-        self.tx.send(41).await.expect("failed to send number");
+        let req = DuckDbRequest::CreateTables(table_schemas);
+        self.tx.send(req).await.expect("failed to send number");
         Ok(())
     }
 
     async fn write_table_row(&self, _row: TableRow) -> Result<(), SinkError> {
-        self.tx.send(42).await.expect("failed to send number");
+        // self.tx.send(42).await.expect("failed to send number");
         Ok(())
     }
 
     async fn write_cdc_event(&self, _event: CdcEvent) -> Result<(), SinkError> {
-        self.tx.send(43).await.expect("failed to send number");
+        // self.tx.send(43).await.expect("failed to send number");
         Ok(())
     }
 }

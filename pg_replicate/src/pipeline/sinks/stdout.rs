@@ -16,7 +16,7 @@ pub struct StdoutSink;
 impl Sink for StdoutSink {
     async fn write_table_schemas(
         &self,
-        table_schemas: &HashMap<u32, TableSchema>,
+        table_schemas: HashMap<u32, TableSchema>,
     ) -> Result<(), SinkError> {
         info!("{table_schemas:?}");
         Ok(())

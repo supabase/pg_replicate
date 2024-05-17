@@ -21,7 +21,7 @@ pub enum SinkError {
 pub trait Sink {
     async fn write_table_schemas(
         &self,
-        table_schemas: &HashMap<u32, TableSchema>,
+        table_schemas: HashMap<u32, TableSchema>,
     ) -> Result<(), SinkError>;
     async fn write_table_row(&self, row: TableRow) -> Result<(), SinkError>;
     async fn write_cdc_event(&self, event: CdcEvent) -> Result<(), SinkError>;

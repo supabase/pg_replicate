@@ -16,11 +16,11 @@ use tokio_postgres::{
 };
 
 use crate::{
+    clients::postgres::{ReplicationClient, ReplicationClientError},
     conversions::{
         cdc_event::{CdcEvent, CdcEventConversionError},
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
-    replication_client::{ReplicationClient, ReplicationClientError},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
