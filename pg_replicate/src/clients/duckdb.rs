@@ -24,13 +24,6 @@ impl DuckDbClient {
         Ok(DuckDbClient { conn })
     }
 
-    pub fn close(self) -> Result<(), duckdb::Error> {
-        match self.conn.close() {
-            Ok(_) => Ok(()),
-            Err((_, e)) => Err(e),
-        }
-    }
-
     pub fn create_schema_if_missing(&self, schema_name: &str) -> Result<(), duckdb::Error> {
         if !self.schema_exists(schema_name)? {
             self.create_schema(schema_name)?;

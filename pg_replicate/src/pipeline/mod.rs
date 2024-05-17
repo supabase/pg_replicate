@@ -45,10 +45,6 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         }
     }
 
-    pub fn sink(self) -> Snk {
-        self.sink
-    }
-
     async fn copy_table_schemas(&'a self) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
         self.sink.write_table_schemas(table_schemas.clone()).await?;

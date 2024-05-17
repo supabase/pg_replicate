@@ -116,7 +116,5 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
 
     pipeline.start().await?;
 
-    pipeline.sink().close().await?;
-
     Ok(())
 }

@@ -16,7 +16,6 @@ use super::{Sink, SinkError};
 pub enum DuckDbRequest {
     CreateTables(HashMap<TableId, TableSchema>),
     InsertRow(TableRow, TableId),
-    Close,
 }
 
 struct DuckDbExecutor {
@@ -36,10 +35,6 @@ impl DuckDbExecutor {
                     }
                     DuckDbRequest::InsertRow(row, table_id) => {
                         self.insert_row(row, table_id);
-                    }
-                    DuckDbRequest::Close => {
-                        self.close();
-                        break;
                     }
                 }
             }
@@ -91,17 +86,6 @@ impl DuckDbExecutor {
             }
         }
     }
-
-    fn close(self) {
-        match self.client.close() {
-            Ok(_) => {
-                info!("closed duckdb client");
-            }
-            Err(e) => {
-                error!("DuckDb error: {e}");
-            }
-        }
-    }
 }
 
 pub struct DuckDbSink {
@@ -131,11 +115,6 @@ impl DuckDbSink {
         };
         executor.start();
         Ok(DuckDbSink { sender })
-    }
-
-    pub async fn close(&self) -> Result<(), SinkError> {
-        self.sender.send(DuckDbRequest::Close).await?;
-        Ok(())
     }
 }
 
