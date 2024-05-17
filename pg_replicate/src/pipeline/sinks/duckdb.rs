@@ -78,9 +78,7 @@ impl DuckDbExecutor {
             .expect("missing table id while inserting a row");
 
         match self.client.insert_row(&table_schema.table_name, &table_row) {
-            Ok(_) => {
-                info!("inserted row");
-            }
+            Ok(_) => {}
             Err(e) => {
                 error!("DuckDb error: {e}");
             }

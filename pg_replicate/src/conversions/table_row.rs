@@ -11,7 +11,7 @@ pub enum Cell {
     I16(i16),
     I32(i32),
     I64(i64),
-    TimeStamp(i64),
+    TimeStamp(String),
 }
 
 #[derive(Debug)]
@@ -68,10 +68,8 @@ impl TableRowConverter {
             }
             Type::TIMESTAMP => {
                 let val = row.get::<NaiveDateTime>(i);
-                let utc_val = val.and_utc();
-                Ok(Cell::TimeStamp(utc_val.timestamp_nanos_opt().ok_or(
-                    TableRowConversionError::NoTimestampNanos(utc_val),
-                )?))
+                let val = val.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                Ok(Cell::TimeStamp(val))
             }
             ref typ => Err(TableRowConversionError::UnsupportedType(typ.clone())),
         }

@@ -113,13 +113,9 @@ impl DuckDbClient {
     ) -> Result<(), duckdb::Error> {
         let table_name = format!("{}.{}", table_name.schema, table_name.name);
         let column_count = table_row.values.len();
-        //TODO: Remove -1
-        let query = Self::create_insert_row_query(&table_name, column_count - 1);
+        let query = Self::create_insert_row_query(&table_name, column_count);
         let mut stmt = self.conn.prepare(&query)?;
-        //TODO: remove take(3)
-        stmt.execute(params_from_iter(
-            table_row.values.iter().take(3).map(|(_, v)| v),
-        ))?;
+        stmt.execute(params_from_iter(table_row.values.iter().map(|(_, v)| v)))?;
 
         Ok(())
     }
@@ -131,8 +127,7 @@ impl DuckDbClient {
         s.push_str(table_name);
         s.push_str(" values(");
         s.push_str(&Self::repeat_vars(column_count));
-        //TODO: replace with s.push(')')
-        s.push_str(", now())");
+        s.push(')');
 
         s
     }
