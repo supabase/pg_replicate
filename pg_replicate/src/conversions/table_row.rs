@@ -6,8 +6,7 @@ use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
 
 use crate::table::ColumnSchema;
 
-use super::TryFromTableRow;
-
+#[derive(Debug)]
 pub enum Cell {
     Bool(bool),
     String(String),
@@ -17,12 +16,13 @@ pub enum Cell {
     TimeStamp(i64),
 }
 
+#[derive(Debug)]
 pub struct TableRow {
     pub values: HashMap<String, Cell>,
 }
 
 #[derive(Debug, Error)]
-pub enum TableRowError {
+pub enum TableRowConversionError {
     #[error("unsupported type {0}")]
     UnsupportedType(Type),
 
@@ -34,11 +34,10 @@ pub struct TableRowConverter;
 
 impl TableRowConverter {
     fn get_cell_value(
-        &self,
         row: &BinaryCopyOutRow,
         column_schema: &ColumnSchema,
         i: usize,
-    ) -> Result<Cell, TableRowError> {
+    ) -> Result<Cell, TableRowConversionError> {
         match column_schema.typ {
             Type::BOOL => {
                 let val = row.get::<bool>(i);
@@ -72,28 +71,21 @@ impl TableRowConverter {
             Type::TIMESTAMP => {
                 let val = row.get::<NaiveDateTime>(i);
                 let utc_val = val.and_utc();
-                Ok(Cell::TimeStamp(
-                    utc_val
-                        .timestamp_nanos_opt()
-                        .ok_or(TableRowError::NoTimestampNanos(utc_val))?,
-                ))
+                Ok(Cell::TimeStamp(utc_val.timestamp_nanos_opt().ok_or(
+                    TableRowConversionError::NoTimestampNanos(utc_val),
+                )?))
             }
-            ref typ => Err(TableRowError::UnsupportedType(typ.clone())),
+            ref typ => Err(TableRowConversionError::UnsupportedType(typ.clone())),
         }
     }
-}
 
-impl TryFromTableRow<TableRowError> for TableRowConverter {
-    type Output = TableRow;
-
-    fn try_from(
-        &self,
+    pub fn try_from(
         row: &tokio_postgres::binary_copy::BinaryCopyOutRow,
         column_schemas: &[crate::table::ColumnSchema],
-    ) -> Result<Self::Output, TableRowError> {
+    ) -> Result<TableRow, TableRowConversionError> {
         let mut values = HashMap::with_capacity(column_schemas.len());
         for (i, column_schema) in column_schemas.iter().enumerate() {
-            let value = self.get_cell_value(row, column_schema, i)?;
+            let value = Self::get_cell_value(row, column_schema, i)?;
             values.insert(column_schema.name.clone(), value);
         }
 

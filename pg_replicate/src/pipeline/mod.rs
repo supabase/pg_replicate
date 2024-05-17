@@ -5,7 +5,7 @@ use thiserror::Error;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
 
-use crate::conversions::{TryFromReplicationMessage, TryFromTableRow};
+use crate::conversions::TryFromReplicationMessage;
 
 use self::{
     sinks::{Sink, SinkError},
@@ -22,9 +22,9 @@ pub enum PipelinAction {
 }
 
 #[derive(Debug, Error)]
-pub enum PipelineError<TE, RE> {
+pub enum PipelineError<RE> {
     #[error("source error: {0}")]
-    SourceError(#[from] SourceError<TE, RE>),
+    SourceError(#[from] SourceError<RE>),
 
     #[error("sink error: {0}")]
     SinkError(#[from] SinkError),
@@ -33,25 +33,19 @@ pub enum PipelineError<TE, RE> {
 pub struct DataPipeline<
     'a,
     'b,
-    TE,
-    TR: TryFromTableRow<TE> + Send + Sync,
     RE,
     RM: TryFromReplicationMessage<RE> + Send + Sync,
-    Src: Source<'a, 'b, TE, TR, RE, RM>,
-    Snk: Sink<TR::Output, RM::Output>,
+    Src: Source<'a, 'b, RE, RM>,
+    Snk: Sink<RM::Output>,
 > where
-    TR::Output: Send + Sync + Display,
     RM::Output: Send + Sync + Display,
 {
     source: Src,
     sink: Snk,
     action: PipelinAction,
-    table_row_converter: TR,
     cdc_converter: RM,
     phantom_a: PhantomData<&'a RM>,
-    phantom_b: PhantomData<&'b dyn Source<'a, 'b, TE, TR, RE, RM>>,
-    phantom_te: PhantomData<TE>,
-    phantom_tr: PhantomData<TR>,
+    phantom_b: PhantomData<&'b dyn Source<'a, 'b, RE, RM>>,
     phantom_re: PhantomData<RE>,
     phantom_rm: PhantomData<RM>,
 }
@@ -59,50 +53,34 @@ pub struct DataPipeline<
 impl<
         'a,
         'b,
-        TE,
-        TR: TryFromTableRow<TE> + Send + Sync,
         RE,
         RM: TryFromReplicationMessage<RE> + Send + Sync,
-        Src: Source<'a, 'b, TE, TR, RE, RM>,
-        Snk: Sink<TR::Output, RM::Output>,
-    > DataPipeline<'a, 'b, TE, TR, RE, RM, Src, Snk>
+        Src: Source<'a, 'b, RE, RM>,
+        Snk: Sink<RM::Output>,
+    > DataPipeline<'a, 'b, RE, RM, Src, Snk>
 where
-    TR::Output: Send + Sync + Display,
     RM::Output: Send + Sync + Display,
 {
-    pub fn new(
-        source: Src,
-        sink: Snk,
-        action: PipelinAction,
-        table_row_converter: TR,
-        cdc_converter: RM,
-    ) -> Self {
+    pub fn new(source: Src, sink: Snk, action: PipelinAction, cdc_converter: RM) -> Self {
         DataPipeline {
             source,
             sink,
             action,
-            table_row_converter,
             cdc_converter,
             phantom_a: PhantomData,
             phantom_b: PhantomData,
-            phantom_te: PhantomData,
-            phantom_tr: PhantomData,
             phantom_re: PhantomData,
             phantom_rm: PhantomData,
         }
     }
 
-    async fn copy_tables(&'a self) -> Result<(), PipelineError<TE, RE>> {
+    async fn copy_tables(&'a self) -> Result<(), PipelineError<RE>> {
         let table_schemas = self.source.get_table_schemas();
 
         for table_schema in table_schemas.values() {
             let table_rows = self
                 .source
-                .get_table_copy_stream(
-                    &table_schema.table_name,
-                    &table_schema.column_schemas,
-                    &self.table_row_converter,
-                )
+                .get_table_copy_stream(&table_schema.table_name, &table_schema.column_schemas)
                 .await?;
 
             pin!(table_rows);
@@ -118,7 +96,7 @@ where
         Ok(())
     }
 
-    async fn cdc(&'a self) -> Result<(), PipelineError<TE, RE>> {
+    async fn cdc(&'a self) -> Result<(), PipelineError<RE>> {
         let cdc_events = self
             .source
             .get_cdc_stream(PgLsn::from(0), &self.cdc_converter)
@@ -161,7 +139,7 @@ where
         Ok(())
     }
 
-    pub async fn start(&'a self) -> Result<(), PipelineError<TE, RE>> {
+    pub async fn start(&'a self) -> Result<(), PipelineError<RE>> {
         match self.action {
             PipelinAction::TableCopiesOnly => {
                 self.copy_tables().await?;

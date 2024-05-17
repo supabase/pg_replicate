@@ -4,6 +4,8 @@ use async_trait::async_trait;
 use duckdb::Connection;
 use tracing::info;
 
+use crate::conversions::table_row::TableRow;
+
 use super::{Sink, SinkError};
 
 pub struct DuckDbExecutor {
@@ -40,8 +42,8 @@ impl DuckDbSink {
 }
 
 #[async_trait]
-impl<TRO: Send + Sync + 'static, CRO: Send + Sync + 'static> Sink<TRO, CRO> for DuckDbSink {
-    async fn write_table_row(&self, _row: TRO) -> Result<(), SinkError> {
+impl<CRO: Send + Sync + 'static> Sink<CRO> for DuckDbSink {
+    async fn write_table_row(&self, _row: TableRow) -> Result<(), SinkError> {
         self.tx.send(42).await.expect("failed to send number");
         Ok(())
     }

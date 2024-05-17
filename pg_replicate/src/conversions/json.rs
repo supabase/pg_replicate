@@ -12,14 +12,11 @@ use postgres_protocol::message::backend::{
 };
 use serde_json::{json, Map, Value};
 use thiserror::Error;
-use tokio_postgres::{
-    binary_copy::BinaryCopyOutRow,
-    types::{PgLsn, Type},
-};
+use tokio_postgres::types::{PgLsn, Type};
 
 use crate::table::{ColumnSchema, TableId, TableSchema};
 
-use super::{TryFromReplicationMessage, TryFromTableRow};
+use super::TryFromReplicationMessage;
 
 #[derive(Debug, Error)]
 pub enum JsonConversionError {
@@ -32,76 +29,76 @@ pub enum JsonConversionError {
 
 pub struct TableRowToJsonConverter;
 
-impl TableRowToJsonConverter {
-    fn get_cell_value(
-        &self,
-        row: &BinaryCopyOutRow,
-        column_schema: &ColumnSchema,
-        i: usize,
-    ) -> Result<Value, JsonConversionError> {
-        match column_schema.typ {
-            Type::BOOL => {
-                let val = row.get::<bool>(i);
-                Ok(Value::Bool(val))
-            }
-            // Type::BYTEA => {
-            //     let bytes = row.get(i);
-            //     Ok(Value::Bytes(bytes))
-            // }
-            Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
-                let val = row.get::<&str>(i);
-                Ok(Value::String(val.to_string()))
-            }
-            // Type::JSON | Type::JSONB => {
-            //     let val = row.get::<serde_json::Value>(i);
-            //     let val = json_to_cbor_value(&val);
-            //     Ok(val)
-            // }
-            Type::INT2 => {
-                let val = row.get::<i16>(i);
-                Ok(Value::Number(val.into()))
-            }
-            Type::INT4 => {
-                let val = row.get::<i32>(i);
-                Ok(Value::Number(val.into()))
-            }
-            Type::INT8 => {
-                let val = row.get::<i64>(i);
-                Ok(Value::Number(val.into()))
-            }
-            Type::TIMESTAMP => {
-                let val = row.get::<NaiveDateTime>(i);
-                let utc_val = val.and_utc();
-                Ok(Value::Number(
-                    utc_val
-                        .timestamp_nanos_opt()
-                        .ok_or(JsonConversionError::NoTimestampNanos(utc_val))?
-                        .into(),
-                ))
-            }
-            ref typ => Err(JsonConversionError::UnsupportedType(typ.clone())),
-        }
-    }
-}
+// impl TableRowToJsonConverter {
+//     fn get_cell_value(
+//         &self,
+//         row: &BinaryCopyOutRow,
+//         column_schema: &ColumnSchema,
+//         i: usize,
+//     ) -> Result<Value, JsonConversionError> {
+//         match column_schema.typ {
+//             Type::BOOL => {
+//                 let val = row.get::<bool>(i);
+//                 Ok(Value::Bool(val))
+//             }
+//             // Type::BYTEA => {
+//             //     let bytes = row.get(i);
+//             //     Ok(Value::Bytes(bytes))
+//             // }
+//             Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
+//                 let val = row.get::<&str>(i);
+//                 Ok(Value::String(val.to_string()))
+//             }
+//             // Type::JSON | Type::JSONB => {
+//             //     let val = row.get::<serde_json::Value>(i);
+//             //     let val = json_to_cbor_value(&val);
+//             //     Ok(val)
+//             // }
+//             Type::INT2 => {
+//                 let val = row.get::<i16>(i);
+//                 Ok(Value::Number(val.into()))
+//             }
+//             Type::INT4 => {
+//                 let val = row.get::<i32>(i);
+//                 Ok(Value::Number(val.into()))
+//             }
+//             Type::INT8 => {
+//                 let val = row.get::<i64>(i);
+//                 Ok(Value::Number(val.into()))
+//             }
+//             Type::TIMESTAMP => {
+//                 let val = row.get::<NaiveDateTime>(i);
+//                 let utc_val = val.and_utc();
+//                 Ok(Value::Number(
+//                     utc_val
+//                         .timestamp_nanos_opt()
+//                         .ok_or(JsonConversionError::NoTimestampNanos(utc_val))?
+//                         .into(),
+//                 ))
+//             }
+//             ref typ => Err(JsonConversionError::UnsupportedType(typ.clone())),
+//         }
+//     }
+// }
 
-impl TryFromTableRow<JsonConversionError> for TableRowToJsonConverter {
-    type Output = serde_json::Value;
+// impl TryFromTableRow<JsonConversionError> for TableRowToJsonConverter {
+//     type Output = serde_json::Value;
 
-    fn try_from(
-        &self,
-        row: &BinaryCopyOutRow,
-        column_schemas: &[ColumnSchema],
-    ) -> Result<serde_json::Value, JsonConversionError> {
-        let mut map = Map::new();
+//     fn try_from(
+//         &self,
+//         row: &BinaryCopyOutRow,
+//         column_schemas: &[ColumnSchema],
+//     ) -> Result<serde_json::Value, JsonConversionError> {
+//         let mut map = Map::new();
 
-        for (i, column_schema) in column_schemas.iter().enumerate() {
-            let value = self.get_cell_value(row, column_schema, i)?;
-            map.insert(column_schema.name.clone(), value);
-        }
+//         for (i, column_schema) in column_schemas.iter().enumerate() {
+//             let value = self.get_cell_value(row, column_schema, i)?;
+//             map.insert(column_schema.name.clone(), value);
+//         }
 
-        Ok(serde_json::Value::Object(map))
-    }
-}
+//         Ok(serde_json::Value::Object(map))
+//     }
+// }
 
 #[derive(Debug, Error)]
 pub enum ReplicationMsgJsonConversionError {

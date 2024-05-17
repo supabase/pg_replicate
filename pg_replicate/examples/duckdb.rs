@@ -2,10 +2,7 @@ use std::error::Error;
 
 use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
-    conversions::json::{
-        JsonConversionError, ReplicationMsgJsonConversionError, ReplicationMsgToCdcMsgConverter,
-        TableRowToJsonConverter,
-    },
+    conversions::json::{ReplicationMsgJsonConversionError, ReplicationMsgToCdcMsgConverter},
     pipeline::{
         sinks::duckdb::DuckDbSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
@@ -111,25 +108,16 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     };
 
     let duckdb_sink = DuckDbSink::new().await?;
-    let table_row_converter = TableRowToJsonConverter;
     let cdc_converter = ReplicationMsgToCdcMsgConverter;
 
     let pipeline: DataPipeline<
         '_,
         '_,
-        JsonConversionError,
-        TableRowToJsonConverter,
         ReplicationMsgJsonConversionError,
         ReplicationMsgToCdcMsgConverter,
         PostgresSource,
         DuckDbSink,
-    > = DataPipeline::new(
-        postgres_source,
-        duckdb_sink,
-        action,
-        table_row_converter,
-        cdc_converter,
-    );
+    > = DataPipeline::new(postgres_source, duckdb_sink, action, cdc_converter);
 
     pipeline.start().await?;
 

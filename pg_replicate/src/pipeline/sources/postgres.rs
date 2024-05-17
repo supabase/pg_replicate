@@ -17,7 +17,10 @@ use tokio_postgres::{
 };
 
 use crate::{
-    conversions::{TryFromReplicationMessage, TryFromTableRow},
+    conversions::{
+        table_row::{TableRow, TableRowConversionError, TableRowConverter},
+        TryFromReplicationMessage,
+    },
     replication_client::{ReplicationClient, ReplicationClientError},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
@@ -100,14 +103,8 @@ impl PostgresSource {
 }
 
 #[async_trait]
-impl<
-        'a,
-        'b,
-        TE,
-        TR: TryFromTableRow<TE> + Sync + Send,
-        RE,
-        RM: TryFromReplicationMessage<RE> + Sync + Send,
-    > Source<'a, 'b, TE, TR, RE, RM> for PostgresSource
+impl<'a, 'b, RE, RM: TryFromReplicationMessage<RE> + Sync + Send> Source<'a, 'b, RE, RM>
+    for PostgresSource
 {
     fn get_table_schemas(&self) -> &HashMap<TableId, TableSchema> {
         &self.table_schemas
@@ -117,8 +114,7 @@ impl<
         &self,
         table_name: &TableName,
         column_schemas: &'a [ColumnSchema],
-        converter: &'a TR,
-    ) -> Result<TableCopyStream<'a, TR, TE>, SourceError<TE, RE>> {
+    ) -> Result<TableCopyStream<'a>, SourceError<RE>> {
         let column_types: Vec<Type> = column_schemas.iter().map(|c| c.typ.clone()).collect();
 
         let stream = self
@@ -129,13 +125,11 @@ impl<
 
         Ok(TableCopyStream {
             stream,
-            converter,
             column_schemas,
-            phantom: PhantomData,
         })
     }
 
-    async fn commit_transaction(&self) -> Result<(), SourceError<TE, RE>> {
+    async fn commit_transaction(&self) -> Result<(), SourceError<RE>> {
         self.replication_client
             .commit_txn()
             .await
@@ -147,7 +141,7 @@ impl<
         &'b self,
         start_lsn: PgLsn,
         converter: &'a RM,
-    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<TE, RE>> {
+    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<RE>> {
         let publication = self
             .publication()
             .ok_or(PostgresSourceError::MissingPublication)?;
@@ -174,31 +168,29 @@ impl<
 }
 
 #[derive(Debug, Error)]
-pub enum TableCopyStreamError<E> {
+pub enum TableCopyStreamError {
     #[error("tokio_postgres error: {0}")]
     TokioPostgresError(#[from] tokio_postgres::Error),
 
     #[error("conversion error")]
-    ConversionError(E),
+    ConversionError(TableRowConversionError),
 }
 
 pin_project! {
-    pub struct TableCopyStream<'a, T: TryFromTableRow<E>, E> {
+    pub struct TableCopyStream<'a> {
         #[pin]
         stream: BinaryCopyOutStream,
         column_schemas: &'a [ColumnSchema],
-        converter: &'a T,
-        phantom: PhantomData<E>
     }
 }
 
-impl<'a, T: TryFromTableRow<E>, E> Stream for TableCopyStream<'a, T, E> {
-    type Item = Result<T::Output, TableCopyStreamError<E>>;
+impl<'a> Stream for TableCopyStream<'a> {
+    type Item = Result<TableRow, TableCopyStreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
-            Some(Ok(row)) => match this.converter.try_from(&row, this.column_schemas) {
+            Some(Ok(row)) => match TableRowConverter::try_from(&row, this.column_schemas) {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
                 Err(e) => {
                     let e = TableCopyStreamError::ConversionError(e);
