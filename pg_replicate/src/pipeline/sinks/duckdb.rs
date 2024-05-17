@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use duckdb::Connection;
 use tracing::info;
 
-use crate::conversions::table_row::TableRow;
+use crate::conversions::{cdc_event::CdcEvent, table_row::TableRow};
 
 use super::{Sink, SinkError};
 
@@ -42,13 +42,13 @@ impl DuckDbSink {
 }
 
 #[async_trait]
-impl<CRO: Send + Sync + 'static> Sink<CRO> for DuckDbSink {
+impl Sink for DuckDbSink {
     async fn write_table_row(&self, _row: TableRow) -> Result<(), SinkError> {
         self.tx.send(42).await.expect("failed to send number");
         Ok(())
     }
 
-    async fn write_cdc_event(&self, _event: CRO) -> Result<(), SinkError> {
+    async fn write_cdc_event(&self, _event: CdcEvent) -> Result<(), SinkError> {
         self.tx.send(43).await.expect("failed to send number");
         Ok(())
     }

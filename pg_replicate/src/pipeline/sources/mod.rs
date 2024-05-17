@@ -4,10 +4,7 @@ use async_trait::async_trait;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
-use crate::{
-    conversions::TryFromReplicationMessage,
-    table::{ColumnSchema, TableId, TableName, TableSchema},
-};
+use crate::table::{ColumnSchema, TableId, TableName, TableSchema};
 
 use self::postgres::{
     CdcStream, CdcStreamError, PostgresSourceError, TableCopyStream, TableCopyStreamError,
@@ -16,7 +13,7 @@ use self::postgres::{
 pub mod postgres;
 
 #[derive(Debug, Error)]
-pub enum SourceError<RE> {
+pub enum SourceError {
     #[error("source error: {0}")]
     Postgres(#[from] PostgresSourceError),
 
@@ -24,24 +21,20 @@ pub enum SourceError<RE> {
     TableCopyStream(#[from] TableCopyStreamError),
 
     #[error("cdc stream error: {0}")]
-    CdcStream(#[from] CdcStreamError<RE>),
+    CdcStream(#[from] CdcStreamError),
 }
 
 #[async_trait]
-pub trait Source<'a, 'b, RE, RM: TryFromReplicationMessage<RE> + Sync + Send> {
+pub trait Source<'a> {
     fn get_table_schemas(&self) -> &HashMap<TableId, TableSchema>;
 
     async fn get_table_copy_stream(
-        &self,
+        &'a self,
         table_name: &TableName,
         column_schemas: &'a [ColumnSchema],
-    ) -> Result<TableCopyStream<'a>, SourceError<RE>>;
+    ) -> Result<TableCopyStream<'a>, SourceError>;
 
-    async fn commit_transaction(&self) -> Result<(), SourceError<RE>>;
+    async fn commit_transaction(&self) -> Result<(), SourceError>;
 
-    async fn get_cdc_stream(
-        &'b self,
-        start_lsn: PgLsn,
-        converter: &'a RM,
-    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<RE>>;
+    async fn get_cdc_stream(&'a self, start_lsn: PgLsn) -> Result<CdcStream<'a>, SourceError>;
 }

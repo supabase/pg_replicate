@@ -4,6 +4,7 @@ use postgres_protocol::message::backend::{LogicalReplicationMessage, Replication
 
 use crate::table::{TableId, TableSchema};
 
+pub mod cdc_event;
 pub mod json;
 pub mod table_row;
 

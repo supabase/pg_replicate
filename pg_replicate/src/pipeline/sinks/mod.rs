@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::conversions::table_row::TableRow;
+use crate::conversions::{cdc_event::CdcEvent, table_row::TableRow};
 
 pub mod duckdb;
 pub mod stdout;
@@ -13,7 +13,7 @@ pub enum SinkError {
 }
 
 #[async_trait]
-pub trait Sink<CRO: Send + Sync> {
+pub trait Sink {
     async fn write_table_row(&self, row: TableRow) -> Result<(), SinkError>;
-    async fn write_cdc_event(&self, event: CRO) -> Result<(), SinkError>;
+    async fn write_cdc_event(&self, event: CdcEvent) -> Result<(), SinkError>;
 }

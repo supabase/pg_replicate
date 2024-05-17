@@ -2,7 +2,6 @@ use std::error::Error;
 
 use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
-    conversions::json::{ReplicationMsgJsonConversionError, ReplicationMsgToCdcMsgConverter},
     pipeline::{
         sinks::stdout::StdoutSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
@@ -108,16 +107,9 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     };
 
     let stdout_sink = StdoutSink;
-    let cdc_converter = ReplicationMsgToCdcMsgConverter;
 
-    let pipeline: DataPipeline<
-        '_,
-        '_,
-        ReplicationMsgJsonConversionError,
-        ReplicationMsgToCdcMsgConverter,
-        PostgresSource,
-        StdoutSink,
-    > = DataPipeline::new(postgres_source, stdout_sink, action, cdc_converter);
+    let pipeline: DataPipeline<'_, PostgresSource, StdoutSink> =
+        DataPipeline::new(postgres_source, stdout_sink, action);
 
     pipeline.start().await?;
 

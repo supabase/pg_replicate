@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
     time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH},
@@ -18,8 +17,8 @@ use tokio_postgres::{
 
 use crate::{
     conversions::{
+        cdc_event::{CdcEvent, CdcEventConversionError},
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
-        TryFromReplicationMessage,
     },
     replication_client::{ReplicationClient, ReplicationClientError},
     table::{ColumnSchema, TableId, TableName, TableSchema},
@@ -103,18 +102,16 @@ impl PostgresSource {
 }
 
 #[async_trait]
-impl<'a, 'b, RE, RM: TryFromReplicationMessage<RE> + Sync + Send> Source<'a, 'b, RE, RM>
-    for PostgresSource
-{
+impl<'a> Source<'a> for PostgresSource {
     fn get_table_schemas(&self) -> &HashMap<TableId, TableSchema> {
         &self.table_schemas
     }
 
     async fn get_table_copy_stream(
-        &self,
+        &'a self,
         table_name: &TableName,
         column_schemas: &'a [ColumnSchema],
-    ) -> Result<TableCopyStream<'a>, SourceError<RE>> {
+    ) -> Result<TableCopyStream<'a>, SourceError> {
         let column_types: Vec<Type> = column_schemas.iter().map(|c| c.typ.clone()).collect();
 
         let stream = self
@@ -129,7 +126,7 @@ impl<'a, 'b, RE, RM: TryFromReplicationMessage<RE> + Sync + Send> Source<'a, 'b,
         })
     }
 
-    async fn commit_transaction(&self) -> Result<(), SourceError<RE>> {
+    async fn commit_transaction(&self) -> Result<(), SourceError> {
         self.replication_client
             .commit_txn()
             .await
@@ -137,11 +134,7 @@ impl<'a, 'b, RE, RM: TryFromReplicationMessage<RE> + Sync + Send> Source<'a, 'b,
         Ok(())
     }
 
-    async fn get_cdc_stream(
-        &'b self,
-        start_lsn: PgLsn,
-        converter: &'a RM,
-    ) -> Result<CdcStream<'a, 'b, RM, RE>, SourceError<RE>> {
+    async fn get_cdc_stream(&'a self, start_lsn: PgLsn) -> Result<CdcStream<'a>, SourceError> {
         let publication = self
             .publication()
             .ok_or(PostgresSourceError::MissingPublication)?;
@@ -160,9 +153,7 @@ impl<'a, 'b, RE, RM: TryFromReplicationMessage<RE> + Sync + Send> Source<'a, 'b,
         Ok(CdcStream {
             stream,
             table_schemas: &self.table_schemas,
-            converter,
             postgres_epoch,
-            phantom: PhantomData,
         })
     }
 }
@@ -204,22 +195,20 @@ impl<'a> Stream for TableCopyStream<'a> {
 }
 
 #[derive(Debug, Error)]
-pub enum CdcStreamError<E> {
+pub enum CdcStreamError {
     #[error("tokio_postgres error: {0}")]
     TokioPostgresError(#[from] tokio_postgres::Error),
 
-    #[error("conversion error")]
-    ConversionError(E),
+    #[error("cdc event conversion error: {0}")]
+    CdcEventConversion(#[from] CdcEventConversionError),
 }
 
 pin_project! {
-    pub struct CdcStream<'a, 'b T: TryFromReplicationMessage<E>,E> {
+    pub struct CdcStream<'a> {
         #[pin]
         stream: LogicalReplicationStream,
-        table_schemas: &'b HashMap<TableId, TableSchema>,
-        converter: &'a T,
+        table_schemas: &'a HashMap<TableId, TableSchema>,
         postgres_epoch: SystemTime,
-        phantom: PhantomData<E>
     }
 }
 
@@ -232,7 +221,7 @@ pub enum StatusUpdateError {
     TokioPostgres(#[from] tokio_postgres::Error),
 }
 
-impl<'a, 'b, T: TryFromReplicationMessage<E>, E> CdcStream<'a, 'b, T, E> {
+impl<'a> CdcStream<'a> {
     pub async fn send_status_update(
         self: Pin<&mut Self>,
         lsn: PgLsn,
@@ -247,18 +236,15 @@ impl<'a, 'b, T: TryFromReplicationMessage<E>, E> CdcStream<'a, 'b, T, E> {
     }
 }
 
-impl<'a, 'b, T: TryFromReplicationMessage<E>, E> Stream for CdcStream<'a, 'b, T, E> {
-    type Item = Result<T::Output, CdcStreamError<E>>;
+impl<'a> Stream for CdcStream<'a> {
+    type Item = Result<CdcEvent, CdcStreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
-            Some(Ok(msg)) => match this.converter.try_from(msg, this.table_schemas) {
+            Some(Ok(msg)) => match msg.try_into() {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
-                Err(e) => {
-                    let e = CdcStreamError::ConversionError(e);
-                    Poll::Ready(Some(Err(e)))
-                }
+                Err(e) => Poll::Ready(Some(Err(e.into()))),
             },
             Some(Err(e)) => Poll::Ready(Some(Err(e.into()))),
             None => Poll::Ready(None),
