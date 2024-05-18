@@ -18,7 +18,7 @@ use tokio_postgres::{
 use crate::{
     clients::postgres::{ReplicationClient, ReplicationClientError},
     conversions::{
-        cdc_event::{CdcEvent, CdcEventConversionError},
+        cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
     table::{ColumnSchema, TableId, TableName, TableSchema},
@@ -242,7 +242,7 @@ impl<'a> Stream for CdcStream<'a> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
-            Some(Ok(msg)) => match msg.try_into() {
+            Some(Ok(msg)) => match CdcEventConverter::try_from(msg, this.table_schemas) {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
                 Err(e) => Poll::Ready(Some(Err(e.into()))),
             },

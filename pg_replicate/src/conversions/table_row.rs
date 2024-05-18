@@ -6,6 +6,7 @@ use crate::table::ColumnSchema;
 
 #[derive(Debug)]
 pub enum Cell {
+    Null,
     Bool(bool),
     String(String),
     I16(i16),
@@ -16,7 +17,7 @@ pub enum Cell {
 
 #[derive(Debug)]
 pub struct TableRow {
-    pub values: Vec<(String, Cell)>,
+    pub values: Vec<Cell>,
 }
 
 #[derive(Debug, Error)]
@@ -82,7 +83,7 @@ impl TableRowConverter {
         let mut values = Vec::with_capacity(column_schemas.len());
         for (i, column_schema) in column_schemas.iter().enumerate() {
             let value = Self::get_cell_value(row, column_schema, i)?;
-            values.push((column_schema.name.clone(), value));
+            values.push(value);
         }
 
         Ok(TableRow { values })

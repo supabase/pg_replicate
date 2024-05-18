@@ -1,8 +1,20 @@
+use std::{
+    collections::HashMap,
+    num::ParseIntError,
+    str::{from_utf8, ParseBoolError, Utf8Error},
+};
+
+use chrono::NaiveDateTime;
 use postgres_protocol::message::backend::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
-    ReplicationMessage, UpdateBody,
+    ReplicationMessage, TupleData, UpdateBody,
 };
 use thiserror::Error;
+use tokio_postgres::types::Type;
+
+use crate::table::{ColumnSchema, TableId, TableSchema};
+
+use super::table_row::{Cell, TableRow};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -11,12 +23,121 @@ pub enum CdcEventConversionError {
 
     #[error("unknown replication message")]
     UnknownReplicationMessage,
+
+    #[error("unchanged toast not yet supported")]
+    UnchangedToastNotSupported,
+
+    #[error("invalid string value")]
+    InvalidStr(#[from] Utf8Error),
+
+    #[error("invalid bool value")]
+    InvalidBool(#[from] ParseBoolError),
+
+    #[error("invalid int value")]
+    InvalidInt(#[from] ParseIntError),
+
+    #[error("invalid timestamp value")]
+    InvalidTimestamp(#[from] chrono::ParseError),
+
+    #[error("unsupported type")]
+    UnsupportedType(String),
+
+    #[error("out of range timestamp")]
+    OutOfRangeTimestamp,
+
+    #[error("missing tuple in delete body")]
+    MissingTupleInDeleteBody,
+
+    #[error("schema missing for table id {0}")]
+    MissingSchema(TableId),
+
+    #[error("invalid namespace: {0}")]
+    InvalidNamespace(String),
+
+    #[error("invalid relation name: {0}")]
+    InvalidRelationName(String),
+
+    #[error("invalid column name: {0}")]
+    InvalidColumnName(String),
 }
 
-impl TryFrom<ReplicationMessage<LogicalReplicationMessage>> for CdcEvent {
-    type Error = CdcEventConversionError;
+pub struct CdcEventConverter;
 
-    fn try_from(value: ReplicationMessage<LogicalReplicationMessage>) -> Result<Self, Self::Error> {
+impl CdcEventConverter {
+    fn from_tuple_data(typ: &Type, val: &TupleData) -> Result<Cell, CdcEventConversionError> {
+        let bytes = match val {
+            TupleData::Null => {
+                return Ok(Cell::Null);
+            }
+            TupleData::UnchangedToast => {
+                return Err(CdcEventConversionError::UnchangedToastNotSupported)
+            }
+            TupleData::Text(bytes) => &bytes[..],
+        };
+        match *typ {
+            Type::BOOL => {
+                let val = from_utf8(bytes)?;
+                let val: bool = val.parse()?;
+                Ok(Cell::Bool(val))
+            }
+            // Type::BYTEA => Ok(Value::Bytes(bytes.to_vec())),
+            Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
+                let val = from_utf8(bytes)?;
+                Ok(Cell::String(val.to_string()))
+            }
+            Type::INT2 => {
+                let val = from_utf8(bytes)?;
+                let val: i16 = val.parse()?;
+                Ok(Cell::I16(val))
+            }
+            Type::INT4 => {
+                let val = from_utf8(bytes)?;
+                let val: i32 = val.parse()?;
+                Ok(Cell::I32(val))
+            }
+            Type::INT8 => {
+                let val = from_utf8(bytes)?;
+                let val: i64 = val.parse()?;
+                Ok(Cell::I64(val))
+            }
+            Type::TIMESTAMP => {
+                let val = from_utf8(bytes)?;
+                let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")?;
+                let val = val.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                Ok(Cell::TimeStamp(val))
+            }
+            ref typ => Err(CdcEventConversionError::UnsupportedType(typ.to_string())),
+        }
+    }
+
+    fn from_tuple_data_slice(
+        column_schemas: &[ColumnSchema],
+        tuple_data: &[TupleData],
+    ) -> Result<TableRow, CdcEventConversionError> {
+        let mut values = Vec::with_capacity(column_schemas.len());
+
+        for (i, column_schema) in column_schemas.iter().enumerate() {
+            let val = Self::from_tuple_data(&column_schema.typ, &tuple_data[i])?;
+            values.push(val);
+        }
+
+        Ok(TableRow { values })
+    }
+
+    fn from_insert_body(
+        table_id: TableId,
+        column_schemas: &[ColumnSchema],
+        insert_body: InsertBody,
+    ) -> Result<CdcEvent, CdcEventConversionError> {
+        let row = Self::from_tuple_data_slice(column_schemas, insert_body.tuple().tuple_data())?;
+
+        Ok(CdcEvent::Insert((table_id, row)))
+    }
+
+    pub fn try_from(
+        value: ReplicationMessage<LogicalReplicationMessage>,
+        table_schemas: &HashMap<TableId, TableSchema>,
+    ) -> Result<CdcEvent, CdcEventConversionError> {
         match value {
             ReplicationMessage::XLogData(xlog_data) => match xlog_data.into_data() {
                 LogicalReplicationMessage::Begin(begin_body) => Ok(CdcEvent::Begin(begin_body)),
@@ -30,7 +151,18 @@ impl TryFrom<ReplicationMessage<LogicalReplicationMessage>> for CdcEvent {
                 LogicalReplicationMessage::Type(_) => {
                     Err(CdcEventConversionError::MessageNotSupported)
                 }
-                LogicalReplicationMessage::Insert(insert_body) => Ok(CdcEvent::Insert(insert_body)),
+                LogicalReplicationMessage::Insert(insert_body) => {
+                    let table_id = insert_body.rel_id();
+                    let column_schemas = &table_schemas
+                        .get(&table_id)
+                        .ok_or(CdcEventConversionError::MissingSchema(table_id))?
+                        .column_schemas;
+                    Ok(Self::from_insert_body(
+                        table_id,
+                        column_schemas,
+                        insert_body,
+                    )?)
+                }
                 LogicalReplicationMessage::Update(update_body) => Ok(CdcEvent::Update(update_body)),
                 LogicalReplicationMessage::Delete(delete_body) => Ok(CdcEvent::Delete(delete_body)),
                 LogicalReplicationMessage::Truncate(_) => {
@@ -50,7 +182,7 @@ impl TryFrom<ReplicationMessage<LogicalReplicationMessage>> for CdcEvent {
 pub enum CdcEvent {
     Begin(BeginBody),
     Commit(CommitBody),
-    Insert(InsertBody),
+    Insert((TableId, TableRow)),
     Update(UpdateBody),
     Delete(DeleteBody),
     Relation(RelationBody),

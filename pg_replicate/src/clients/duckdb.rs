@@ -1,6 +1,10 @@
 use std::path::Path;
 
-use duckdb::{params_from_iter, types::ToSqlOutput, Connection, ToSql};
+use duckdb::{
+    params_from_iter,
+    types::{Null, ToSqlOutput},
+    Connection, ToSql,
+};
 use tokio_postgres::types::Type;
 
 use crate::{
@@ -115,7 +119,7 @@ impl DuckDbClient {
         let column_count = table_row.values.len();
         let query = Self::create_insert_row_query(&table_name, column_count);
         let mut stmt = self.conn.prepare(&query)?;
-        stmt.execute(params_from_iter(table_row.values.iter().map(|(_, v)| v)))?;
+        stmt.execute(params_from_iter(table_row.values.iter()))?;
 
         Ok(())
     }
@@ -149,6 +153,7 @@ impl ToSql for Cell {
             Cell::I32(i) => i.to_sql(),
             Cell::I64(i) => i.to_sql(),
             Cell::TimeStamp(t) => t.to_sql(),
+            Cell::Null => Null.to_sql(),
         }
     }
 }

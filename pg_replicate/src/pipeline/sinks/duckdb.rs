@@ -16,6 +16,7 @@ use super::{Sink, SinkError};
 pub enum DuckDbRequest {
     CreateTables(HashMap<TableId, TableSchema>),
     InsertRow(TableRow, TableId),
+    HandleCdcEvent(CdcEvent),
 }
 
 struct DuckDbExecutor {
@@ -36,6 +37,17 @@ impl DuckDbExecutor {
                     DuckDbRequest::InsertRow(row, table_id) => {
                         self.insert_row(row, table_id);
                     }
+                    DuckDbRequest::HandleCdcEvent(event) => match event {
+                        CdcEvent::Begin(_) => {}
+                        CdcEvent::Commit(_) => {}
+                        CdcEvent::Insert((table_id, table_row)) => {
+                            self.insert_row(table_row, table_id)
+                        }
+                        CdcEvent::Update(_) => {}
+                        CdcEvent::Delete(_) => {}
+                        CdcEvent::Relation(_) => {}
+                        CdcEvent::KeepAliveRequested { reply: _ } => {}
+                    },
                 }
             }
         });
@@ -133,8 +145,9 @@ impl Sink for DuckDbSink {
         Ok(())
     }
 
-    async fn write_cdc_event(&self, _event: CdcEvent) -> Result<(), SinkError> {
-        // self.tx.send(43).await.expect("failed to send number");
+    async fn write_cdc_event(&self, event: CdcEvent) -> Result<(), SinkError> {
+        let req = DuckDbRequest::HandleCdcEvent(event);
+        self.sender.send(req).await?;
         Ok(())
     }
 }
