@@ -23,8 +23,6 @@ pub enum DuckDbRequest {
     HandleCdcEvent(CdcEvent),
     TableCopied(TableId),
     TruncateTable(TableId),
-    BeginTransaction,
-    CommitTransaction,
 }
 
 pub enum DuckDbResponse {
@@ -34,8 +32,6 @@ pub enum DuckDbResponse {
     HandleCdcEventResponse(Result<(), DuckDbExecutorError>),
     TableCopiedResponse(Result<(), DuckDbExecutorError>),
     TruncateTableResponse(Result<(), DuckDbExecutorError>),
-    BeginTransaction(Result<(), DuckDbExecutorError>),
-    CommitTransaction(Result<(), DuckDbExecutorError>),
 }
 
 #[derive(Debug, Error)]
@@ -130,16 +126,6 @@ impl DuckDbExecutor {
                     DuckDbRequest::TruncateTable(table_id) => {
                         let result = self.truncate_table(table_id);
                         let response = DuckDbResponse::TruncateTableResponse(result);
-                        self.send_response(response).await;
-                    }
-                    DuckDbRequest::BeginTransaction => {
-                        let result = self.begin_transaction();
-                        let response = DuckDbResponse::BeginTransaction(result);
-                        self.send_response(response).await;
-                    }
-                    DuckDbRequest::CommitTransaction => {
-                        let result = self.commit_transaction();
-                        let response = DuckDbResponse::CommitTransaction(result);
                         self.send_response(response).await;
                     }
                 }
@@ -406,28 +392,6 @@ impl Sink for DuckDbSink {
                 let _ = res?;
             }
             _ => panic!("invalid response to TruncateTable request"),
-        }
-        Ok(())
-    }
-
-    async fn begin_transaction(&mut self) -> Result<(), SinkError> {
-        let req = DuckDbRequest::BeginTransaction;
-        match self.execute(req).await? {
-            DuckDbResponse::BeginTransaction(res) => {
-                let _ = res?;
-            }
-            _ => panic!("invalid response to BeginTransaction request"),
-        }
-        Ok(())
-    }
-
-    async fn commit_transaction(&mut self) -> Result<(), SinkError> {
-        let req = DuckDbRequest::CommitTransaction;
-        match self.execute(req).await? {
-            DuckDbResponse::CommitTransaction(res) => {
-                let _ = res?;
-            }
-            _ => panic!("invalid response to CommitTransaction request"),
         }
         Ok(())
     }

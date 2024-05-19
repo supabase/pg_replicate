@@ -54,14 +54,4 @@ impl Sink for StdoutSink {
         info!("table {table_id} truncated");
         Ok(())
     }
-
-    async fn begin_transaction(&mut self) -> Result<(), SinkError> {
-        info!("begin transaction");
-        Ok(())
-    }
-
-    async fn commit_transaction(&mut self) -> Result<(), SinkError> {
-        info!("commit transaction");
-        Ok(())
-    }
 }
