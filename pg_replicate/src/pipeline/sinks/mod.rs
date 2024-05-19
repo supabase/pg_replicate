@@ -9,7 +9,7 @@ use crate::{
     table::{TableId, TableSchema},
 };
 
-use self::duckdb::DuckDbRequest;
+use self::duckdb::{DuckDbExecutorError, DuckDbRequest};
 
 use super::PipelineResumptionState;
 
@@ -21,8 +21,8 @@ pub enum SinkError {
     #[error("failed to send duckdb request")]
     SendError(#[from] SendError<DuckDbRequest>),
 
-    #[error("duckdb error: {0}")]
-    DuckDbError(#[from] ::duckdb::Error),
+    #[error("duckdb executor error: {0}")]
+    DuckDbExecutor(#[from] DuckDbExecutorError),
 
     #[error("no response received")]
     NoResponseReceived,

@@ -3,6 +3,7 @@ use std::{
     path::Path,
 };
 
+use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use async_trait::async_trait;
@@ -25,13 +26,24 @@ pub enum DuckDbRequest {
 }
 
 pub enum DuckDbResponse {
-    ResumptionState(Result<PipelineResumptionState, duckdb::Error>),
-    CreateTablesResponse(Result<(), duckdb::Error>),
-    InsertRowResponse(Result<(), duckdb::Error>),
-    HandleCdcEventResponse(Result<(), duckdb::Error>),
+    ResumptionState(Result<PipelineResumptionState, DuckDbExecutorError>),
+    CreateTablesResponse(Result<(), DuckDbExecutorError>),
+    InsertRowResponse(Result<(), DuckDbExecutorError>),
+    HandleCdcEventResponse(Result<(), DuckDbExecutorError>),
 }
 
-//TODO: make executor return errors to its caller
+#[derive(Debug, Error)]
+pub enum DuckDbExecutorError {
+    #[error("duckdb error: {0}")]
+    DuckDb(#[from] duckdb::Error),
+
+    #[error("missing table schemas")]
+    MissingTableSchemas,
+
+    #[error("missing table id: {0}")]
+    MissingTableId(TableId),
+}
+
 struct DuckDbExecutor {
     client: DuckDbClient,
     req_receiver: Receiver<DuckDbRequest>,
@@ -97,7 +109,7 @@ impl DuckDbExecutor {
     fn create_tables(
         &self,
         table_schemas: &HashMap<u32, TableSchema>,
-    ) -> Result<(), duckdb::Error> {
+    ) -> Result<(), DuckDbExecutorError> {
         for table_schema in table_schemas.values() {
             let schema = &table_schema.table_name.schema;
 
@@ -108,28 +120,43 @@ impl DuckDbExecutor {
         Ok(())
     }
 
-    fn insert_row(&self, table_id: TableId, table_row: TableRow) -> Result<(), duckdb::Error> {
-        let table_schema = self.get_table_schema(table_id);
-        self.client.insert_row(&table_schema.table_name, &table_row)
+    fn insert_row(
+        &self,
+        table_id: TableId,
+        table_row: TableRow,
+    ) -> Result<(), DuckDbExecutorError> {
+        let table_schema = self.get_table_schema(table_id)?;
+        self.client
+            .insert_row(&table_schema.table_name, &table_row)?;
+        Ok(())
     }
 
-    fn update_row(&self, table_id: TableId, table_row: TableRow) -> Result<(), duckdb::Error> {
-        let table_schema = self.get_table_schema(table_id);
-        self.client.update_row(table_schema, &table_row)
+    fn update_row(
+        &self,
+        table_id: TableId,
+        table_row: TableRow,
+    ) -> Result<(), DuckDbExecutorError> {
+        let table_schema = self.get_table_schema(table_id)?;
+        self.client.update_row(table_schema, &table_row)?;
+        Ok(())
     }
 
-    fn delete_row(&self, table_id: TableId, table_row: TableRow) -> Result<(), duckdb::Error> {
-        let table_schema = self.get_table_schema(table_id);
-        self.client.delete_row(table_schema, &table_row)
+    fn delete_row(
+        &self,
+        table_id: TableId,
+        table_row: TableRow,
+    ) -> Result<(), DuckDbExecutorError> {
+        let table_schema = self.get_table_schema(table_id)?;
+        self.client.delete_row(table_schema, &table_row)?;
+        Ok(())
     }
 
-    //TODO: Remove expect calls
-    fn get_table_schema(&self, table_id: TableId) -> &TableSchema {
+    fn get_table_schema(&self, table_id: TableId) -> Result<&TableSchema, DuckDbExecutorError> {
         self.table_schemas
             .as_ref()
-            .expect("missing table schemas while inserting a row")
+            .ok_or(DuckDbExecutorError::MissingTableSchemas)?
             .get(&table_id)
-            .expect("missing table id while inserting a row")
+            .ok_or(DuckDbExecutorError::MissingTableId(table_id))
     }
 }
 
