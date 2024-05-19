@@ -1,19 +1,17 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
+use std::{collections::HashMap, path::Path};
 
 use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use async_trait::async_trait;
+use tokio_postgres::types::Type;
 use tracing::error;
 
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
     pipeline::PipelineResumptionState,
-    table::{TableId, TableSchema},
+    table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
 use super::{Sink, SinkError};
@@ -23,6 +21,7 @@ pub enum DuckDbRequest {
     CreateTables(HashMap<TableId, TableSchema>),
     InsertRow(TableRow, TableId),
     HandleCdcEvent(CdcEvent),
+    TableCopied(TableId),
 }
 
 pub enum DuckDbResponse {
@@ -30,6 +29,7 @@ pub enum DuckDbResponse {
     CreateTablesResponse(Result<(), DuckDbExecutorError>),
     InsertRowResponse(Result<(), DuckDbExecutorError>),
     HandleCdcEventResponse(Result<(), DuckDbExecutorError>),
+    TableCopiedResponse(Result<(), DuckDbExecutorError>),
 }
 
 #[derive(Debug, Error)]
@@ -57,10 +57,8 @@ impl DuckDbExecutor {
             while let Some(req) = self.req_receiver.recv().await {
                 match req {
                     DuckDbRequest::GetResumptionState => {
-                        let response =
-                            DuckDbResponse::ResumptionState(Ok(PipelineResumptionState {
-                                copied_tables: HashSet::new(),
-                            }));
+                        let result = self.get_resumption_state();
+                        let response = DuckDbResponse::ResumptionState(result);
                         self.send_response(response).await;
                     }
                     DuckDbRequest::CreateTables(table_schemas) => {
@@ -94,6 +92,11 @@ impl DuckDbExecutor {
                         let response = DuckDbResponse::HandleCdcEventResponse(result);
                         self.send_response(response).await;
                     }
+                    DuckDbRequest::TableCopied(table_id) => {
+                        let result = self.table_copied(table_id);
+                        let response = DuckDbResponse::TableCopiedResponse(result);
+                        self.send_response(response).await;
+                    }
                 }
             }
         });
@@ -106,6 +109,28 @@ impl DuckDbExecutor {
         }
     }
 
+    fn get_resumption_state(&self) -> Result<PipelineResumptionState, DuckDbExecutorError> {
+        let table_name = TableName {
+            schema: "pg_replicate".to_string(),
+            name: "copied_tables".to_string(),
+        };
+        let column_schemas = vec![ColumnSchema {
+            name: "table_id".to_string(),
+            typ: Type::INT4,
+            modifier: 0,
+            nullable: false,
+            identity: true,
+        }];
+        self.client.create_schema_if_missing(&table_name.schema)?;
+
+        self.client
+            .create_table_if_missing(&table_name, &column_schemas)?;
+
+        let copied_tables = self.client.get_copied_table_ids()?;
+
+        Ok(PipelineResumptionState { copied_tables })
+    }
+
     fn create_tables(
         &self,
         table_schemas: &HashMap<u32, TableSchema>,
@@ -114,7 +139,8 @@ impl DuckDbExecutor {
             let schema = &table_schema.table_name.schema;
 
             self.client.create_schema_if_missing(schema)?;
-            self.client.create_table_if_missing(table_schema)?
+            self.client
+                .create_table_if_missing(&table_schema.table_name, &table_schema.column_schemas)?;
         }
 
         Ok(())
@@ -157,6 +183,11 @@ impl DuckDbExecutor {
             .ok_or(DuckDbExecutorError::MissingTableSchemas)?
             .get(&table_id)
             .ok_or(DuckDbExecutorError::MissingTableId(table_id))
+    }
+
+    fn table_copied(&self, table_id: TableId) -> Result<(), DuckDbExecutorError> {
+        self.client.insert_into_copied_tables(table_id)?;
+        Ok(())
     }
 }
 
@@ -258,6 +289,17 @@ impl Sink for DuckDbSink {
                 let _ = res?;
             }
             _ => panic!("invalid response to HandleCdcEvent request"),
+        }
+        Ok(())
+    }
+
+    async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {
+        let req = DuckDbRequest::TableCopied(table_id);
+        match self.execute(req).await? {
+            DuckDbResponse::TableCopiedResponse(res) => {
+                let _ = res?;
+            }
+            _ => panic!("invalid response to TableCopied request"),
         }
         Ok(())
     }

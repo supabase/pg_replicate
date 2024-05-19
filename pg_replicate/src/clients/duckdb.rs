@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use duckdb::{
     params_from_iter,
@@ -9,7 +9,7 @@ use tokio_postgres::types::Type;
 
 use crate::{
     conversions::table_row::{Cell, TableRow},
-    table::{ColumnSchema, TableName, TableSchema},
+    table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
 pub struct DuckDbClient {
@@ -49,9 +49,13 @@ impl DuckDbClient {
         Ok(exists)
     }
 
-    pub fn create_table_if_missing(&self, table_schema: &TableSchema) -> Result<(), duckdb::Error> {
-        if !self.table_exists(&table_schema.table_name)? {
-            self.create_table(table_schema)?;
+    pub fn create_table_if_missing(
+        &self,
+        table_name: &TableName,
+        column_schemas: &[ColumnSchema],
+    ) -> Result<(), duckdb::Error> {
+        if !self.table_exists(table_name)? {
+            self.create_table(table_name, column_schemas)?;
         }
 
         Ok(())
@@ -92,11 +96,15 @@ impl DuckDbClient {
         s
     }
 
-    pub fn create_table(&self, schema: &TableSchema) -> Result<(), duckdb::Error> {
-        let columns_spec = Self::create_columns_spec(&schema.column_schemas);
+    pub fn create_table(
+        &self,
+        table_name: &TableName,
+        column_schemas: &[ColumnSchema],
+    ) -> Result<(), duckdb::Error> {
+        let columns_spec = Self::create_columns_spec(column_schemas);
         let query = format!(
             "create table {}.{} {}",
-            schema.table_name.schema, schema.table_name.name, columns_spec
+            table_name.schema, table_name.name, columns_spec
         );
         self.conn.execute(&query, [])?;
         Ok(())
@@ -238,6 +246,29 @@ impl DuckDbClient {
         Self::add_identities_where_clause(&mut s, column_schemas);
 
         s
+    }
+
+    pub fn get_copied_table_ids(&self) -> Result<HashSet<TableId>, duckdb::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("select table_id from pg_replicate.copied_tables")?;
+        let mut rows = stmt.query([])?;
+
+        let mut res = HashSet::new();
+        while let Some(row) = rows.next()? {
+            res.insert(row.get(0)?);
+        }
+
+        Ok(res)
+    }
+
+    pub fn insert_into_copied_tables(&self, table_id: TableId) -> Result<(), duckdb::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("insert into pg_replicate.copied_tables values (?)")?;
+        stmt.execute([table_id])?;
+
+        Ok(())
     }
 }
 

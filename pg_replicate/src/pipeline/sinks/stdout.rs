@@ -42,4 +42,9 @@ impl Sink for StdoutSink {
         info!("{event:?}");
         Ok(())
     }
+
+    async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {
+        info!("table {table_id} copied");
+        Ok(())
+    }
 }

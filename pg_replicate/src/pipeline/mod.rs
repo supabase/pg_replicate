@@ -87,6 +87,7 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
                     .await?;
             }
 
+            self.sink.table_copied(table_schema.table_id).await?;
             self.source.commit_transaction().await?;
         }
 
