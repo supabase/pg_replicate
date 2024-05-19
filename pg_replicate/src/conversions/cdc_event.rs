@@ -134,6 +134,18 @@ impl CdcEventConverter {
         Ok(CdcEvent::Insert((table_id, row)))
     }
 
+    //TODO: handle when identity columns are changed
+    fn from_update_body(
+        table_id: TableId,
+        column_schemas: &[ColumnSchema],
+        update_body: UpdateBody,
+    ) -> Result<CdcEvent, CdcEventConversionError> {
+        let row =
+            Self::from_tuple_data_slice(column_schemas, update_body.new_tuple().tuple_data())?;
+
+        Ok(CdcEvent::Update((table_id, row)))
+    }
+
     pub fn try_from(
         value: ReplicationMessage<LogicalReplicationMessage>,
         table_schemas: &HashMap<TableId, TableSchema>,
@@ -163,7 +175,18 @@ impl CdcEventConverter {
                         insert_body,
                     )?)
                 }
-                LogicalReplicationMessage::Update(update_body) => Ok(CdcEvent::Update(update_body)),
+                LogicalReplicationMessage::Update(update_body) => {
+                    let table_id = update_body.rel_id();
+                    let column_schemas = &table_schemas
+                        .get(&table_id)
+                        .ok_or(CdcEventConversionError::MissingSchema(table_id))?
+                        .column_schemas;
+                    Ok(Self::from_update_body(
+                        table_id,
+                        column_schemas,
+                        update_body,
+                    )?)
+                }
                 LogicalReplicationMessage::Delete(delete_body) => Ok(CdcEvent::Delete(delete_body)),
                 LogicalReplicationMessage::Truncate(_) => {
                     Err(CdcEventConversionError::MessageNotSupported)
@@ -183,7 +206,7 @@ pub enum CdcEvent {
     Begin(BeginBody),
     Commit(CommitBody),
     Insert((TableId, TableRow)),
-    Update(UpdateBody),
+    Update((TableId, TableRow)),
     Delete(DeleteBody),
     Relation(RelationBody),
     KeepAliveRequested { reply: bool },

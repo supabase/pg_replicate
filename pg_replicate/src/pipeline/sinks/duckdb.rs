@@ -19,6 +19,7 @@ pub enum DuckDbRequest {
     HandleCdcEvent(CdcEvent),
 }
 
+//TODO: make executor return errors to its caller
 struct DuckDbExecutor {
     client: DuckDbClient,
     receiver: Receiver<DuckDbRequest>,
@@ -35,15 +36,17 @@ impl DuckDbExecutor {
                         self.table_schemas = Some(table_schemas);
                     }
                     DuckDbRequest::InsertRow(row, table_id) => {
-                        self.insert_row(row, table_id);
+                        self.insert_row(table_id, row);
                     }
                     DuckDbRequest::HandleCdcEvent(event) => match event {
                         CdcEvent::Begin(_) => {}
                         CdcEvent::Commit(_) => {}
                         CdcEvent::Insert((table_id, table_row)) => {
-                            self.insert_row(table_row, table_id)
+                            self.insert_row(table_id, table_row)
                         }
-                        CdcEvent::Update(_) => {}
+                        CdcEvent::Update((table_id, table_row)) => {
+                            self.update_row(table_id, table_row)
+                        }
                         CdcEvent::Delete(_) => {}
                         CdcEvent::Relation(_) => {}
                         CdcEvent::KeepAliveRequested { reply: _ } => {}
@@ -81,20 +84,33 @@ impl DuckDbExecutor {
         }
     }
 
-    fn insert_row(&self, table_row: TableRow, table_id: TableId) {
-        let table_schema = self
-            .table_schemas
-            .as_ref()
-            .expect("missing table schemas while inserting a row")
-            .get(&table_id)
-            .expect("missing table id while inserting a row");
-
+    fn insert_row(&self, table_id: TableId, table_row: TableRow) {
+        let table_schema = self.get_table_schema(table_id);
         match self.client.insert_row(&table_schema.table_name, &table_row) {
             Ok(_) => {}
             Err(e) => {
                 error!("DuckDb error: {e}");
             }
         }
+    }
+
+    fn update_row(&self, table_id: TableId, table_row: TableRow) {
+        let table_schema = self.get_table_schema(table_id);
+        match self.client.update_row(table_schema, &table_row) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("DuckDb error: {e}");
+            }
+        }
+    }
+
+    //TODO: Remove expect calls
+    fn get_table_schema(&self, table_id: TableId) -> &TableSchema {
+        self.table_schemas
+            .as_ref()
+            .expect("missing table schemas while inserting a row")
+            .get(&table_id)
+            .expect("missing table id while inserting a row")
     }
 }
 

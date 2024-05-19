@@ -142,6 +142,71 @@ impl DuckDbClient {
         s.pop();
         s
     }
+
+    pub fn update_row(
+        &self,
+        table_schema: &TableSchema,
+        table_row: &TableRow,
+    ) -> Result<(), duckdb::Error> {
+        let table_name = &table_schema.table_name;
+        let column_schemas = &table_schema.column_schemas;
+        let table_name = format!("{}.{}", table_name.schema, table_name.name);
+        let query = Self::create_update_row_query(&table_name, table_row, column_schemas);
+        let mut stmt = self.conn.prepare(&query)?;
+        let non_identity_cells = column_schemas
+            .iter()
+            .zip(table_row.values.iter())
+            .filter(|(s, _)| !s.identity)
+            .map(|(_, c)| c);
+        let identity_cells = column_schemas
+            .iter()
+            .zip(table_row.values.iter())
+            .filter(|(s, _)| s.identity)
+            .map(|(_, c)| c);
+        stmt.execute(params_from_iter(non_identity_cells.chain(identity_cells)))?;
+        Ok(())
+    }
+
+    fn create_update_row_query(
+        table_name: &str,
+        table_row: &TableRow,
+        column_schemas: &[ColumnSchema],
+    ) -> String {
+        assert_eq!(table_row.values.len(), column_schemas.len());
+        let mut s = String::new();
+
+        s.push_str("update ");
+        s.push_str(table_name);
+        s.push_str(" set ");
+
+        let mut remove_comma = false;
+        for column in column_schemas.iter().filter(|s| !s.identity) {
+            s.push_str(&column.name);
+            s.push_str(" = ?,");
+            remove_comma = true;
+        }
+        if remove_comma {
+            s.pop();
+        }
+
+        s.push_str(" where ");
+
+        let mut remove_and = false;
+        for column in column_schemas.iter().filter(|s| s.identity) {
+            s.push_str(&column.name);
+            s.push_str(" = ? and ");
+            remove_and = true;
+        }
+        if remove_and {
+            s.pop(); //' '
+            s.pop(); //'d'
+            s.pop(); //'n'
+            s.pop(); //'a'
+            s.pop(); //' '
+        }
+
+        s
+    }
 }
 
 impl ToSql for Cell {
