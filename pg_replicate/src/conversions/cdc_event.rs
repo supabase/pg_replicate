@@ -146,6 +146,21 @@ impl CdcEventConverter {
         Ok(CdcEvent::Update((table_id, row)))
     }
 
+    fn from_delete_body(
+        table_id: TableId,
+        column_schemas: &[ColumnSchema],
+        delete_body: DeleteBody,
+    ) -> Result<CdcEvent, CdcEventConversionError> {
+        let tuple = delete_body
+            .key_tuple()
+            .or(delete_body.old_tuple())
+            .ok_or(CdcEventConversionError::MissingTupleInDeleteBody)?;
+
+        let row = Self::from_tuple_data_slice(column_schemas, tuple.tuple_data())?;
+
+        Ok(CdcEvent::Delete((table_id, row)))
+    }
+
     pub fn try_from(
         value: ReplicationMessage<LogicalReplicationMessage>,
         table_schemas: &HashMap<TableId, TableSchema>,
@@ -187,7 +202,18 @@ impl CdcEventConverter {
                         update_body,
                     )?)
                 }
-                LogicalReplicationMessage::Delete(delete_body) => Ok(CdcEvent::Delete(delete_body)),
+                LogicalReplicationMessage::Delete(delete_body) => {
+                    let table_id = delete_body.rel_id();
+                    let column_schemas = &table_schemas
+                        .get(&table_id)
+                        .ok_or(CdcEventConversionError::MissingSchema(table_id))?
+                        .column_schemas;
+                    Ok(Self::from_delete_body(
+                        table_id,
+                        column_schemas,
+                        delete_body,
+                    )?)
+                }
                 LogicalReplicationMessage::Truncate(_) => {
                     Err(CdcEventConversionError::MessageNotSupported)
                 }
@@ -207,7 +233,7 @@ pub enum CdcEvent {
     Commit(CommitBody),
     Insert((TableId, TableRow)),
     Update((TableId, TableRow)),
-    Delete(DeleteBody),
+    Delete((TableId, TableRow)),
     Relation(RelationBody),
     KeepAliveRequested { reply: bool },
 }

@@ -47,7 +47,9 @@ impl DuckDbExecutor {
                         CdcEvent::Update((table_id, table_row)) => {
                             self.update_row(table_id, table_row)
                         }
-                        CdcEvent::Delete(_) => {}
+                        CdcEvent::Delete((table_id, table_row)) => {
+                            self.delete_row(table_id, table_row)
+                        }
                         CdcEvent::Relation(_) => {}
                         CdcEvent::KeepAliveRequested { reply: _ } => {}
                     },
@@ -97,6 +99,16 @@ impl DuckDbExecutor {
     fn update_row(&self, table_id: TableId, table_row: TableRow) {
         let table_schema = self.get_table_schema(table_id);
         match self.client.update_row(table_schema, &table_row) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("DuckDb error: {e}");
+            }
+        }
+    }
+
+    fn delete_row(&self, table_id: TableId, table_row: TableRow) {
+        let table_schema = self.get_table_schema(table_id);
+        match self.client.delete_row(table_schema, &table_row) {
             Ok(_) => {}
             Err(e) => {
                 error!("DuckDb error: {e}");
