@@ -32,6 +32,7 @@ pub enum PipelineError {
 
 pub struct PipelineResumptionState {
     copied_tables: HashSet<TableId>,
+    last_lsn: PgLsn,
 }
 
 pub struct DataPipeline<Src: Source, Snk: Sink> {
@@ -91,14 +92,14 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
             }
 
             self.sink.table_copied(table_schema.table_id).await?;
-            self.source.commit_transaction().await?;
         }
+        self.source.commit_transaction().await?;
 
         Ok(())
     }
 
-    async fn copy_cdc_events(&mut self) -> Result<(), PipelineError> {
-        let cdc_events = self.source.get_cdc_stream(PgLsn::from(0)).await?;
+    async fn copy_cdc_events(&mut self, last_lsn: PgLsn) -> Result<(), PipelineError> {
+        let cdc_events = self.source.get_cdc_stream(last_lsn).await?;
 
         pin!(cdc_events);
 
@@ -121,13 +122,13 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
             PipelineAction::CdcOnly => {
                 self.copy_table_schemas(&resumption_state.copied_tables)
                     .await?;
-                self.copy_cdc_events().await?;
+                self.copy_cdc_events(resumption_state.last_lsn).await?;
             }
             PipelineAction::Both => {
                 self.copy_table_schemas(&resumption_state.copied_tables)
                     .await?;
                 self.copy_tables(&resumption_state.copied_tables).await?;
-                self.copy_cdc_events().await?;
+                self.copy_cdc_events(resumption_state.last_lsn).await?;
             }
         }
 

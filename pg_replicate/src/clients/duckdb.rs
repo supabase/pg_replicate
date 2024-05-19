@@ -5,7 +5,7 @@ use duckdb::{
     types::{Null, ToSqlOutput},
     Connection, ToSql,
 };
-use tokio_postgres::types::Type;
+use tokio_postgres::types::{PgLsn, Type};
 
 use crate::{
     conversions::table_row::{Cell, TableRow},
@@ -53,12 +53,13 @@ impl DuckDbClient {
         &self,
         table_name: &TableName,
         column_schemas: &[ColumnSchema],
-    ) -> Result<(), duckdb::Error> {
-        if !self.table_exists(table_name)? {
+    ) -> Result<bool, duckdb::Error> {
+        if self.table_exists(table_name)? {
+            Ok(false)
+        } else {
             self.create_table(table_name, column_schemas)?;
+            Ok(true)
         }
-
-        Ok(())
     }
 
     fn postgres_typ_to_duckdb_typ(typ: &Type) -> &'static str {
@@ -262,6 +263,29 @@ impl DuckDbClient {
         Ok(res)
     }
 
+    pub fn get_last_lsn(&self) -> Result<PgLsn, duckdb::Error> {
+        let mut stmt = self
+            .conn
+            .prepare("select lsn from pg_replicate.last_lsn")?;
+        let lsn = stmt.query_row::<u64, _, _>([], |r| r.get(0))?;
+        Ok(lsn.into())
+    }
+
+    pub fn set_last_lsn(&self, lsn: PgLsn) -> Result<(), duckdb::Error> {
+        let lsn: u64 = lsn.into();
+        let mut stmt = self
+            .conn
+            .prepare("update pg_replicate.last_lsn set lsn = ?")?;
+        stmt.execute([lsn])?;
+        Ok(())
+    }
+
+    pub fn insert_last_lsn_row(&self) -> Result<(), duckdb::Error> {
+        self.conn
+            .execute("insert into pg_replicate.last_lsn values (0)", [])?;
+        Ok(())
+    }
+
     pub fn insert_into_copied_tables(&self, table_id: TableId) -> Result<(), duckdb::Error> {
         let mut stmt = self
             .conn
@@ -274,6 +298,18 @@ impl DuckDbClient {
     pub fn truncate_table(&self, table_name: &TableName) -> Result<(), duckdb::Error> {
         let query = format!("delete from {}.{}", table_name.schema, table_name.name);
         let mut stmt = self.conn.prepare(&query)?;
+        stmt.execute([])?;
+        Ok(())
+    }
+
+    pub fn begin_transaction(&self) -> Result<(), duckdb::Error> {
+        let mut stmt = self.conn.prepare("begin transaction")?;
+        stmt.execute([])?;
+        Ok(())
+    }
+
+    pub fn commit_transaction(&self) -> Result<(), duckdb::Error> {
+        let mut stmt = self.conn.prepare("commit")?;
         stmt.execute([])?;
         Ok(())
     }

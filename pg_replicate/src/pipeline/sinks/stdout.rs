@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
+use tokio_postgres::types::PgLsn;
 use tracing::info;
 
 use crate::{
@@ -18,6 +19,7 @@ impl Sink for StdoutSink {
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError> {
         Ok(PipelineResumptionState {
             copied_tables: HashSet::new(),
+            last_lsn: PgLsn::from(0),
         })
     }
 
@@ -50,6 +52,16 @@ impl Sink for StdoutSink {
 
     async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
         info!("table {table_id} truncated");
+        Ok(())
+    }
+
+    async fn begin_transaction(&mut self) -> Result<(), SinkError> {
+        info!("begin transaction");
+        Ok(())
+    }
+
+    async fn commit_transaction(&mut self) -> Result<(), SinkError> {
+        info!("commit transaction");
         Ok(())
     }
 }

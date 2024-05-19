@@ -4,7 +4,7 @@ use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use async_trait::async_trait;
-use tokio_postgres::types::Type;
+use tokio_postgres::types::{PgLsn, Type};
 use tracing::error;
 
 use crate::{
@@ -23,6 +23,8 @@ pub enum DuckDbRequest {
     HandleCdcEvent(CdcEvent),
     TableCopied(TableId),
     TruncateTable(TableId),
+    BeginTransaction,
+    CommitTransaction,
 }
 
 pub enum DuckDbResponse {
@@ -32,6 +34,8 @@ pub enum DuckDbResponse {
     HandleCdcEventResponse(Result<(), DuckDbExecutorError>),
     TableCopiedResponse(Result<(), DuckDbExecutorError>),
     TruncateTableResponse(Result<(), DuckDbExecutorError>),
+    BeginTransaction(Result<(), DuckDbExecutorError>),
+    CommitTransaction(Result<(), DuckDbExecutorError>),
 }
 
 #[derive(Debug, Error)]
@@ -44,6 +48,12 @@ pub enum DuckDbExecutorError {
 
     #[error("missing table id: {0}")]
     MissingTableId(TableId),
+
+    #[error("incorrect commit lsn: {0}(expected: {0})")]
+    IncorrectCommitLsn(PgLsn, PgLsn),
+
+    #[error("commit message without begin message")]
+    CommitWithoutBegin,
 }
 
 struct DuckDbExecutor {
@@ -51,6 +61,7 @@ struct DuckDbExecutor {
     req_receiver: Receiver<DuckDbRequest>,
     res_sender: Sender<DuckDbResponse>,
     table_schemas: Option<HashMap<TableId, TableSchema>>,
+    final_lsn: Option<PgLsn>,
 }
 
 impl DuckDbExecutor {
@@ -76,8 +87,25 @@ impl DuckDbExecutor {
                     }
                     DuckDbRequest::HandleCdcEvent(event) => {
                         let result = match event {
-                            CdcEvent::Begin(_) => Ok(()),
-                            CdcEvent::Commit(_) => Ok(()),
+                            CdcEvent::Begin(begin_body) => {
+                                let final_lsn = begin_body.final_lsn();
+                                self.final_lsn = Some(final_lsn.into());
+                                self.begin_transaction()
+                            }
+                            CdcEvent::Commit(commit_body) => {
+                                let commit_lsn: PgLsn = commit_body.commit_lsn().into();
+                                if let Some(final_lsn) = self.final_lsn {
+                                    if commit_lsn == final_lsn {
+                                        self.set_last_lsn_and_commit_transaction(commit_lsn)
+                                    } else {
+                                        Err(DuckDbExecutorError::IncorrectCommitLsn(
+                                            commit_lsn, final_lsn,
+                                        ))
+                                    }
+                                } else {
+                                    Err(DuckDbExecutorError::CommitWithoutBegin)
+                                }
+                            }
                             CdcEvent::Insert((table_id, table_row)) => {
                                 self.insert_row(table_id, table_row)
                             }
@@ -104,6 +132,16 @@ impl DuckDbExecutor {
                         let response = DuckDbResponse::TruncateTableResponse(result);
                         self.send_response(response).await;
                     }
+                    DuckDbRequest::BeginTransaction => {
+                        let result = self.begin_transaction();
+                        let response = DuckDbResponse::BeginTransaction(result);
+                        self.send_response(response).await;
+                    }
+                    DuckDbRequest::CommitTransaction => {
+                        let result = self.commit_transaction();
+                        let response = DuckDbResponse::CommitTransaction(result);
+                        self.send_response(response).await;
+                    }
                 }
             }
         });
@@ -117,25 +155,48 @@ impl DuckDbExecutor {
     }
 
     fn get_resumption_state(&self) -> Result<PipelineResumptionState, DuckDbExecutorError> {
-        let table_name = TableName {
+        let copied_tables_table_name = TableName {
             schema: "pg_replicate".to_string(),
             name: "copied_tables".to_string(),
         };
-        let column_schemas = vec![ColumnSchema {
+        let copied_table_column_schemas = vec![ColumnSchema {
             name: "table_id".to_string(),
             typ: Type::INT4,
             modifier: 0,
             nullable: false,
             identity: true,
         }];
-        self.client.create_schema_if_missing(&table_name.schema)?;
+        self.client
+            .create_schema_if_missing(&copied_tables_table_name.schema)?;
 
         self.client
-            .create_table_if_missing(&table_name, &column_schemas)?;
+            .create_table_if_missing(&copied_tables_table_name, &copied_table_column_schemas)?;
+
+        let last_lsn_table_name = TableName {
+            schema: "pg_replicate".to_string(),
+            name: "last_lsn".to_string(),
+        };
+        let last_lsn_column_schemas = vec![ColumnSchema {
+            name: "lsn".to_string(),
+            typ: Type::INT8,
+            modifier: 0,
+            nullable: false,
+            identity: true,
+        }];
+        if self
+            .client
+            .create_table_if_missing(&last_lsn_table_name, &last_lsn_column_schemas)?
+        {
+            self.client.insert_last_lsn_row()?;
+        }
 
         let copied_tables = self.client.get_copied_table_ids()?;
+        let last_lsn = self.client.get_last_lsn()?;
 
-        Ok(PipelineResumptionState { copied_tables })
+        Ok(PipelineResumptionState {
+            copied_tables,
+            last_lsn,
+        })
     }
 
     fn create_tables(
@@ -202,6 +263,25 @@ impl DuckDbExecutor {
         self.client.truncate_table(&table_schema.table_name)?;
         Ok(())
     }
+
+    fn begin_transaction(&self) -> Result<(), DuckDbExecutorError> {
+        self.client.begin_transaction()?;
+        Ok(())
+    }
+
+    fn commit_transaction(&self) -> Result<(), DuckDbExecutorError> {
+        self.client.commit_transaction()?;
+        Ok(())
+    }
+
+    fn set_last_lsn_and_commit_transaction(
+        &self,
+        last_lsn: PgLsn,
+    ) -> Result<(), DuckDbExecutorError> {
+        self.client.set_last_lsn(last_lsn)?;
+        self.commit_transaction()?;
+        Ok(())
+    }
 }
 
 pub struct DuckDbSink {
@@ -221,6 +301,7 @@ impl DuckDbSink {
             req_receiver,
             res_sender,
             table_schemas: None,
+            final_lsn: None,
         };
         executor.start();
         Ok(DuckDbSink {
@@ -238,6 +319,7 @@ impl DuckDbSink {
             req_receiver,
             res_sender,
             table_schemas: None,
+            final_lsn: None,
         };
         executor.start();
         Ok(DuckDbSink {
@@ -324,6 +406,28 @@ impl Sink for DuckDbSink {
                 let _ = res?;
             }
             _ => panic!("invalid response to TruncateTable request"),
+        }
+        Ok(())
+    }
+
+    async fn begin_transaction(&mut self) -> Result<(), SinkError> {
+        let req = DuckDbRequest::BeginTransaction;
+        match self.execute(req).await? {
+            DuckDbResponse::BeginTransaction(res) => {
+                let _ = res?;
+            }
+            _ => panic!("invalid response to BeginTransaction request"),
+        }
+        Ok(())
+    }
+
+    async fn commit_transaction(&mut self) -> Result<(), SinkError> {
+        let req = DuckDbRequest::CommitTransaction;
+        match self.execute(req).await? {
+            DuckDbResponse::CommitTransaction(res) => {
+                let _ = res?;
+            }
+            _ => panic!("invalid response to CommitTransaction request"),
         }
         Ok(())
     }
