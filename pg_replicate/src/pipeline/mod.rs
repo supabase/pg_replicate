@@ -73,6 +73,9 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
             if copied_tables.contains(&table_schema.table_id) {
                 continue;
             }
+
+            self.sink.truncate_table(table_schema.table_id).await?;
+
             let table_rows = self
                 .source
                 .get_table_copy_stream(&table_schema.table_name, &table_schema.column_schemas)

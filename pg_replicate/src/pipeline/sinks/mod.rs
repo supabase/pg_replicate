@@ -38,4 +38,5 @@ pub trait Sink {
     async fn write_table_row(&mut self, row: TableRow, table_id: TableId) -> Result<(), SinkError>;
     async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<(), SinkError>;
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError>;
+    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError>;
 }

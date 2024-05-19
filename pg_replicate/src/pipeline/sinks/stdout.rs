@@ -47,4 +47,9 @@ impl Sink for StdoutSink {
         info!("table {table_id} copied");
         Ok(())
     }
+
+    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
+        info!("table {table_id} truncated");
+        Ok(())
+    }
 }

@@ -270,6 +270,13 @@ impl DuckDbClient {
 
         Ok(())
     }
+
+    pub fn truncate_table(&self, table_name: &TableName) -> Result<(), duckdb::Error> {
+        let query = format!("delete from {}.{}", table_name.schema, table_name.name);
+        let mut stmt = self.conn.prepare(&query)?;
+        stmt.execute([])?;
+        Ok(())
+    }
 }
 
 impl ToSql for Cell {

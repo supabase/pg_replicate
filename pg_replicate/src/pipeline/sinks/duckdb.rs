@@ -22,6 +22,7 @@ pub enum DuckDbRequest {
     InsertRow(TableRow, TableId),
     HandleCdcEvent(CdcEvent),
     TableCopied(TableId),
+    TruncateTable(TableId),
 }
 
 pub enum DuckDbResponse {
@@ -30,6 +31,7 @@ pub enum DuckDbResponse {
     InsertRowResponse(Result<(), DuckDbExecutorError>),
     HandleCdcEventResponse(Result<(), DuckDbExecutorError>),
     TableCopiedResponse(Result<(), DuckDbExecutorError>),
+    TruncateTableResponse(Result<(), DuckDbExecutorError>),
 }
 
 #[derive(Debug, Error)]
@@ -95,6 +97,11 @@ impl DuckDbExecutor {
                     DuckDbRequest::TableCopied(table_id) => {
                         let result = self.table_copied(table_id);
                         let response = DuckDbResponse::TableCopiedResponse(result);
+                        self.send_response(response).await;
+                    }
+                    DuckDbRequest::TruncateTable(table_id) => {
+                        let result = self.truncate_table(table_id);
+                        let response = DuckDbResponse::TruncateTableResponse(result);
                         self.send_response(response).await;
                     }
                 }
@@ -187,6 +194,12 @@ impl DuckDbExecutor {
 
     fn table_copied(&self, table_id: TableId) -> Result<(), DuckDbExecutorError> {
         self.client.insert_into_copied_tables(table_id)?;
+        Ok(())
+    }
+
+    fn truncate_table(&self, table_id: TableId) -> Result<(), DuckDbExecutorError> {
+        let table_schema = self.get_table_schema(table_id)?;
+        self.client.truncate_table(&table_schema.table_name)?;
         Ok(())
     }
 }
@@ -300,6 +313,17 @@ impl Sink for DuckDbSink {
                 let _ = res?;
             }
             _ => panic!("invalid response to TableCopied request"),
+        }
+        Ok(())
+    }
+
+    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
+        let req = DuckDbRequest::TruncateTable(table_id);
+        match self.execute(req).await? {
+            DuckDbResponse::TruncateTableResponse(res) => {
+                let _ = res?;
+            }
+            _ => panic!("invalid response to TruncateTable request"),
         }
         Ok(())
     }
