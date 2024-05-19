@@ -6,7 +6,7 @@ use std::{
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use async_trait::async_trait;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::{
     clients::duckdb::DuckDbClient,
@@ -18,106 +18,109 @@ use crate::{
 use super::{Sink, SinkError};
 
 pub enum DuckDbRequest {
+    GetResumptionState,
     CreateTables(HashMap<TableId, TableSchema>),
     InsertRow(TableRow, TableId),
     HandleCdcEvent(CdcEvent),
 }
 
+pub enum DuckDbResponse {
+    ResumptionState(Result<PipelineResumptionState, duckdb::Error>),
+    CreateTablesResponse(Result<(), duckdb::Error>),
+    InsertRowResponse(Result<(), duckdb::Error>),
+    HandleCdcEventResponse(Result<(), duckdb::Error>),
+}
+
 //TODO: make executor return errors to its caller
 struct DuckDbExecutor {
     client: DuckDbClient,
-    receiver: Receiver<DuckDbRequest>,
+    req_receiver: Receiver<DuckDbRequest>,
+    res_sender: Sender<DuckDbResponse>,
     table_schemas: Option<HashMap<TableId, TableSchema>>,
 }
 
 impl DuckDbExecutor {
     pub fn start(mut self) {
         tokio::spawn(async move {
-            while let Some(req) = self.receiver.recv().await {
+            while let Some(req) = self.req_receiver.recv().await {
                 match req {
+                    DuckDbRequest::GetResumptionState => {
+                        let response =
+                            DuckDbResponse::ResumptionState(Ok(PipelineResumptionState {
+                                copied_tables: HashSet::new(),
+                            }));
+                        self.send_response(response).await;
+                    }
                     DuckDbRequest::CreateTables(table_schemas) => {
-                        self.create_tables(&table_schemas);
+                        let result = self.create_tables(&table_schemas);
                         self.table_schemas = Some(table_schemas);
+                        let response = DuckDbResponse::CreateTablesResponse(result);
+                        self.send_response(response).await;
                     }
                     DuckDbRequest::InsertRow(row, table_id) => {
-                        self.insert_row(table_id, row);
+                        let result = self.insert_row(table_id, row);
+                        let response = DuckDbResponse::InsertRowResponse(result);
+                        self.send_response(response).await;
                     }
-                    DuckDbRequest::HandleCdcEvent(event) => match event {
-                        CdcEvent::Begin(_) => {}
-                        CdcEvent::Commit(_) => {}
-                        CdcEvent::Insert((table_id, table_row)) => {
-                            self.insert_row(table_id, table_row)
-                        }
-                        CdcEvent::Update((table_id, table_row)) => {
-                            self.update_row(table_id, table_row)
-                        }
-                        CdcEvent::Delete((table_id, table_row)) => {
-                            self.delete_row(table_id, table_row)
-                        }
-                        CdcEvent::Relation(_) => {}
-                        CdcEvent::KeepAliveRequested { reply: _ } => {}
-                    },
+                    DuckDbRequest::HandleCdcEvent(event) => {
+                        let result = match event {
+                            CdcEvent::Begin(_) => Ok(()),
+                            CdcEvent::Commit(_) => Ok(()),
+                            CdcEvent::Insert((table_id, table_row)) => {
+                                self.insert_row(table_id, table_row)
+                            }
+                            CdcEvent::Update((table_id, table_row)) => {
+                                self.update_row(table_id, table_row)
+                            }
+                            CdcEvent::Delete((table_id, table_row)) => {
+                                self.delete_row(table_id, table_row)
+                            }
+                            CdcEvent::Relation(_) => Ok(()),
+                            CdcEvent::KeepAliveRequested { reply: _ } => Ok(()),
+                        };
+
+                        let response = DuckDbResponse::HandleCdcEventResponse(result);
+                        self.send_response(response).await;
+                    }
                 }
             }
         });
     }
 
-    fn create_tables(&self, table_schemas: &HashMap<u32, TableSchema>) {
+    async fn send_response(&mut self, response: DuckDbResponse) {
+        match self.res_sender.send(response).await {
+            Ok(_) => {}
+            Err(e) => error!("failed to send response: {e}"),
+        }
+    }
+
+    fn create_tables(
+        &self,
+        table_schemas: &HashMap<u32, TableSchema>,
+    ) -> Result<(), duckdb::Error> {
         for table_schema in table_schemas.values() {
             let schema = &table_schema.table_name.schema;
 
-            match self.client.create_schema_if_missing(schema) {
-                Ok(_) => {
-                    info!("created schema '{schema}'");
-                }
-                Err(e) => {
-                    error!("DuckDb error: {e}");
-                    return;
-                }
-            }
-
-            match self.client.create_table_if_missing(table_schema) {
-                Ok(_) => {
-                    info!(
-                        "created table '{}.{}'",
-                        table_schema.table_name.schema, table_schema.table_name.name
-                    );
-                }
-                Err(e) => {
-                    error!("DuckDb error: {e}");
-                }
-            }
+            self.client.create_schema_if_missing(schema)?;
+            self.client.create_table_if_missing(table_schema)?
         }
+
+        Ok(())
     }
 
-    fn insert_row(&self, table_id: TableId, table_row: TableRow) {
+    fn insert_row(&self, table_id: TableId, table_row: TableRow) -> Result<(), duckdb::Error> {
         let table_schema = self.get_table_schema(table_id);
-        match self.client.insert_row(&table_schema.table_name, &table_row) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("DuckDb error: {e}");
-            }
-        }
+        self.client.insert_row(&table_schema.table_name, &table_row)
     }
 
-    fn update_row(&self, table_id: TableId, table_row: TableRow) {
+    fn update_row(&self, table_id: TableId, table_row: TableRow) -> Result<(), duckdb::Error> {
         let table_schema = self.get_table_schema(table_id);
-        match self.client.update_row(table_schema, &table_row) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("DuckDb error: {e}");
-            }
-        }
+        self.client.update_row(table_schema, &table_row)
     }
 
-    fn delete_row(&self, table_id: TableId, table_row: TableRow) {
+    fn delete_row(&self, table_id: TableId, table_row: TableRow) -> Result<(), duckdb::Error> {
         let table_schema = self.get_table_schema(table_id);
-        match self.client.delete_row(table_schema, &table_row) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("DuckDb error: {e}");
-            }
-        }
+        self.client.delete_row(table_schema, &table_row)
     }
 
     //TODO: Remove expect calls
@@ -131,61 +134,104 @@ impl DuckDbExecutor {
 }
 
 pub struct DuckDbSink {
-    sender: Sender<DuckDbRequest>,
+    req_sender: Sender<DuckDbRequest>,
+    res_receiver: Receiver<DuckDbResponse>,
 }
+
+const CHANNEL_SIZE: usize = 32;
 
 impl DuckDbSink {
     pub async fn file<P: AsRef<Path>>(file_name: P) -> Result<DuckDbSink, duckdb::Error> {
-        let (sender, receiver) = channel(32);
+        let (req_sender, req_receiver) = channel(CHANNEL_SIZE);
+        let (res_sender, res_receiver) = channel(CHANNEL_SIZE);
         let client = DuckDbClient::open_file(file_name)?;
         let executor = DuckDbExecutor {
             client,
-            receiver,
+            req_receiver,
+            res_sender,
             table_schemas: None,
         };
         executor.start();
-        Ok(DuckDbSink { sender })
+        Ok(DuckDbSink {
+            req_sender,
+            res_receiver,
+        })
     }
 
     pub async fn in_memory() -> Result<DuckDbSink, duckdb::Error> {
-        let (sender, receiver) = channel(32);
+        let (req_sender, req_receiver) = channel(CHANNEL_SIZE);
+        let (res_sender, res_receiver) = channel(CHANNEL_SIZE);
         let client = DuckDbClient::open_in_memory()?;
         let executor = DuckDbExecutor {
             client,
-            receiver,
+            req_receiver,
+            res_sender,
             table_schemas: None,
         };
         executor.start();
-        Ok(DuckDbSink { sender })
+        Ok(DuckDbSink {
+            req_sender,
+            res_receiver,
+        })
+    }
+
+    pub async fn execute(&mut self, req: DuckDbRequest) -> Result<DuckDbResponse, SinkError> {
+        self.req_sender.send(req).await?;
+        if let Some(res) = self.res_receiver.recv().await {
+            Ok(res)
+        } else {
+            Err(SinkError::NoResponseReceived)
+        }
     }
 }
 
 #[async_trait]
 impl Sink for DuckDbSink {
-    async fn get_resumption_state(&self) -> Result<PipelineResumptionState, SinkError> {
-        Ok(PipelineResumptionState {
-            copied_tables: HashSet::new(),
-        })
+    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError> {
+        let req = DuckDbRequest::GetResumptionState;
+        match self.execute(req).await? {
+            DuckDbResponse::ResumptionState(res) => {
+                let resumption_state = res?;
+                Ok(resumption_state)
+            }
+            _ => panic!("invalid response to GetResumptionState request"),
+        }
     }
 
     async fn write_table_schemas(
-        &self,
+        &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError> {
         let req = DuckDbRequest::CreateTables(table_schemas);
-        self.sender.send(req).await?;
+        match self.execute(req).await? {
+            DuckDbResponse::CreateTablesResponse(res) => {
+                let _ = res?;
+            }
+            _ => panic!("invalid response to CreateTables request"),
+        }
+
         Ok(())
     }
 
-    async fn write_table_row(&self, row: TableRow, table_id: TableId) -> Result<(), SinkError> {
+    async fn write_table_row(&mut self, row: TableRow, table_id: TableId) -> Result<(), SinkError> {
         let req = DuckDbRequest::InsertRow(row, table_id);
-        self.sender.send(req).await?;
+        match self.execute(req).await? {
+            DuckDbResponse::InsertRowResponse(res) => {
+                let _ = res?;
+            }
+            _ => panic!("invalid response to InsertRow request"),
+        }
         Ok(())
     }
 
-    async fn write_cdc_event(&self, event: CdcEvent) -> Result<(), SinkError> {
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<(), SinkError> {
         let req = DuckDbRequest::HandleCdcEvent(event);
-        self.sender.send(req).await?;
+        match self.execute(req).await? {
+            DuckDbResponse::HandleCdcEventResponse(res) => {
+                let _ = res?;
+            }
+            _ => panic!("invalid response to HandleCdcEvent request"),
+        }
         Ok(())
     }
 }

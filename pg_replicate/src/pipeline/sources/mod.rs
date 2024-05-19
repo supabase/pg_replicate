@@ -25,16 +25,16 @@ pub enum SourceError {
 }
 
 #[async_trait]
-pub trait Source<'a> {
+pub trait Source {
     fn get_table_schemas(&self) -> &HashMap<TableId, TableSchema>;
 
     async fn get_table_copy_stream(
-        &'a self,
+        &self,
         table_name: &TableName,
-        column_schemas: &'a [ColumnSchema],
-    ) -> Result<TableCopyStream<'a>, SourceError>;
+        column_schemas: &[ColumnSchema],
+    ) -> Result<TableCopyStream, SourceError>;
 
     async fn commit_transaction(&self) -> Result<(), SourceError>;
 
-    async fn get_cdc_stream(&'a self, start_lsn: PgLsn) -> Result<CdcStream<'a>, SourceError>;
+    async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, SourceError>;
 }

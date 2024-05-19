@@ -1,4 +1,4 @@
-use std::{collections::HashSet, marker::PhantomData};
+use std::collections::HashSet;
 
 use futures::StreamExt;
 use thiserror::Error;
@@ -34,25 +34,23 @@ pub struct PipelineResumptionState {
     copied_tables: HashSet<TableId>,
 }
 
-pub struct DataPipeline<'a, Src: Source<'a>, Snk: Sink> {
+pub struct DataPipeline<Src: Source, Snk: Sink> {
     source: Src,
     sink: Snk,
     action: PipelineAction,
-    phantom_a: PhantomData<&'a Src>,
 }
 
-impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
+impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
     pub fn new(source: Src, sink: Snk, action: PipelineAction) -> Self {
         DataPipeline {
             source,
             sink,
             action,
-            phantom_a: PhantomData,
         }
     }
 
     async fn copy_table_schemas(
-        &'a self,
+        &mut self,
         copied_tables: &HashSet<TableId>,
     ) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
@@ -68,7 +66,7 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         Ok(())
     }
 
-    async fn copy_tables(&'a self, copied_tables: &HashSet<TableId>) -> Result<(), PipelineError> {
+    async fn copy_tables(&mut self, copied_tables: &HashSet<TableId>) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
 
         for table_schema in table_schemas.values() {
@@ -95,7 +93,7 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         Ok(())
     }
 
-    async fn copy_cdc_events(&'a self) -> Result<(), PipelineError> {
+    async fn copy_cdc_events(&mut self) -> Result<(), PipelineError> {
         let cdc_events = self.source.get_cdc_stream(PgLsn::from(0)).await?;
 
         pin!(cdc_events);
@@ -108,7 +106,7 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         Ok(())
     }
 
-    pub async fn start(&'a self) -> Result<(), PipelineError> {
+    pub async fn start(&mut self) -> Result<(), PipelineError> {
         let resumption_state = self.sink.get_resumption_state().await?;
         match self.action {
             PipelineAction::TableCopiesOnly => {

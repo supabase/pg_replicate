@@ -108,7 +108,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
 
     let stdout_sink = StdoutSink;
 
-    let pipeline = DataPipeline::new(postgres_source, stdout_sink, action);
+    let mut pipeline = DataPipeline::new(postgres_source, stdout_sink, action);
 
     pipeline.start().await?;
 

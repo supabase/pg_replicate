@@ -15,26 +15,30 @@ pub struct StdoutSink;
 
 #[async_trait]
 impl Sink for StdoutSink {
-    async fn get_resumption_state(&self) -> Result<PipelineResumptionState, SinkError> {
+    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError> {
         Ok(PipelineResumptionState {
             copied_tables: HashSet::new(),
         })
     }
 
     async fn write_table_schemas(
-        &self,
+        &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError> {
         info!("{table_schemas:?}");
         Ok(())
     }
 
-    async fn write_table_row(&self, row: TableRow, _table_id: TableId) -> Result<(), SinkError> {
+    async fn write_table_row(
+        &mut self,
+        row: TableRow,
+        _table_id: TableId,
+    ) -> Result<(), SinkError> {
         info!("{row:?}");
         Ok(())
     }
 
-    async fn write_cdc_event(&self, event: CdcEvent) -> Result<(), SinkError> {
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<(), SinkError> {
         info!("{event:?}");
         Ok(())
     }

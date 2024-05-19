@@ -112,7 +112,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
 
     let duckdb_sink = DuckDbSink::file(db_args.duckdb_file).await?;
 
-    let pipeline = DataPipeline::new(postgres_source, duckdb_sink, action);
+    let mut pipeline = DataPipeline::new(postgres_source, duckdb_sink, action);
 
     pipeline.start().await?;
 

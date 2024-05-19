@@ -20,15 +20,21 @@ pub mod stdout;
 pub enum SinkError {
     #[error("failed to send duckdb request")]
     SendError(#[from] SendError<DuckDbRequest>),
+
+    #[error("duckdb error: {0}")]
+    DuckDbError(#[from] ::duckdb::Error),
+
+    #[error("no response received")]
+    NoResponseReceived,
 }
 
 #[async_trait]
 pub trait Sink {
-    async fn get_resumption_state(&self) -> Result<PipelineResumptionState, SinkError>;
+    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError>;
     async fn write_table_schemas(
-        &self,
+        &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError>;
-    async fn write_table_row(&self, row: TableRow, table_id: TableId) -> Result<(), SinkError>;
-    async fn write_cdc_event(&self, event: CdcEvent) -> Result<(), SinkError>;
+    async fn write_table_row(&mut self, row: TableRow, table_id: TableId) -> Result<(), SinkError>;
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<(), SinkError>;
 }

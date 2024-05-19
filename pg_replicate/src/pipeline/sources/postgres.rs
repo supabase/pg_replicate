@@ -102,16 +102,16 @@ impl PostgresSource {
 }
 
 #[async_trait]
-impl<'a> Source<'a> for PostgresSource {
+impl Source for PostgresSource {
     fn get_table_schemas(&self) -> &HashMap<TableId, TableSchema> {
         &self.table_schemas
     }
 
     async fn get_table_copy_stream(
-        &'a self,
+        &self,
         table_name: &TableName,
-        column_schemas: &'a [ColumnSchema],
-    ) -> Result<TableCopyStream<'a>, SourceError> {
+        column_schemas: &[ColumnSchema],
+    ) -> Result<TableCopyStream, SourceError> {
         let column_types: Vec<Type> = column_schemas.iter().map(|c| c.typ.clone()).collect();
 
         let stream = self
@@ -122,7 +122,7 @@ impl<'a> Source<'a> for PostgresSource {
 
         Ok(TableCopyStream {
             stream,
-            column_schemas,
+            column_schemas: column_schemas.to_vec(),
         })
     }
 
@@ -134,7 +134,7 @@ impl<'a> Source<'a> for PostgresSource {
         Ok(())
     }
 
-    async fn get_cdc_stream(&'a self, start_lsn: PgLsn) -> Result<CdcStream<'a>, SourceError> {
+    async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, SourceError> {
         let publication = self
             .publication()
             .ok_or(PostgresSourceError::MissingPublication)?;
@@ -152,7 +152,7 @@ impl<'a> Source<'a> for PostgresSource {
 
         Ok(CdcStream {
             stream,
-            table_schemas: &self.table_schemas,
+            table_schemas: self.table_schemas.clone(),
             postgres_epoch,
         })
     }
@@ -168,14 +168,14 @@ pub enum TableCopyStreamError {
 }
 
 pin_project! {
-    pub struct TableCopyStream<'a> {
+    pub struct TableCopyStream {
         #[pin]
         stream: BinaryCopyOutStream,
-        column_schemas: &'a [ColumnSchema],
+        column_schemas: Vec<ColumnSchema>,
     }
 }
 
-impl<'a> Stream for TableCopyStream<'a> {
+impl Stream for TableCopyStream {
     type Item = Result<TableRow, TableCopyStreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -204,10 +204,10 @@ pub enum CdcStreamError {
 }
 
 pin_project! {
-    pub struct CdcStream<'a> {
+    pub struct CdcStream {
         #[pin]
         stream: LogicalReplicationStream,
-        table_schemas: &'a HashMap<TableId, TableSchema>,
+        table_schemas: HashMap<TableId, TableSchema>,
         postgres_epoch: SystemTime,
     }
 }
@@ -221,7 +221,7 @@ pub enum StatusUpdateError {
     TokioPostgres(#[from] tokio_postgres::Error),
 }
 
-impl<'a> CdcStream<'a> {
+impl CdcStream {
     pub async fn send_status_update(
         self: Pin<&mut Self>,
         lsn: PgLsn,
@@ -236,7 +236,7 @@ impl<'a> CdcStream<'a> {
     }
 }
 
-impl<'a> Stream for CdcStream<'a> {
+impl Stream for CdcStream {
     type Item = Result<CdcEvent, CdcStreamError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
