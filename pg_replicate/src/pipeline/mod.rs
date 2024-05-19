@@ -50,15 +50,9 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
         }
     }
 
-    async fn copy_table_schemas(
-        &mut self,
-        copied_tables: &HashSet<TableId>,
-    ) -> Result<(), PipelineError> {
+    async fn copy_table_schemas(&mut self) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
-        let mut table_schemas = table_schemas.clone();
-        for copied_table in copied_tables {
-            table_schemas.remove(copied_table);
-        }
+        let table_schemas = table_schemas.clone();
 
         if !table_schemas.is_empty() {
             self.sink.write_table_schemas(table_schemas).await?;
@@ -99,7 +93,9 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
     }
 
     async fn copy_cdc_events(&mut self, last_lsn: PgLsn) -> Result<(), PipelineError> {
-        let cdc_events = self.source.get_cdc_stream(last_lsn).await?;
+        let mut last_lsn: u64 = last_lsn.into();
+        last_lsn += 1;
+        let cdc_events = self.source.get_cdc_stream(last_lsn.into()).await?;
 
         pin!(cdc_events);
 
@@ -115,18 +111,15 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
         let resumption_state = self.sink.get_resumption_state().await?;
         match self.action {
             PipelineAction::TableCopiesOnly => {
-                self.copy_table_schemas(&resumption_state.copied_tables)
-                    .await?;
+                self.copy_table_schemas().await?;
                 self.copy_tables(&resumption_state.copied_tables).await?;
             }
             PipelineAction::CdcOnly => {
-                self.copy_table_schemas(&resumption_state.copied_tables)
-                    .await?;
+                self.copy_table_schemas().await?;
                 self.copy_cdc_events(resumption_state.last_lsn).await?;
             }
             PipelineAction::Both => {
-                self.copy_table_schemas(&resumption_state.copied_tables)
-                    .await?;
+                self.copy_table_schemas().await?;
                 self.copy_tables(&resumption_state.copied_tables).await?;
                 self.copy_cdc_events(resumption_state.last_lsn).await?;
             }
