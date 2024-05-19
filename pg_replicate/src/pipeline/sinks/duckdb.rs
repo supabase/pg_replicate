@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
@@ -8,6 +11,7 @@ use tracing::{error, info};
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
+    pipeline::PipelineResumptionState,
     table::{TableId, TableSchema},
 };
 
@@ -158,6 +162,12 @@ impl DuckDbSink {
 
 #[async_trait]
 impl Sink for DuckDbSink {
+    async fn get_resumption_state(&self) -> Result<PipelineResumptionState, SinkError> {
+        Ok(PipelineResumptionState {
+            copied_tables: HashSet::new(),
+        })
+    }
+
     async fn write_table_schemas(
         &self,
         table_schemas: HashMap<TableId, TableSchema>,

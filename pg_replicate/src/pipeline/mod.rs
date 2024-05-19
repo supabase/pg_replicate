@@ -1,9 +1,11 @@
-use std::marker::PhantomData;
+use std::{collections::HashSet, marker::PhantomData};
 
 use futures::StreamExt;
 use thiserror::Error;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
+
+use crate::table::TableId;
 
 use self::{
     sinks::{Sink, SinkError},
@@ -28,6 +30,10 @@ pub enum PipelineError {
     SinkError(#[from] SinkError),
 }
 
+pub struct PipelineResumptionState {
+    copied_tables: HashSet<TableId>,
+}
+
 pub struct DataPipeline<'a, Src: Source<'a>, Snk: Sink> {
     source: Src,
     sink: Snk,
@@ -45,17 +51,30 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
         }
     }
 
-    async fn copy_table_schemas(&'a self) -> Result<(), PipelineError> {
+    async fn copy_table_schemas(
+        &'a self,
+        copied_tables: &HashSet<TableId>,
+    ) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
-        self.sink.write_table_schemas(table_schemas.clone()).await?;
+        let mut table_schemas = table_schemas.clone();
+        for copied_table in copied_tables {
+            table_schemas.remove(copied_table);
+        }
+
+        if !table_schemas.is_empty() {
+            self.sink.write_table_schemas(table_schemas).await?;
+        }
 
         Ok(())
     }
 
-    async fn copy_tables(&'a self) -> Result<(), PipelineError> {
+    async fn copy_tables(&'a self, copied_tables: &HashSet<TableId>) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
 
         for table_schema in table_schemas.values() {
+            if copied_tables.contains(&table_schema.table_id) {
+                continue;
+            }
             let table_rows = self
                 .source
                 .get_table_copy_stream(&table_schema.table_name, &table_schema.column_schemas)
@@ -90,18 +109,22 @@ impl<'a, Src: Source<'a>, Snk: Sink> DataPipeline<'a, Src, Snk> {
     }
 
     pub async fn start(&'a self) -> Result<(), PipelineError> {
+        let resumption_state = self.sink.get_resumption_state().await?;
         match self.action {
             PipelineAction::TableCopiesOnly => {
-                self.copy_table_schemas().await?;
-                self.copy_tables().await?;
+                self.copy_table_schemas(&resumption_state.copied_tables)
+                    .await?;
+                self.copy_tables(&resumption_state.copied_tables).await?;
             }
             PipelineAction::CdcOnly => {
-                self.copy_table_schemas().await?;
+                self.copy_table_schemas(&resumption_state.copied_tables)
+                    .await?;
                 self.copy_cdc_events().await?;
             }
             PipelineAction::Both => {
-                self.copy_table_schemas().await?;
-                self.copy_tables().await?;
+                self.copy_table_schemas(&resumption_state.copied_tables)
+                    .await?;
+                self.copy_tables(&resumption_state.copied_tables).await?;
                 self.copy_cdc_events().await?;
             }
         }

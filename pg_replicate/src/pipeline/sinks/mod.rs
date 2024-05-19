@@ -11,6 +11,8 @@ use crate::{
 
 use self::duckdb::DuckDbRequest;
 
+use super::PipelineResumptionState;
+
 pub mod duckdb;
 pub mod stdout;
 
@@ -22,6 +24,7 @@ pub enum SinkError {
 
 #[async_trait]
 pub trait Sink {
+    async fn get_resumption_state(&self) -> Result<PipelineResumptionState, SinkError>;
     async fn write_table_schemas(
         &self,
         table_schemas: HashMap<TableId, TableSchema>,

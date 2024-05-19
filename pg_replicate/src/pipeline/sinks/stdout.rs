@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use tracing::info;
 
 use crate::{
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
+    pipeline::PipelineResumptionState,
     table::{TableId, TableSchema},
 };
 
@@ -14,6 +15,12 @@ pub struct StdoutSink;
 
 #[async_trait]
 impl Sink for StdoutSink {
+    async fn get_resumption_state(&self) -> Result<PipelineResumptionState, SinkError> {
+        Ok(PipelineResumptionState {
+            copied_tables: HashSet::new(),
+        })
+    }
+
     async fn write_table_schemas(
         &self,
         table_schemas: HashMap<TableId, TableSchema>,
