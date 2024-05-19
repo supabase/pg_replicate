@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
+use tokio_postgres::types::PgLsn;
 
 use crate::{
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
@@ -36,7 +37,7 @@ pub trait Sink {
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError>;
     async fn write_table_row(&mut self, row: TableRow, table_id: TableId) -> Result<(), SinkError>;
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<(), SinkError>;
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, SinkError>;
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError>;
     async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError>;
 }

@@ -40,9 +40,9 @@ impl Sink for StdoutSink {
         Ok(())
     }
 
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<(), SinkError> {
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, SinkError> {
         info!("{event:?}");
-        Ok(())
+        Ok(PgLsn::from(0))
     }
 
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {

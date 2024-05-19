@@ -7,7 +7,8 @@ use tokio_postgres::types::PgLsn;
 use crate::table::{ColumnSchema, TableId, TableName, TableSchema};
 
 use self::postgres::{
-    CdcStream, CdcStreamError, PostgresSourceError, TableCopyStream, TableCopyStreamError,
+    CdcStream, CdcStreamError, PostgresSourceError, StatusUpdateError, TableCopyStream,
+    TableCopyStreamError,
 };
 
 pub mod postgres;
@@ -22,6 +23,9 @@ pub enum SourceError {
 
     #[error("cdc stream error: {0}")]
     CdcStream(#[from] CdcStreamError),
+
+    #[error("status update error: {0}")]
+    StatusUpdate(#[from] StatusUpdateError),
 }
 
 #[async_trait]

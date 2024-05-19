@@ -5,7 +5,7 @@ use thiserror::Error;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
 
-use crate::table::TableId;
+use crate::{conversions::cdc_event::CdcEvent, table::TableId};
 
 use self::{
     sinks::{Sink, SinkError},
@@ -101,7 +101,19 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
 
         while let Some(cdc_event) = cdc_events.next().await {
             let cdc_event = cdc_event.map_err(SourceError::CdcStream)?;
-            self.sink.write_cdc_event(cdc_event).await?;
+            let send_status_update = if let CdcEvent::KeepAliveRequested { reply } = cdc_event {
+                reply
+            } else {
+                false
+            };
+            let last_lsn = self.sink.write_cdc_event(cdc_event).await?;
+            if send_status_update {
+                cdc_events
+                    .as_mut()
+                    .send_status_update(last_lsn)
+                    .await
+                    .map_err(|e| PipelineError::SourceError(SourceError::StatusUpdate(e)))?;
+            }
         }
 
         Ok(())

@@ -29,7 +29,7 @@ pub enum DuckDbResponse {
     ResumptionState(Result<PipelineResumptionState, DuckDbExecutorError>),
     CreateTablesResponse(Result<(), DuckDbExecutorError>),
     InsertRowResponse(Result<(), DuckDbExecutorError>),
-    HandleCdcEventResponse(Result<(), DuckDbExecutorError>),
+    HandleCdcEventResponse(Result<PgLsn, DuckDbExecutorError>),
     TableCopiedResponse(Result<(), DuckDbExecutorError>),
     TruncateTableResponse(Result<(), DuckDbExecutorError>),
 }
@@ -58,6 +58,7 @@ struct DuckDbExecutor {
     res_sender: Sender<DuckDbResponse>,
     table_schemas: Option<HashMap<TableId, TableSchema>>,
     final_lsn: Option<PgLsn>,
+    committed_lsn: Option<PgLsn>,
 }
 
 impl DuckDbExecutor {
@@ -67,6 +68,10 @@ impl DuckDbExecutor {
                 match req {
                     DuckDbRequest::GetResumptionState => {
                         let result = self.get_resumption_state();
+                        let result = result.map(|rs| {
+                            self.committed_lsn = Some(rs.last_lsn);
+                            rs
+                        });
                         let response = DuckDbResponse::ResumptionState(result);
                         self.send_response(response).await;
                     }
@@ -92,7 +97,10 @@ impl DuckDbExecutor {
                                 let commit_lsn: PgLsn = commit_body.commit_lsn().into();
                                 if let Some(final_lsn) = self.final_lsn {
                                     if commit_lsn == final_lsn {
-                                        self.set_last_lsn_and_commit_transaction(commit_lsn)
+                                        let res =
+                                            self.set_last_lsn_and_commit_transaction(commit_lsn);
+                                        self.committed_lsn = Some(commit_lsn);
+                                        res
                                     } else {
                                         Err(DuckDbExecutorError::IncorrectCommitLsn(
                                             commit_lsn, final_lsn,
@@ -115,6 +123,8 @@ impl DuckDbExecutor {
                             CdcEvent::KeepAliveRequested { reply: _ } => Ok(()),
                         };
 
+                        let committed_lsn = self.committed_lsn.expect("committed lsn is none");
+                        let result = result.map(|_| committed_lsn);
                         let response = DuckDbResponse::HandleCdcEventResponse(result);
                         self.send_response(response).await;
                     }
@@ -288,6 +298,7 @@ impl DuckDbSink {
             res_sender,
             table_schemas: None,
             final_lsn: None,
+            committed_lsn: None,
         };
         executor.start();
         Ok(DuckDbSink {
@@ -306,6 +317,7 @@ impl DuckDbSink {
             res_sender,
             table_schemas: None,
             final_lsn: None,
+            committed_lsn: None,
         };
         executor.start();
         Ok(DuckDbSink {
@@ -363,15 +375,13 @@ impl Sink for DuckDbSink {
         Ok(())
     }
 
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<(), SinkError> {
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, SinkError> {
         let req = DuckDbRequest::HandleCdcEvent(event);
-        match self.execute(req).await? {
-            DuckDbResponse::HandleCdcEventResponse(res) => {
-                let _ = res?;
-            }
+        let last_lsn = match self.execute(req).await? {
+            DuckDbResponse::HandleCdcEventResponse(res) => res?,
             _ => panic!("invalid response to HandleCdcEvent request"),
-        }
-        Ok(())
+        };
+        Ok(last_lsn)
     }
 
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {
