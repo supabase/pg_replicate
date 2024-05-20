@@ -65,7 +65,9 @@ impl DuckDbClient {
     fn postgres_typ_to_duckdb_typ(typ: &Type) -> &'static str {
         match typ {
             &Type::INT2 | &Type::INT4 | &Type::INT8 => "integer",
-            &Type::VARCHAR => "text",
+            &Type::BOOL => "bool",
+            &Type::BYTEA => "bytea",
+            &Type::VARCHAR | &Type::BPCHAR => "text",
             &Type::TIMESTAMP => "timestamp",
             typ => panic!("duckdb doesn't yet support type {typ}"),
         }
@@ -264,9 +266,7 @@ impl DuckDbClient {
     }
 
     pub fn get_last_lsn(&self) -> Result<PgLsn, duckdb::Error> {
-        let mut stmt = self
-            .conn
-            .prepare("select lsn from pg_replicate.last_lsn")?;
+        let mut stmt = self.conn.prepare("select lsn from pg_replicate.last_lsn")?;
         let lsn = stmt.query_row::<u64, _, _>([], |r| r.get(0))?;
         Ok(lsn.into())
     }
