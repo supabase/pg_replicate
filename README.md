@@ -10,6 +10,12 @@ There are three components in a data pipeline:
 
 The data source is an object from where data will be copied. The data sink is an object to which data will be copied. The pipeline is an object which drives the data copy operations from the source to the sink.
 
+ ┌──────────┐                       ┌──────────┐
+ │          │                       │          │
+ │  Source  ├──── Data Pipeline ───►│   Sink   │
+ │          │                       │          │
+ └──────────┘                       └──────────┘
+
 So roughly you write code like this:
 
 ```rust
@@ -40,6 +46,12 @@ A data pipeline encapsulates the business logic to copy the data from the source
 If a data sink is not transactional (e.g. `S3Sink`), it is not always possible to keep the CDC stream and the resumption state consistent with each other. This can result in these non-transactional sinks having duplicate portions of the CDC stream. Data pipeline helps in deduplicating these duplicate CDC events when the data is being copied over to a transactional store like DuckDB.
 
 Finally, the data pipeline reports back the log sequence number (LSN) upto which the CDC stream has been copied in the sink to the `PostgresSource`. This allows the Postgres database to reclaim disk space by removing WAL segment files which are no longer required by the data sink.
+
+ ┌──────────┐                       ┌──────────┐
+ │          │                       │          │
+ │  Source  │◄──── LSN Numbers ─────│   Sink   │
+ │          │                       │          │
+ └──────────┘                       └──────────┘
 
 ## Kinds of Data Copies
 
