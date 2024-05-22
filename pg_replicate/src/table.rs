@@ -20,7 +20,7 @@ impl TableName {
 
 impl Display for TableName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{0}, {1}", self.schema, self.name))
+        f.write_fmt(format_args!("{0}.{1}", self.schema, self.name))
     }
 }
 

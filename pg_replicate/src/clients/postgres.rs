@@ -38,8 +38,8 @@ pub enum ReplicationClientError {
     #[error("type modifier column is not a valid u32")]
     TypeModifierColumnNotI32,
 
-    #[error("unsupported column type with oid {0} in relation id {1}")]
-    UnsupportedType(u32, TableId),
+    #[error("column {0}'s type with oid {1} in relation {2} is not supported")]
+    UnsupportedType(String, u32, String),
 
     #[error("table {0} doesn't exist")]
     MissingTable(TableName),
@@ -127,6 +127,7 @@ impl ReplicationClient {
     pub async fn get_column_schemas(
         &self,
         table_id: TableId,
+        table_name: &TableName,
     ) -> Result<Vec<ColumnSchema>, ReplicationClientError> {
         let column_info_query = format!(
             "SELECT a.attname,
@@ -169,8 +170,12 @@ impl ReplicationClient {
                     .parse()
                     .map_err(|_| ReplicationClientError::OidColumnNotU32)?;
 
-                let typ = Type::from_oid(type_oid)
-                    .ok_or(ReplicationClientError::UnsupportedType(type_oid, table_id))?;
+                let typ =
+                    Type::from_oid(type_oid).ok_or(ReplicationClientError::UnsupportedType(
+                        name.clone(),
+                        type_oid,
+                        table_name.to_string(),
+                    ))?;
 
                 let modifier = row
                     .try_get("atttypmod")?
@@ -232,7 +237,7 @@ impl ReplicationClient {
             .get_table_id(&table_name)
             .await?
             .ok_or(ReplicationClientError::MissingTable(table_name.clone()))?;
-        let column_schemas = self.get_column_schemas(table_id).await?;
+        let column_schemas = self.get_column_schemas(table_id, &table_name).await?;
         Ok(TableSchema {
             table_name,
             table_id,
