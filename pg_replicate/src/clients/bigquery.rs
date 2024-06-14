@@ -96,10 +96,9 @@ impl BigQueryClient {
         column_schemas: &[ColumnSchema],
     ) -> Result<(), BQError> {
         let columns_spec = Self::create_columns_spec(column_schemas);
-        let query = format!(
-            "create table `{}.{}.{}` {}",
-            self.project_id, dataset_id, table_name, columns_spec
-        );
+        let project_id = &self.project_id;
+        let query =
+            format!("create table `{project_id}.{dataset_id}.{table_name}` {columns_spec}",);
         let _ = self
             .client
             .job()
@@ -113,10 +112,9 @@ impl BigQueryClient {
             "select exists
                 (
                     select * from
-                    {}.INFORMATION_SCHEMA.TABLES
-                    where table_name = '{}'
+                    {dataset_id}.INFORMATION_SCHEMA.TABLES
+                    where table_name = '{table_name}'
                 ) as table_exists;",
-            dataset_id, table_name
         );
         let mut res = self
             .client
@@ -135,10 +133,8 @@ impl BigQueryClient {
     }
 
     pub async fn get_last_lsn(&self, dataset_id: &str) -> Result<PgLsn, BQError> {
-        let query = format!(
-            "select lsn from `{}.{}.last_lsn`",
-            self.project_id, dataset_id
-        );
+        let project_id = &self.project_id;
+        let query = format!("select lsn from `{project_id}.{dataset_id}.last_lsn`",);
 
         let mut res = self
             .client
@@ -160,10 +156,8 @@ impl BigQueryClient {
     pub async fn set_last_lsn(&self, dataset_id: &str, lsn: PgLsn) -> Result<(), BQError> {
         let lsn: u64 = lsn.into();
 
-        let query = format!(
-            "update `{}.{}.last_lsn` set lsn = {lsn}",
-            self.project_id, dataset_id
-        );
+        let project_id = &self.project_id;
+        let query = format!("update `{project_id}.{dataset_id}.last_lsn` set lsn = {lsn}",);
 
         let _ = self
             .client
@@ -175,10 +169,8 @@ impl BigQueryClient {
     }
 
     pub async fn insert_last_lsn_row(&self, dataset_id: &str) -> Result<(), BQError> {
-        let query = format!(
-            "insert into `{}.{}.last_lsn` (lsn) values (0)",
-            self.project_id, dataset_id
-        );
+        let project_id = &self.project_id;
+        let query = format!("insert into `{project_id}.{dataset_id}.last_lsn` (lsn) values (0)",);
 
         let _ = self
             .client
@@ -193,10 +185,8 @@ impl BigQueryClient {
         &self,
         dataset_id: &str,
     ) -> Result<HashSet<TableId>, BQError> {
-        let query = format!(
-            "select table_id from `{}.{}.copied_tables`",
-            self.project_id, dataset_id
-        );
+        let project_id = &self.project_id;
+        let query = format!("select table_id from `{project_id}.{dataset_id}.copied_tables`",);
 
         let mut res = self
             .client
@@ -213,5 +203,37 @@ impl BigQueryClient {
         }
 
         Ok(table_ids)
+    }
+
+    pub async fn insert_into_copied_tables(
+        &self,
+        dataset_id: &str,
+        table_id: TableId,
+    ) -> Result<(), BQError> {
+        let project_id = &self.project_id;
+        let query = format!(
+            "insert into `{project_id}.{dataset_id}.copied_tables` (table_id) values ({table_id})",
+        );
+
+        let _ = self
+            .client
+            .job()
+            .query(&self.project_id, QueryRequest::new(query))
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn truncate_table(&self, dataset_id: &str, table_name: &str) -> Result<(), BQError> {
+        let project_id = &self.project_id;
+        let query = format!("truncate table `{project_id}.{dataset_id}.{table_name}`",);
+
+        let _ = self
+            .client
+            .job()
+            .query(&self.project_id, QueryRequest::new(query))
+            .await?;
+
+        Ok(())
     }
 }

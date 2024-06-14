@@ -193,7 +193,7 @@ impl DuckDbExecutor {
 
     fn create_tables(
         &self,
-        table_schemas: &HashMap<u32, TableSchema>,
+        table_schemas: &HashMap<TableId, TableSchema>,
     ) -> Result<(), DuckDbExecutorError> {
         for table_schema in table_schemas.values() {
             let schema = &table_schema.table_name.schema;

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use bigquery::BigQuerySinkError;
 use gcp_bigquery_client::error::BQError;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
@@ -30,8 +31,12 @@ pub enum SinkError {
     #[error("no response received")]
     NoResponseReceived,
 
+    #[error("bigquery sink error: {0}")]
+    BigQuerySink(#[from] BigQuerySinkError),
+
+    //TODO: remove and use the one wrapped inside BigQuerySinkError
     #[error("bigquery error: {0}")]
-    BigQuery(#[from] BQError)
+    BigQuery(#[from] BQError),
 }
 
 #[async_trait]

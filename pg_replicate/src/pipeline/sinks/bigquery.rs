@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use gcp_bigquery_client::error::BQError;
+use thiserror::Error;
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
 
@@ -14,8 +15,21 @@ use crate::{
 
 use super::{Sink, SinkError};
 
+#[derive(Debug, Error)]
+pub enum BigQuerySinkError {
+    #[error("big query error: {0}")]
+    BigQuery(#[from] BQError),
+
+    #[error("missing table schemas")]
+    MissingTableSchemas,
+
+    #[error("missing table id: {0}")]
+    MissingTableId(TableId),
+}
+
 pub struct BigQuerySink {
     dataset_id: String,
+    table_schemas: Option<HashMap<TableId, TableSchema>>,
     pub client: BigQueryClient,
 }
 
@@ -26,7 +40,19 @@ impl BigQuerySink {
         gcp_sa_key_path: &str,
     ) -> Result<BigQuerySink, BQError> {
         let client = BigQueryClient::new(project_id, gcp_sa_key_path).await?;
-        Ok(BigQuerySink { dataset_id, client })
+        Ok(BigQuerySink {
+            dataset_id,
+            table_schemas: None,
+            client,
+        })
+    }
+
+    fn get_table_schema(&self, table_id: TableId) -> Result<&TableSchema, BigQuerySinkError> {
+        self.table_schemas
+            .as_ref()
+            .ok_or(BigQuerySinkError::MissingTableSchemas)?
+            .get(&table_id)
+            .ok_or(BigQuerySinkError::MissingTableId(table_id))
     }
 }
 
@@ -87,6 +113,8 @@ impl Sink for BigQuerySink {
                 .await?;
         }
 
+        self.table_schemas = Some(table_schemas);
+
         Ok(())
     }
 
@@ -105,12 +133,17 @@ impl Sink for BigQuerySink {
     }
 
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {
-        info!("table {table_id} copied");
+        self.client
+            .insert_into_copied_tables(&self.dataset_id, table_id)
+            .await?;
         Ok(())
     }
 
     async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
-        info!("table {table_id} truncated");
+        let table_schema = self.get_table_schema(table_id)?;
+        self.client
+            .truncate_table(&self.dataset_id, &table_schema.table_name.name)
+            .await?;
         Ok(())
     }
 }
