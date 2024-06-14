@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use gcp_bigquery_client::error::BQError;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio_postgres::types::PgLsn;
@@ -14,6 +15,7 @@ use self::duckdb::{DuckDbExecutorError, DuckDbRequest};
 
 use super::PipelineResumptionState;
 
+pub mod bigquery;
 pub mod duckdb;
 pub mod stdout;
 
@@ -27,6 +29,9 @@ pub enum SinkError {
 
     #[error("no response received")]
     NoResponseReceived,
+
+    #[error("bigquery error: {0}")]
+    BigQuery(#[from] BQError)
 }
 
 #[async_trait]
