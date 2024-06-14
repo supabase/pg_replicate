@@ -151,7 +151,7 @@ impl DuckDbExecutor {
             schema: "pg_replicate".to_string(),
             name: "copied_tables".to_string(),
         };
-        let copied_table_column_schemas = vec![ColumnSchema {
+        let copied_table_column_schemas = [ColumnSchema {
             name: "table_id".to_string(),
             typ: Type::INT4,
             modifier: 0,
@@ -168,7 +168,7 @@ impl DuckDbExecutor {
             schema: "pg_replicate".to_string(),
             name: "last_lsn".to_string(),
         };
-        let last_lsn_column_schemas = vec![ColumnSchema {
+        let last_lsn_column_schemas = [ColumnSchema {
             name: "lsn".to_string(),
             typ: Type::INT8,
             modifier: 0,
