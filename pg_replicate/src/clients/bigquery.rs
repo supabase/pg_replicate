@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use gcp_bigquery_client::{error::BQError, model::query_request::QueryRequest, Client};
 use tokio_postgres::types::{PgLsn, Type};
 
-use crate::table::{ColumnSchema, TableId, TableName};
+use crate::table::{ColumnSchema, TableId};
 
 pub struct BigQueryClient {
     project_id: String,
@@ -20,13 +20,15 @@ impl BigQueryClient {
 
     pub async fn create_table_if_missing(
         &self,
-        table_name: &TableName,
+        dataset_id: &str,
+        table_name: &str,
         column_schemas: &[ColumnSchema],
     ) -> Result<bool, BQError> {
-        if self.table_exists(table_name).await? {
+        if self.table_exists(dataset_id, table_name).await? {
             Ok(false)
         } else {
-            self.create_table(table_name, column_schemas).await?;
+            self.create_table(dataset_id, table_name, column_schemas)
+                .await?;
             Ok(true)
         }
     }
@@ -89,13 +91,14 @@ impl BigQueryClient {
 
     pub async fn create_table(
         &self,
-        table_name: &TableName,
+        dataset_id: &str,
+        table_name: &str,
         column_schemas: &[ColumnSchema],
     ) -> Result<(), BQError> {
         let columns_spec = Self::create_columns_spec(column_schemas);
         let query = format!(
             "create table `{}.{}.{}` {}",
-            self.project_id, table_name.schema, table_name.name, columns_spec
+            self.project_id, dataset_id, table_name, columns_spec
         );
         let _ = self
             .client
@@ -105,7 +108,7 @@ impl BigQueryClient {
         Ok(())
     }
 
-    pub async fn table_exists(&self, table_name: &TableName) -> Result<bool, BQError> {
+    pub async fn table_exists(&self, dataset_id: &str, table_name: &str) -> Result<bool, BQError> {
         let query = format!(
             "select exists
                 (
@@ -113,7 +116,7 @@ impl BigQueryClient {
                     {}.INFORMATION_SCHEMA.TABLES
                     where table_name = '{}'
                 ) as table_exists;",
-            table_name.schema, table_name.name
+            dataset_id, table_name
         );
         let mut res = self
             .client

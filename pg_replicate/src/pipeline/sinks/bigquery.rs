@@ -9,7 +9,7 @@ use crate::{
     clients::bigquery::BigQueryClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
     pipeline::PipelineResumptionState,
-    table::{ColumnSchema, TableId, TableName, TableSchema},
+    table::{ColumnSchema, TableId, TableSchema},
 };
 
 use super::{Sink, SinkError};
@@ -33,10 +33,6 @@ impl BigQuerySink {
 #[async_trait]
 impl Sink for BigQuerySink {
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError> {
-        let copied_tables_table_name = TableName {
-            schema: self.dataset_id.clone(),
-            name: "copied_tables".to_string(),
-        };
         let copied_table_column_schemas = [ColumnSchema {
             name: "table_id".to_string(),
             typ: Type::INT4,
@@ -46,13 +42,13 @@ impl Sink for BigQuerySink {
         }];
 
         self.client
-            .create_table_if_missing(&copied_tables_table_name, &copied_table_column_schemas)
+            .create_table_if_missing(
+                &self.dataset_id,
+                "copied_tables",
+                &copied_table_column_schemas,
+            )
             .await?;
 
-        let last_lsn_table_name = TableName {
-            schema: self.dataset_id.clone(),
-            name: "last_lsn".to_string(),
-        };
         let last_lsn_column_schemas = [ColumnSchema {
             name: "lsn".to_string(),
             typ: Type::INT8,
@@ -62,7 +58,7 @@ impl Sink for BigQuerySink {
         }];
         if self
             .client
-            .create_table_if_missing(&last_lsn_table_name, &last_lsn_column_schemas)
+            .create_table_if_missing(&self.dataset_id, "last_lsn", &last_lsn_column_schemas)
             .await?
         {
             self.client.insert_last_lsn_row(&self.dataset_id).await?;
@@ -81,7 +77,16 @@ impl Sink for BigQuerySink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError> {
-        info!("{table_schemas:?}");
+        for table_schema in table_schemas.values() {
+            self.client
+                .create_table_if_missing(
+                    &self.dataset_id,
+                    &table_schema.table_name.name,
+                    &table_schema.column_schemas,
+                )
+                .await?;
+        }
+
         Ok(())
     }
 
