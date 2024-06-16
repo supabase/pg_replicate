@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use gcp_bigquery_client::error::BQError;
 use thiserror::Error;
 use tokio_postgres::types::{PgLsn, Type};
-use tracing::info;
 
 use crate::{
     clients::bigquery::BigQueryClient,
@@ -25,12 +24,20 @@ pub enum BigQuerySinkError {
 
     #[error("missing table id: {0}")]
     MissingTableId(TableId),
+
+    #[error("incorrect commit lsn: {0}(expected: {0})")]
+    IncorrectCommitLsn(PgLsn, PgLsn),
+
+    #[error("commit message without begin message")]
+    CommitWithoutBegin,
 }
 
 pub struct BigQuerySink {
+    client: BigQueryClient,
     dataset_id: String,
     table_schemas: Option<HashMap<TableId, TableSchema>>,
-    pub client: BigQueryClient,
+    final_lsn: Option<PgLsn>,
+    committed_lsn: Option<PgLsn>,
 }
 
 impl BigQuerySink {
@@ -41,9 +48,11 @@ impl BigQuerySink {
     ) -> Result<BigQuerySink, BQError> {
         let client = BigQueryClient::new(project_id, gcp_sa_key_path).await?;
         Ok(BigQuerySink {
+            client,
             dataset_id,
             table_schemas: None,
-            client,
+            final_lsn: None,
+            committed_lsn: None,
         })
     }
 
@@ -120,16 +129,64 @@ impl Sink for BigQuerySink {
 
     async fn write_table_row(
         &mut self,
-        row: TableRow,
-        _table_id: TableId,
+        table_row: TableRow,
+        table_id: TableId,
     ) -> Result<(), SinkError> {
-        info!("{row:?}");
+        let table_schema = self.get_table_schema(table_id)?;
+        self.client
+            .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
+            .await?;
         Ok(())
     }
 
     async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, SinkError> {
-        info!("{event:?}");
-        Ok(PgLsn::from(0))
+        match event {
+            CdcEvent::Begin(begin_body) => {
+                let final_lsn = begin_body.final_lsn();
+                self.final_lsn = Some(final_lsn.into());
+                self.client.begin_transaction().await?;
+            }
+            CdcEvent::Commit(commit_body) => {
+                let commit_lsn: PgLsn = commit_body.commit_lsn().into();
+                if let Some(final_lsn) = self.final_lsn {
+                    if commit_lsn == final_lsn {
+                        let res = self
+                            .client
+                            .set_last_lsn_and_commit_transaction(&self.dataset_id, commit_lsn)
+                            .await?;
+                        self.committed_lsn = Some(commit_lsn);
+                        res
+                    } else {
+                        Err(BigQuerySinkError::IncorrectCommitLsn(commit_lsn, final_lsn))?
+                    }
+                } else {
+                    Err(BigQuerySinkError::CommitWithoutBegin)?
+                }
+            }
+            CdcEvent::Insert((table_id, table_row)) => {
+                let table_schema = self.get_table_schema(table_id)?;
+                self.client
+                    .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
+                    .await?;
+            }
+            CdcEvent::Update((table_id, table_row)) => {
+                let table_schema = self.get_table_schema(table_id)?;
+                self.client
+                    .update_row(&self.dataset_id, table_schema, &table_row)
+                    .await?;
+            }
+            CdcEvent::Delete((table_id, table_row)) => {
+                let table_schema = self.get_table_schema(table_id)?;
+                self.client
+                    .delete_row(&self.dataset_id, table_schema, &table_row)
+                    .await?;
+            }
+            CdcEvent::Relation(_) => {}
+            CdcEvent::KeepAliveRequested { reply: _ } => {}
+        };
+
+        let committed_lsn = self.committed_lsn.expect("committed lsn is none");
+        Ok(committed_lsn)
     }
 
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {
