@@ -102,6 +102,8 @@ impl Sink for BigQuerySink {
         let copied_tables = self.client.get_copied_table_ids(&self.dataset_id).await?;
         let last_lsn = self.client.get_last_lsn(&self.dataset_id).await?;
 
+        self.committed_lsn = Some(last_lsn);
+
         Ok(PipelineResumptionState {
             copied_tables,
             last_lsn,
