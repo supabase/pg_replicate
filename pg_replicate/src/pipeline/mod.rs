@@ -12,6 +12,7 @@ use self::{
     sources::{Source, SourceError},
 };
 
+pub mod batching;
 pub mod sinks;
 pub mod sources;
 

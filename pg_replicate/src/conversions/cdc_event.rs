@@ -12,7 +12,10 @@ use postgres_protocol::message::backend::{
 use thiserror::Error;
 use tokio_postgres::types::Type;
 
-use crate::table::{ColumnSchema, TableId, TableSchema};
+use crate::{
+    pipeline::batching::BatchBoundary,
+    table::{ColumnSchema, TableId, TableSchema},
+};
 
 use super::table_row::{Cell, TableRow};
 
@@ -236,4 +239,10 @@ pub enum CdcEvent {
     Delete((TableId, TableRow)),
     Relation(RelationBody),
     KeepAliveRequested { reply: bool },
+}
+
+impl BatchBoundary for CdcEvent {
+    fn is_last_in_batch(&self) -> bool {
+        matches!(self, CdcEvent::Commit(_))
+    }
 }

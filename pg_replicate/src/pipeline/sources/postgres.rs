@@ -168,6 +168,7 @@ pub enum TableCopyStreamError {
 }
 
 pin_project! {
+    #[must_use = "streams do nothing unless polled"]
     pub struct TableCopyStream {
         #[pin]
         stream: BinaryCopyOutStream,
@@ -204,6 +205,7 @@ pub enum CdcStreamError {
 }
 
 pin_project! {
+    #[must_use = "streams do nothing unless polled"]
     pub struct CdcStream {
         #[pin]
         stream: LogicalReplicationStream,

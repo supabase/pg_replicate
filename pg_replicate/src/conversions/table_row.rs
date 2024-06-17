@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use thiserror::Error;
 use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
 
-use crate::table::ColumnSchema;
+use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
 #[derive(Debug)]
 pub enum Cell {
@@ -18,6 +18,12 @@ pub enum Cell {
 #[derive(Debug)]
 pub struct TableRow {
     pub values: Vec<Cell>,
+}
+
+impl BatchBoundary for TableRow {
+    fn is_last_in_batch(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Error)]
