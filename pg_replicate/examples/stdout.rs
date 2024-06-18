@@ -3,9 +3,10 @@ use std::error::Error;
 use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
+        data_pipeline::DataPipeline,
         sinks::stdout::StdoutSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
-        DataPipeline, PipelineAction,
+        PipelineAction,
     },
     table::TableName,
 };

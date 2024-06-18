@@ -51,3 +51,20 @@ pub trait Sink {
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError>;
     async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError>;
 }
+
+#[async_trait]
+pub trait BatchSink {
+    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError>;
+    async fn write_table_schemas(
+        &mut self,
+        table_schemas: HashMap<TableId, TableSchema>,
+    ) -> Result<(), SinkError>;
+    async fn write_table_rows(
+        &mut self,
+        rows: Vec<TableRow>,
+        table_id: TableId,
+    ) -> Result<(), SinkError>;
+    async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, SinkError>;
+    async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError>;
+    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError>;
+}
