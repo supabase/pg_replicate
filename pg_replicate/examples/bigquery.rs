@@ -1,10 +1,10 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
-        data_pipeline::DataPipeline,
-        sinks::bigquery::BigQuerySink,
+        batching::{data_pipeline::BatchDataPipeline, BatchConfig},
+        sinks::bigquery::BigQueryBatchSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
@@ -126,14 +126,15 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let bigquery_sink = BigQuerySink::new(
+    let bigquery_sink = BigQueryBatchSink::new(
         bq_args.bq_project_id,
         bq_args.bq_dataset_id,
         &bq_args.bq_sa_key_file,
     )
     .await?;
 
-    let mut pipeline = DataPipeline::new(postgres_source, bigquery_sink, action);
+    let batch_config = BatchConfig::new(10, Duration::from_secs(10));
+    let mut pipeline = BatchDataPipeline::new(postgres_source, bigquery_sink, action, batch_config);
 
     pipeline.start().await?;
 

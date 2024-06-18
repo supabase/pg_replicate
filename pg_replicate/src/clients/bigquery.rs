@@ -1,6 +1,12 @@
 use std::collections::HashSet;
 
-use gcp_bigquery_client::{error::BQError, model::query_request::QueryRequest, Client};
+use gcp_bigquery_client::{
+    error::BQError,
+    model::{
+        query_request::QueryRequest, table_data_insert_all_request::TableDataInsertAllRequest,
+    },
+    Client,
+};
 use tokio_postgres::types::{PgLsn, Type};
 
 use crate::{
@@ -241,6 +247,19 @@ impl BigQueryClient {
             .query(&self.project_id, QueryRequest::new(query))
             .await?;
 
+        Ok(())
+    }
+
+    pub async fn insert_rows(
+        &self,
+        dataset_id: &str,
+        table_name: &str,
+        insert_request: TableDataInsertAllRequest,
+    ) -> Result<(), BQError> {
+        self.client
+            .tabledata()
+            .insert_all(&self.project_id, dataset_id, table_name, insert_request)
+            .await?;
         Ok(())
     }
 
