@@ -141,13 +141,16 @@ impl Sink for BigQuerySink {
 
     async fn write_table_row(
         &mut self,
-        table_row: TableRow,
+        mut table_row: TableRow,
         table_id: TableId,
     ) -> Result<(), SinkError> {
-        let table_schema = self.get_table_schema(table_id)?;
+        //TODO: do not clone
+        let table_schema = self.get_table_schema(table_id)?.clone();
+
         self.client
-            .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
+            .stream_upsert_row(&self.dataset_id, &table_schema, &mut table_row)
             .await?;
+
         Ok(())
     }
 
@@ -156,15 +159,19 @@ impl Sink for BigQuerySink {
             CdcEvent::Begin(begin_body) => {
                 let final_lsn = begin_body.final_lsn();
                 self.final_lsn = Some(final_lsn.into());
-                self.client.begin_transaction().await?;
+                // self.client.begin_transaction().await?;
             }
             CdcEvent::Commit(commit_body) => {
                 let commit_lsn: PgLsn = commit_body.commit_lsn().into();
                 if let Some(final_lsn) = self.final_lsn {
                     if commit_lsn == final_lsn {
+                        // let res = self
+                        //     .client
+                        //     .set_last_lsn_and_commit_transaction(&self.dataset_id, commit_lsn)
+                        //     .await?;
                         let res = self
                             .client
-                            .set_last_lsn_and_commit_transaction(&self.dataset_id, commit_lsn)
+                            .set_last_lsn(&self.dataset_id, commit_lsn)
                             .await?;
                         self.committed_lsn = Some(commit_lsn);
                         res
@@ -175,22 +182,34 @@ impl Sink for BigQuerySink {
                     Err(BigQuerySinkError::CommitWithoutBegin)?
                 }
             }
-            CdcEvent::Insert((table_id, table_row)) => {
-                let table_schema = self.get_table_schema(table_id)?;
+            CdcEvent::Insert((table_id, mut table_row)) => {
+                //TODO: do not clone
+                let table_schema = self.get_table_schema(table_id)?.clone();
+                // self.client
+                //     .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
+                //     .await?;
                 self.client
-                    .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
+                    .stream_upsert_row(&self.dataset_id, &table_schema, &mut table_row)
                     .await?;
             }
-            CdcEvent::Update((table_id, table_row)) => {
-                let table_schema = self.get_table_schema(table_id)?;
+            CdcEvent::Update((table_id, mut table_row)) => {
+                //TODO: do not clone
+                let table_schema = self.get_table_schema(table_id)?.clone();
+                // self.client
+                //     .update_row(&self.dataset_id, table_schema, &table_row)
+                //     .await?;
                 self.client
-                    .update_row(&self.dataset_id, table_schema, &table_row)
+                    .stream_upsert_row(&self.dataset_id, &table_schema, &mut table_row)
                     .await?;
             }
-            CdcEvent::Delete((table_id, table_row)) => {
-                let table_schema = self.get_table_schema(table_id)?;
+            CdcEvent::Delete((table_id, mut table_row)) => {
+                //TODO: do not clone
+                let table_schema = self.get_table_schema(table_id)?.clone();
+                // self.client
+                //     .delete_row(&self.dataset_id, table_schema, &table_row)
+                //     .await?;
                 self.client
-                    .delete_row(&self.dataset_id, table_schema, &table_row)
+                    .stream_delete_row(&self.dataset_id, &table_schema, &mut table_row)
                     .await?;
             }
             CdcEvent::Relation(_) => {}

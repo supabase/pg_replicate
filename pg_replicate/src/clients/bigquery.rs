@@ -6,6 +6,7 @@ use gcp_bigquery_client::{
     model::{
         query_request::QueryRequest, table_data_insert_all_request::TableDataInsertAllRequest,
     },
+    storage::{ColumnType, FieldDescriptor, StreamName, TableDescriptor},
     Client,
 };
 use prost::Message;
@@ -100,6 +101,10 @@ impl BigQueryClient {
         s
     }
 
+    fn max_staleness_option(max_staleness_mins: u16) -> String {
+        format!("options (max_staleness = interval {max_staleness_mins} minute)")
+    }
+
     pub async fn create_table(
         &self,
         dataset_id: &str,
@@ -107,9 +112,10 @@ impl BigQueryClient {
         column_schemas: &[ColumnSchema],
     ) -> Result<(), BQError> {
         let columns_spec = Self::create_columns_spec(column_schemas);
+        let max_staleness_option = Self::max_staleness_option(5);
         let project_id = &self.project_id;
         let query =
-            format!("create table `{project_id}.{dataset_id}.{table_name}` {columns_spec}",);
+            format!("create table `{project_id}.{dataset_id}.{table_name}` {columns_spec} {max_staleness_option}",);
         let _ = self
             .client
             .job()
@@ -247,6 +253,68 @@ impl BigQueryClient {
             .client
             .job()
             .query(&self.project_id, QueryRequest::new(query))
+            .await?;
+
+        Ok(())
+    }
+
+    //TODO: append rows in a batch instead of one by one
+    pub async fn stream_upsert_row(
+        &mut self,
+        dataset_id: &str,
+        table_schema: &TableSchema,
+        table_row: &mut TableRow,
+    ) -> Result<(), BQError> {
+        let table_name = &table_schema.table_name.name;
+        let default_stream = StreamName::new_default(
+            self.project_id.clone(),
+            dataset_id.to_string(),
+            table_name.to_string(),
+        );
+
+        table_row.values.push(Cell::String("UPSERT".to_string()));
+
+        let trace_id = "pg_replicate bigquery client".to_string();
+
+        self.client
+            .storage_mut()
+            .append_rows(
+                &default_stream,
+                &table_schema.into(),
+                &[table_row],
+                trace_id,
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    //TODO: append rows in a batch instead of one by one
+    pub async fn stream_delete_row(
+        &mut self,
+        dataset_id: &str,
+        table_schema: &TableSchema,
+        table_row: &mut TableRow,
+    ) -> Result<(), BQError> {
+        let table_name = &table_schema.table_name.name;
+        let default_stream = StreamName::new_default(
+            self.project_id.clone(),
+            dataset_id.to_string(),
+            table_name.to_string(),
+        );
+
+        table_row.values.push(Cell::String("DELETE".to_string()));
+
+        let trace_id = "pg_replicate bigquery client".to_string();
+
+        self.client
+            .storage_mut()
+            .append_rows(
+                &default_stream,
+                &table_schema.into(),
+                &[table_row],
+                trace_id,
+            )
             .await?;
 
         Ok(())
@@ -462,7 +530,7 @@ impl BigQueryClient {
     }
 }
 
-impl Message for TableRow {
+impl Message for &mut TableRow {
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -589,5 +657,39 @@ impl Message for TableRow {
                 Cell::TimeStamp(t) => t.clear(),
             }
         }
+    }
+}
+
+impl From<&TableSchema> for TableDescriptor {
+    fn from(value: &TableSchema) -> Self {
+        let mut field_descriptors = Vec::with_capacity(value.column_schemas.len());
+        let mut number = 1;
+        for column_schema in &value.column_schemas {
+            let typ = match column_schema.typ {
+                Type::BOOL => ColumnType::Bool,
+                Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
+                    ColumnType::String
+                }
+                Type::INT2 => ColumnType::Int64,
+                Type::INT4 => ColumnType::Int64,
+                Type::INT8 => ColumnType::Int64,
+                Type::TIMESTAMP => ColumnType::String,
+                ref typ => unimplemented!("not yet implemented for type {typ}"),
+            };
+            field_descriptors.push(FieldDescriptor {
+                number,
+                name: column_schema.name.clone(),
+                typ,
+            });
+            number += 1;
+        }
+
+        field_descriptors.push(FieldDescriptor {
+            number,
+            name: "_CHANGE_TYPE".to_string(),
+            typ: ColumnType::String,
+        });
+
+        TableDescriptor { field_descriptors }
     }
 }
