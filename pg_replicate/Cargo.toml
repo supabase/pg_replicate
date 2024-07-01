@@ -14,6 +14,7 @@ futures = { workspace = true }
 gcp-bigquery-client = { workspace = true, features = ["rust-tls"] }
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }
+prost = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }

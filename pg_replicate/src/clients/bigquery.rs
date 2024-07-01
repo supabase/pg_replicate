@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use bytes::{Buf, BufMut};
 use gcp_bigquery_client::{
     error::BQError,
     model::{
@@ -7,6 +8,7 @@ use gcp_bigquery_client::{
     },
     Client,
 };
+use prost::Message;
 use tokio_postgres::types::{PgLsn, Type};
 
 use crate::{
@@ -457,5 +459,135 @@ impl BigQueryClient {
         self.set_last_lsn(dataset_id, last_lsn).await?;
         self.commit_transaction().await?;
         Ok(())
+    }
+}
+
+impl Message for TableRow {
+    fn encode_raw<B>(&self, buf: &mut B)
+    where
+        B: BufMut,
+        Self: Sized,
+    {
+        let mut tag = 1;
+        for cell in &self.values {
+            match cell {
+                Cell::Null => unimplemented!("encode_raw not implemented yet for Cell::Null"),
+                Cell::Bool(b) => {
+                    if *b {
+                        ::prost::encoding::bool::encode(tag, b, buf);
+                    }
+                }
+                Cell::String(s) => {
+                    if !s.is_empty() {
+                        ::prost::encoding::string::encode(tag, s, buf);
+                    }
+                }
+                Cell::I16(i) => {
+                    let val = *i as i32;
+                    if val != 0 {
+                        ::prost::encoding::int32::encode(tag, &val, buf);
+                    }
+                }
+                Cell::I32(i) => {
+                    if *i != 0 {
+                        ::prost::encoding::int32::encode(tag, i, buf);
+                    }
+                }
+                Cell::I64(i) => {
+                    if *i != 0 {
+                        ::prost::encoding::int64::encode(tag, i, buf);
+                    }
+                }
+                Cell::TimeStamp(t) => {
+                    if !t.is_empty() {
+                        ::prost::encoding::string::encode(tag, t, buf);
+                    }
+                }
+            }
+            tag += 1;
+        }
+    }
+
+    fn merge_field<B>(
+        &mut self,
+        _tag: u32,
+        _wire_type: prost::encoding::WireType,
+        _buf: &mut B,
+        _ctx: prost::encoding::DecodeContext,
+    ) -> Result<(), prost::DecodeError>
+    where
+        B: Buf,
+        Self: Sized,
+    {
+        unimplemented!("merge_field not implemented yet");
+    }
+
+    fn encoded_len(&self) -> usize {
+        let mut len = 0;
+        let mut tag = 1;
+        for cell in &self.values {
+            len += match cell {
+                Cell::Null => unimplemented!("len not implemented yet for Cell::Null"),
+                Cell::Bool(b) => {
+                    if *b {
+                        ::prost::encoding::bool::encoded_len(tag, b)
+                    } else {
+                        0
+                    }
+                }
+                Cell::String(s) => {
+                    if !s.is_empty() {
+                        ::prost::encoding::string::encoded_len(tag, s)
+                    } else {
+                        0
+                    }
+                }
+                Cell::I16(i) => {
+                    let val = *i as i32;
+                    if val != 0 {
+                        ::prost::encoding::sint32::encoded_len(tag, &val)
+                    } else {
+                        0
+                    }
+                }
+                Cell::I32(i) => {
+                    if *i != 0 {
+                        ::prost::encoding::sint32::encoded_len(tag, i)
+                    } else {
+                        0
+                    }
+                }
+                Cell::I64(i) => {
+                    if *i != 0 {
+                        ::prost::encoding::sint64::encoded_len(tag, i)
+                    } else {
+                        0
+                    }
+                }
+                Cell::TimeStamp(t) => {
+                    if !t.is_empty() {
+                        ::prost::encoding::string::encoded_len(tag, t)
+                    } else {
+                        0
+                    }
+                }
+            };
+            tag += 1;
+        }
+        len
+    }
+
+    fn clear(&mut self) {
+        for cell in &mut self.values {
+            match cell {
+                Cell::Null => unimplemented!("clear not implemented yet for Cell::Null"),
+                Cell::Bool(b) => *b = false,
+                Cell::String(s) => s.clear(),
+                Cell::I16(i) => *i = 0,
+                Cell::I32(i) => *i = 0,
+                Cell::I64(i) => *i = 0,
+                Cell::TimeStamp(t) => t.clear(),
+            }
+        }
     }
 }
