@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use bytes::{Buf, BufMut};
+use futures::StreamExt;
 use gcp_bigquery_client::{
     error::BQError,
     model::{
@@ -276,7 +277,8 @@ impl BigQueryClient {
         for table_row in table_rows {
             let trace_id = "pg_replicate bigquery client".to_string();
 
-            self.client
+            let mut response_stream = self
+                .client
                 .storage_mut()
                 .append_rows(
                     &default_stream,
@@ -285,6 +287,10 @@ impl BigQueryClient {
                     trace_id,
                 )
                 .await?;
+
+            if let Some(r) = response_stream.next().await {
+                let _ = r?;
+            }
         }
 
         Ok(())
@@ -308,7 +314,8 @@ impl BigQueryClient {
 
         let trace_id = "pg_replicate bigquery client".to_string();
 
-        self.client
+        let mut response_stream = self
+            .client
             .storage_mut()
             .append_rows(
                 &default_stream,
@@ -317,6 +324,10 @@ impl BigQueryClient {
                 trace_id,
             )
             .await?;
+
+        if let Some(r) = response_stream.next().await {
+            let _ = r?;
+        }
 
         Ok(())
     }
@@ -339,7 +350,8 @@ impl BigQueryClient {
 
         let trace_id = "pg_replicate bigquery client".to_string();
 
-        self.client
+        let mut response_stream = self
+            .client
             .storage_mut()
             .append_rows(
                 &default_stream,
@@ -348,6 +360,10 @@ impl BigQueryClient {
                 trace_id,
             )
             .await?;
+
+        if let Some(r) = response_stream.next().await {
+            let _ = r?;
+        }
 
         Ok(())
     }
