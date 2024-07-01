@@ -1,14 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use gcp_bigquery_client::{
-    error::BQError,
-    model::{
-        table_data_insert_all_request::TableDataInsertAllRequest,
-        table_data_insert_all_request_rows::TableDataInsertAllRequestRows,
-    },
-};
-use serde_json::Map;
+use gcp_bigquery_client::error::BQError;
 use thiserror::Error;
 use tokio_postgres::types::{PgLsn, Type};
 
@@ -288,13 +281,22 @@ impl BatchSink for BigQueryBatchSink {
             )
             .await?;
 
-        let last_lsn_column_schemas = [ColumnSchema {
-            name: "lsn".to_string(),
-            typ: Type::INT8,
-            modifier: 0,
-            nullable: false,
-            identity: true,
-        }];
+        let last_lsn_column_schemas = [
+            ColumnSchema {
+                name: "id".to_string(),
+                typ: Type::INT8,
+                modifier: 0,
+                nullable: false,
+                identity: true,
+            },
+            ColumnSchema {
+                name: "lsn".to_string(),
+                typ: Type::INT8,
+                modifier: 0,
+                nullable: false,
+                identity: false,
+            },
+        ];
         if self
             .client
             .create_table_if_missing(&self.dataset_id, "last_lsn", &last_lsn_column_schemas)
@@ -335,42 +337,17 @@ impl BatchSink for BigQueryBatchSink {
 
     async fn write_table_rows(
         &mut self,
-        table_rows: Vec<TableRow>,
+        mut table_rows: Vec<TableRow>,
         table_id: TableId,
     ) -> Result<(), SinkError> {
-        let table_schema = self.get_table_schema(table_id)?;
+        //TODO: do not clone
+        let table_schema = self.get_table_schema(table_id)?.clone();
 
-        let mut rows = Vec::with_capacity(table_rows.len());
-        for table_row in table_rows {
-            let mut map = Map::new();
-            for (column_schema, cell) in table_schema.column_schemas.iter().zip(table_row.values) {
-                let value = match cell {
-                    Cell::Null => serde_json::Value::Null,
-                    Cell::Bool(b) => serde_json::Value::Bool(b),
-                    Cell::String(s) => serde_json::Value::String(s),
-                    Cell::I16(i) => serde_json::Value::Number(i.into()),
-                    Cell::I32(i) => serde_json::Value::Number(i.into()),
-                    Cell::I64(i) => serde_json::Value::Number(i.into()),
-                    Cell::TimeStamp(t) => serde_json::Value::String(t),
-                };
-
-                map.insert(column_schema.name.clone(), value);
-            }
-            let json = serde_json::Value::Object(map);
-            let request_row = TableDataInsertAllRequestRows {
-                insert_id: None,
-                json,
-            };
-            rows.push(request_row);
+        for table_row in &mut table_rows {
+            table_row.values.push(Cell::String("UPSERT".to_string()));
         }
-        let mut insert_request = TableDataInsertAllRequest::new();
-        insert_request.add_rows(rows)?;
         self.client
-            .insert_rows(
-                &self.dataset_id,
-                &table_schema.table_name.name,
-                insert_request,
-            )
+            .stream_rows(&self.dataset_id, &table_schema, &mut table_rows)
             .await?;
         Ok(())
     }
@@ -381,15 +358,19 @@ impl BatchSink for BigQueryBatchSink {
                 CdcEvent::Begin(begin_body) => {
                     let final_lsn = begin_body.final_lsn();
                     self.final_lsn = Some(final_lsn.into());
-                    self.client.begin_transaction().await?;
+                    // self.client.begin_transaction().await?;
                 }
                 CdcEvent::Commit(commit_body) => {
                     let commit_lsn: PgLsn = commit_body.commit_lsn().into();
                     if let Some(final_lsn) = self.final_lsn {
                         if commit_lsn == final_lsn {
+                            // let res = self
+                            //     .client
+                            //     .set_last_lsn_and_commit_transaction(&self.dataset_id, commit_lsn)
+                            //     .await?;
                             let res = self
                                 .client
-                                .set_last_lsn_and_commit_transaction(&self.dataset_id, commit_lsn)
+                                .set_last_lsn(&self.dataset_id, commit_lsn)
                                 .await?;
                             self.committed_lsn = Some(commit_lsn);
                             res
@@ -400,22 +381,37 @@ impl BatchSink for BigQueryBatchSink {
                         Err(BigQuerySinkError::CommitWithoutBegin)?
                     }
                 }
-                CdcEvent::Insert((table_id, table_row)) => {
-                    let table_schema = self.get_table_schema(table_id)?;
+                CdcEvent::Insert((table_id, mut table_row)) => {
+                    //TODO: do not clone
+                    let table_schema = self.get_table_schema(table_id)?.clone();
+                    // self.client
+                    //     .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
+                    //     .await?;
+                    table_row.values.push(Cell::String("UPSERT".to_string()));
                     self.client
-                        .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
+                        .stream_rows(&self.dataset_id, &table_schema, &mut [table_row])
                         .await?;
                 }
-                CdcEvent::Update((table_id, table_row)) => {
-                    let table_schema = self.get_table_schema(table_id)?;
+                CdcEvent::Update((table_id, mut table_row)) => {
+                    //TODO: do not clone
+                    let table_schema = self.get_table_schema(table_id)?.clone();
+                    // self.client
+                    //     .update_row(&self.dataset_id, table_schema, &table_row)
+                    //     .await?;
+                    table_row.values.push(Cell::String("UPSERT".to_string()));
                     self.client
-                        .update_row(&self.dataset_id, table_schema, &table_row)
+                        .stream_rows(&self.dataset_id, &table_schema, &mut [table_row])
                         .await?;
                 }
-                CdcEvent::Delete((table_id, table_row)) => {
-                    let table_schema = self.get_table_schema(table_id)?;
+                CdcEvent::Delete((table_id, mut table_row)) => {
+                    //TODO: do not clone
+                    let table_schema = self.get_table_schema(table_id)?.clone();
+                    // self.client
+                    //     .delete_row(&self.dataset_id, table_schema, &table_row)
+                    //     .await?;
+                    table_row.values.push(Cell::String("DELETE".to_string()));
                     self.client
-                        .delete_row(&self.dataset_id, table_schema, &table_row)
+                        .stream_rows(&self.dataset_id, &table_schema, &mut [table_row])
                         .await?;
                 }
                 CdcEvent::Relation(_) => {}

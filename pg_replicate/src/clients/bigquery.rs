@@ -174,7 +174,8 @@ impl BigQueryClient {
         let lsn: u64 = lsn.into();
 
         let project_id = &self.project_id;
-        let query = format!("update `{project_id}.{dataset_id}.last_lsn` set lsn = {lsn}",);
+        let query =
+            format!("update `{project_id}.{dataset_id}.last_lsn` set lsn = {lsn} where id = 1",);
 
         let _ = self
             .client
@@ -187,7 +188,8 @@ impl BigQueryClient {
 
     pub async fn insert_last_lsn_row(&self, dataset_id: &str) -> Result<(), BQError> {
         let project_id = &self.project_id;
-        let query = format!("insert into `{project_id}.{dataset_id}.last_lsn` (lsn) values (0)",);
+        let query =
+            format!("insert into `{project_id}.{dataset_id}.last_lsn` (id, lsn) values (1, 0)",);
 
         let _ = self
             .client
@@ -254,6 +256,36 @@ impl BigQueryClient {
             .job()
             .query(&self.project_id, QueryRequest::new(query))
             .await?;
+
+        Ok(())
+    }
+
+    pub async fn stream_rows(
+        &mut self,
+        dataset_id: &str,
+        table_schema: &TableSchema,
+        table_rows: &mut [TableRow],
+    ) -> Result<(), BQError> {
+        let table_name = &table_schema.table_name.name;
+        let default_stream = StreamName::new_default(
+            self.project_id.clone(),
+            dataset_id.to_string(),
+            table_name.to_string(),
+        );
+
+        for table_row in table_rows {
+            let trace_id = "pg_replicate bigquery client".to_string();
+
+            self.client
+                .storage_mut()
+                .append_rows(
+                    &default_stream,
+                    &table_schema.into(),
+                    &[table_row],
+                    trace_id,
+                )
+                .await?;
+        }
 
         Ok(())
     }
