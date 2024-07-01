@@ -149,12 +149,10 @@ impl BatchSink for BigQueryBatchSink {
         //TODO: do not clone
         let table_schema = self.get_table_schema(table_id)?.clone();
 
-        for table_row in &mut table_rows {
-            table_row.values.push(Cell::String("UPSERT".to_string()));
-        }
         self.client
             .stream_rows(&self.dataset_id, &table_schema, &mut table_rows)
             .await?;
+
         Ok(())
     }
 
