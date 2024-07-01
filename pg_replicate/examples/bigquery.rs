@@ -133,7 +133,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    let batch_config = BatchConfig::new(10, Duration::from_secs(10));
+    let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
     let mut pipeline = BatchDataPipeline::new(postgres_source, bigquery_sink, action, batch_config);
 
     pipeline.start().await?;
