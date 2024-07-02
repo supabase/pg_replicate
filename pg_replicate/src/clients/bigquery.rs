@@ -480,6 +480,7 @@ impl BigQueryClient {
 
     pub async fn drop_table(&self, dataset_id: &str, table_name: &str) -> Result<(), BQError> {
         let project_id = &self.project_id;
+        info!("dropping table {project_id}.{dataset_id}.{table_name} in bigquery");
         let query = format!("drop table `{project_id}.{dataset_id}.{table_name}`",);
 
         let _ = self

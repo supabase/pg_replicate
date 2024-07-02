@@ -51,6 +51,10 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
         for table_schema in table_schemas.values() {
             if copied_tables.contains(&table_schema.table_id) {
+                info!(
+                    "table {} already copied. continuing...",
+                    table_schema.table_name
+                );
                 continue;
             }
 
