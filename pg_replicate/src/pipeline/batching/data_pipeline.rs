@@ -97,12 +97,12 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
         while let Some(batch) = batch_timeout_stream.next().await {
             info!("got a batch of cdc events");
-            let mut _send_status_update = false;
+            let mut send_status_update = false;
             let mut events = Vec::with_capacity(batch.len());
             for event in batch {
                 let event = event.map_err(SourceError::CdcStream)?;
                 if let CdcEvent::KeepAliveRequested { reply } = event {
-                    _send_status_update = reply;
+                    send_status_update = reply;
                 };
                 events.push(event);
             }
@@ -113,14 +113,14 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                     .get_inner_mut()
             };
             let last_lsn = self.sink.write_cdc_events(events).await?;
-            // if send_status_update {
-            info!("sending status update with lsn: {last_lsn}");
-            inner
-                .as_mut()
-                .send_status_update(last_lsn)
-                .await
-                .map_err(|e| PipelineError::SourceError(SourceError::StatusUpdate(e)))?;
-            // }
+            if send_status_update {
+                info!("sending status update with lsn: {last_lsn}");
+                inner
+                    .as_mut()
+                    .send_status_update(last_lsn)
+                    .await
+                    .map_err(|e| PipelineError::SourceError(SourceError::StatusUpdate(e)))?;
+            }
         }
 
         Ok(())

@@ -243,6 +243,9 @@ pub enum CdcEvent {
 
 impl BatchBoundary for CdcEvent {
     fn is_last_in_batch(&self) -> bool {
-        matches!(self, CdcEvent::Commit(_))
+        matches!(
+            self,
+            CdcEvent::Commit(_) | CdcEvent::KeepAliveRequested { reply: _ }
+        )
     }
 }
