@@ -510,7 +510,7 @@ impl Message for &mut TableRow {
         let mut tag = 1;
         for cell in &self.values {
             match cell {
-                Cell::Null => unimplemented!("encode_raw not implemented yet for Cell::Null"),
+                Cell::Null => {}
                 Cell::Bool(b) => {
                     if *b {
                         ::prost::encoding::bool::encode(tag, b, buf);
@@ -566,7 +566,7 @@ impl Message for &mut TableRow {
         let mut tag = 1;
         for cell in &self.values {
             len += match cell {
-                Cell::Null => unimplemented!("len not implemented yet for Cell::Null"),
+                Cell::Null => 0,
                 Cell::Bool(b) => {
                     if *b {
                         ::prost::encoding::bool::encoded_len(tag, b)
@@ -619,7 +619,7 @@ impl Message for &mut TableRow {
     fn clear(&mut self) {
         for cell in &mut self.values {
             match cell {
-                Cell::Null => unimplemented!("clear not implemented yet for Cell::Null"),
+                Cell::Null => {}
                 Cell::Bool(b) => *b = false,
                 Cell::String(s) => s.clear(),
                 Cell::I16(i) => *i = 0,
