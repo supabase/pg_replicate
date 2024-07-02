@@ -1,9 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use async_trait::async_trait;
 use gcp_bigquery_client::error::BQError;
 use thiserror::Error;
+use tokio::time::sleep;
 use tokio_postgres::types::{PgLsn, Type};
+use tracing::info;
 
 use crate::{
     clients::bigquery::BigQueryClient,
@@ -66,11 +68,35 @@ impl BigQueryBatchSink {
             .get(&table_id)
             .ok_or(BigQuerySinkError::MissingTableId(table_id))
     }
+
+    /// BigQuery appears to create the default stream of a table asynchronously.
+    /// This is a hack to wait for the default stream to be created before
+    /// continuing as we need it to insert data into the table
+    async fn wait_for_default_stream(&mut self, table_name: &str) -> Result<(), BQError> {
+        info!("waiting for default stream creation");
+
+        loop {
+            match self
+                .client
+                .get_default_stream(&self.dataset_id, table_name)
+                .await
+            {
+                Ok(_) => break,
+                Err(_) => {
+                    info!("default stream not yet created, sleeping for 10 seconds");
+                    sleep(Duration::from_secs(10)).await;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl BatchSink for BigQueryBatchSink {
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError> {
+        info!("getting resumption state from bigquery");
         let copied_table_column_schemas = [ColumnSchema {
             name: "table_id".to_string(),
             typ: Type::INT4,
@@ -151,6 +177,10 @@ impl BatchSink for BigQueryBatchSink {
         let table_name = &table_schema.table_name.name.clone();
         let table_descriptor = table_schema.into();
 
+        for table_row in &mut table_rows {
+            table_row.values.push(Cell::String("UPSERT".to_string()));
+        }
+
         self.client
             .stream_rows(
                 &self.dataset_id,
@@ -188,6 +218,7 @@ impl BatchSink for BigQueryBatchSink {
                     }
                 }
                 CdcEvent::Insert((table_id, mut table_row)) => {
+                    // info!("cdc insert: {table_row:#?}");
                     let table_schema = self.get_table_schema(table_id)?;
                     //TODO: remove this clone
                     let table_name = &table_schema.table_name.name.clone();
@@ -203,6 +234,7 @@ impl BatchSink for BigQueryBatchSink {
                         .await?;
                 }
                 CdcEvent::Update((table_id, mut table_row)) => {
+                    // info!("cdc update: {table_row:#?}");
                     let table_schema = self.get_table_schema(table_id)?;
                     //TODO: remove this clone
                     let table_name = &table_schema.table_name.name.clone();
@@ -218,6 +250,7 @@ impl BatchSink for BigQueryBatchSink {
                         .await?;
                 }
                 CdcEvent::Delete((table_id, mut table_row)) => {
+                    // info!("cdc delete: {table_row:#?}");
                     let table_schema = self.get_table_schema(table_id)?;
                     //TODO: remove this clone
                     let table_name = &table_schema.table_name.name.clone();
@@ -250,9 +283,16 @@ impl BatchSink for BigQueryBatchSink {
 
     async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
         let table_schema = self.get_table_schema(table_id)?;
+        let table_name = table_schema.table_name.name.clone();
         self.client
-            .truncate_table(&self.dataset_id, &table_schema.table_name.name)
+            .drop_table(&self.dataset_id, &table_schema.table_name.name)
             .await?;
+        self.client
+            .create_table(&self.dataset_id, &table_name, &table_schema.column_schemas)
+            .await?;
+
+        self.wait_for_default_stream(&table_name).await?;
+
         Ok(())
     }
 }

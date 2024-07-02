@@ -4,6 +4,7 @@ use bytes::{Buf, BufMut};
 use futures::StreamExt;
 use gcp_bigquery_client::{
     error::BQError,
+    google::cloud::bigquery::storage::v1::{WriteStream, WriteStreamView},
     model::{
         query_request::QueryRequest, table_data_insert_all_request::TableDataInsertAllRequest,
     },
@@ -12,6 +13,7 @@ use gcp_bigquery_client::{
 };
 use prost::Message;
 use tokio_postgres::types::{PgLsn, Type};
+use tracing::info;
 
 use crate::{
     conversions::table_row::{Cell, TableRow},
@@ -115,6 +117,7 @@ impl BigQueryClient {
         let columns_spec = Self::create_columns_spec(column_schemas);
         let max_staleness_option = Self::max_staleness_option(5);
         let project_id = &self.project_id;
+        info!("creating table {project_id}.{dataset_id}.{table_name} in bigquery");
         let query =
             format!("create table `{project_id}.{dataset_id}.{table_name}` {columns_spec} {max_staleness_option}",);
         let _ = self
@@ -123,6 +126,24 @@ impl BigQueryClient {
             .query(&self.project_id, QueryRequest::new(query))
             .await?;
         Ok(())
+    }
+
+    pub async fn get_default_stream(
+        &mut self,
+        dataset_id: &str,
+        table_name: &str,
+    ) -> Result<WriteStream, BQError> {
+        let stream_name = StreamName::new_default(
+            self.project_id.clone(),
+            dataset_id.to_string(),
+            table_name.to_string(),
+        );
+        let write_stream = self
+            .client
+            .storage_mut()
+            .get_write_stream(&stream_name, WriteStreamView::Full)
+            .await?;
+        Ok(write_stream)
     }
 
     pub async fn table_exists(&self, dataset_id: &str, table_name: &str) -> Result<bool, BQError> {
@@ -457,9 +478,9 @@ impl BigQueryClient {
         s
     }
 
-    pub async fn truncate_table(&self, dataset_id: &str, table_name: &str) -> Result<(), BQError> {
+    pub async fn drop_table(&self, dataset_id: &str, table_name: &str) -> Result<(), BQError> {
         let project_id = &self.project_id;
-        let query = format!("truncate table `{project_id}.{dataset_id}.{table_name}`",);
+        let query = format!("drop table `{project_id}.{dataset_id}.{table_name}`",);
 
         let _ = self
             .client
