@@ -1,4 +1,3 @@
-use futures::stream::{Fuse, StreamExt};
 use futures::{ready, Future, Stream};
 use pin_project_lite::pin_project;
 use tokio::time::{sleep, Sleep};
@@ -18,7 +17,7 @@ pin_project! {
     #[derive(Debug)]
     pub struct BatchTimeoutStream<B: BatchBoundary, S: Stream<Item = B>> {
         #[pin]
-        stream: Fuse<S>,
+        stream: S,
         #[pin]
         deadline: Option<Sleep>,
         items: Vec<S::Item>,
@@ -30,12 +29,16 @@ pin_project! {
 impl<B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<B, S> {
     pub fn new(stream: S, batch_config: BatchConfig) -> Self {
         BatchTimeoutStream {
-            stream: stream.fuse(),
+            stream,
             deadline: None,
             items: Vec::with_capacity(batch_config.max_batch_size),
             batch_config,
             reset_timer: true,
         }
+    }
+
+    pub fn get_inner_mut(&mut self) -> &mut S {
+        &mut self.stream
     }
 }
 
@@ -64,6 +67,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<B, S> 
                     }
                 }
                 Poll::Ready(None) => {
+                    // TODO: we are no longer fusing the stream, fix this
                     // Returning Some here is only correct because we fuse the inner stream.
                     let last = if this.items.is_empty() {
                         None

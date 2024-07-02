@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use futures::StreamExt;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
+use tracing::info;
 
 use crate::{
     conversions::cdc_event::CdcEvent,
@@ -95,7 +96,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         pin!(batch_timeout_stream);
 
         while let Some(batch) = batch_timeout_stream.next().await {
-            // let cdc_event = cdc_event.map_err(SourceError::CdcStream)?;
+            info!("got a batch of cdc events");
             let mut _send_status_update = false;
             let mut events = Vec::with_capacity(batch.len());
             for event in batch {
@@ -105,19 +106,20 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                 };
                 events.push(event);
             }
-            // let send_status_update = if let CdcEvent::KeepAliveRequested { reply } = cdc_event {
-            //     reply
-            // } else {
-            //     false
-            // };
-            let _last_lsn = self.sink.write_cdc_events(events).await?;
-            //TODO: send status update
+            let inner = unsafe {
+                batch_timeout_stream
+                    .as_mut()
+                    .get_unchecked_mut()
+                    .get_inner_mut()
+            };
+            let last_lsn = self.sink.write_cdc_events(events).await?;
             // if send_status_update {
-            //     cdc_events
-            //         .as_mut()
-            //         .send_status_update_impl(last_lsn)
-            //         .await
-            //         .map_err(|e| PipelineError::SourceError(SourceError::StatusUpdate(e)))?;
+            info!("sending status update with lsn: {last_lsn}");
+            inner
+                .as_mut()
+                .send_status_update(last_lsn)
+                .await
+                .map_err(|e| PipelineError::SourceError(SourceError::StatusUpdate(e)))?;
             // }
         }
 
