@@ -14,6 +14,7 @@ use tokio_postgres::{
     replication::LogicalReplicationStream,
     types::{PgLsn, Type},
 };
+use tracing::info;
 
 use crate::{
     clients::postgres::{ReplicationClient, ReplicationClientError},
@@ -112,6 +113,7 @@ impl Source for PostgresSource {
         table_name: &TableName,
         column_schemas: &[ColumnSchema],
     ) -> Result<TableCopyStream, SourceError> {
+        info!("starting table copy stream for table {table_name}");
         let column_types: Vec<Type> = column_schemas.iter().map(|c| c.typ.clone()).collect();
 
         let stream = self
@@ -135,6 +137,7 @@ impl Source for PostgresSource {
     }
 
     async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, SourceError> {
+        info!("starting cdc stream at lsn {start_lsn}");
         let publication = self
             .publication()
             .ok_or(PostgresSourceError::MissingPublication)?;
