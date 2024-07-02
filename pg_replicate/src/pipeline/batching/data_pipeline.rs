@@ -106,15 +106,15 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                 };
                 events.push(event);
             }
-            let inner = unsafe {
-                batch_timeout_stream
-                    .as_mut()
-                    .get_unchecked_mut()
-                    .get_inner_mut()
-            };
             let last_lsn = self.sink.write_cdc_events(events).await?;
             if send_status_update {
                 info!("sending status update with lsn: {last_lsn}");
+                let inner = unsafe {
+                    batch_timeout_stream
+                        .as_mut()
+                        .get_unchecked_mut()
+                        .get_inner_mut()
+                };
                 inner
                     .as_mut()
                     .send_status_update(last_lsn)
