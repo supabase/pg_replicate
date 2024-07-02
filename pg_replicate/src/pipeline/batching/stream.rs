@@ -23,6 +23,7 @@ pin_project! {
         items: Vec<S::Item>,
         batch_config: BatchConfig,
         reset_timer: bool,
+        inner_stream_ended: bool,
     }
 }
 
@@ -34,6 +35,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<B, S> {
             items: Vec::with_capacity(batch_config.max_batch_size),
             batch_config,
             reset_timer: true,
+            inner_stream_ended: false,
         }
     }
 
@@ -47,6 +49,9 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<B, S> 
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.as_mut().project();
+        if *this.inner_stream_ended {
+            return Poll::Ready(None);
+        }
         loop {
             if *this.reset_timer {
                 this.deadline
@@ -67,14 +72,14 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<B, S> 
                     }
                 }
                 Poll::Ready(None) => {
-                    // TODO: we are no longer fusing the stream, fix this
-                    // Returning Some here is only correct because we fuse the inner stream.
                     let last = if this.items.is_empty() {
                         None
                     } else {
                         *this.reset_timer = true;
                         Some(std::mem::take(this.items))
                     };
+
+                    *this.inner_stream_ended = true;
 
                     return Poll::Ready(last);
                 }
