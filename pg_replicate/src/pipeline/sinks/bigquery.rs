@@ -69,6 +69,8 @@ impl BigQueryBatchSink {
             .ok_or(BigQuerySinkError::MissingTableId(table_id))
     }
 
+    //TODO: reduce the wait time by waiting for all the tables at once rather
+    //than one table at a time
     /// BigQuery appears to create the default stream of a table asynchronously.
     /// This is a hack to wait for the default stream to be created before
     /// continuing as we need it to insert data into the table
