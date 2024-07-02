@@ -51,10 +51,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
         for table_schema in table_schemas.values() {
             if copied_tables.contains(&table_schema.table_id) {
-                info!(
-                    "table {} already copied. continuing...",
-                    table_schema.table_name
-                );
+                info!("table {} already copied.", table_schema.table_name);
                 continue;
             }
 
@@ -100,7 +97,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         pin!(batch_timeout_stream);
 
         while let Some(batch) = batch_timeout_stream.next().await {
-            info!("got a batch of cdc events");
+            info!("got {} cdc events in a batch", batch.len());
             let mut send_status_update = false;
             let mut events = Vec::with_capacity(batch.len());
             for event in batch {
