@@ -146,11 +146,18 @@ impl BatchSink for BigQueryBatchSink {
         mut table_rows: Vec<TableRow>,
         table_id: TableId,
     ) -> Result<(), SinkError> {
-        //TODO: do not clone
-        let table_schema = self.get_table_schema(table_id)?.clone();
+        let table_schema = self.get_table_schema(table_id)?;
+        //TODO: remove this clone
+        let table_name = &table_schema.table_name.name.clone();
+        let table_descriptor = table_schema.into();
 
         self.client
-            .stream_rows(&self.dataset_id, &table_schema, &mut table_rows)
+            .stream_rows(
+                &self.dataset_id,
+                table_name,
+                &table_descriptor,
+                &mut table_rows,
+            )
             .await?;
 
         Ok(())
@@ -162,16 +169,11 @@ impl BatchSink for BigQueryBatchSink {
                 CdcEvent::Begin(begin_body) => {
                     let final_lsn = begin_body.final_lsn();
                     self.final_lsn = Some(final_lsn.into());
-                    // self.client.begin_transaction().await?;
                 }
                 CdcEvent::Commit(commit_body) => {
                     let commit_lsn: PgLsn = commit_body.commit_lsn().into();
                     if let Some(final_lsn) = self.final_lsn {
                         if commit_lsn == final_lsn {
-                            // let res = self
-                            //     .client
-                            //     .set_last_lsn_and_commit_transaction(&self.dataset_id, commit_lsn)
-                            //     .await?;
                             let res = self
                                 .client
                                 .set_last_lsn(&self.dataset_id, commit_lsn)
@@ -186,36 +188,48 @@ impl BatchSink for BigQueryBatchSink {
                     }
                 }
                 CdcEvent::Insert((table_id, mut table_row)) => {
-                    //TODO: do not clone
-                    let table_schema = self.get_table_schema(table_id)?.clone();
-                    // self.client
-                    //     .insert_row(&self.dataset_id, &table_schema.table_name.name, &table_row)
-                    //     .await?;
+                    let table_schema = self.get_table_schema(table_id)?;
+                    //TODO: remove this clone
+                    let table_name = &table_schema.table_name.name.clone();
+                    let table_descriptor = table_schema.into();
                     table_row.values.push(Cell::String("UPSERT".to_string()));
                     self.client
-                        .stream_rows(&self.dataset_id, &table_schema, &mut [table_row])
+                        .stream_rows(
+                            &self.dataset_id,
+                            table_name,
+                            &table_descriptor,
+                            &mut [table_row],
+                        )
                         .await?;
                 }
                 CdcEvent::Update((table_id, mut table_row)) => {
-                    //TODO: do not clone
-                    let table_schema = self.get_table_schema(table_id)?.clone();
-                    // self.client
-                    //     .update_row(&self.dataset_id, table_schema, &table_row)
-                    //     .await?;
+                    let table_schema = self.get_table_schema(table_id)?;
+                    //TODO: remove this clone
+                    let table_name = &table_schema.table_name.name.clone();
+                    let table_descriptor = table_schema.into();
                     table_row.values.push(Cell::String("UPSERT".to_string()));
                     self.client
-                        .stream_rows(&self.dataset_id, &table_schema, &mut [table_row])
+                        .stream_rows(
+                            &self.dataset_id,
+                            table_name,
+                            &table_descriptor,
+                            &mut [table_row],
+                        )
                         .await?;
                 }
                 CdcEvent::Delete((table_id, mut table_row)) => {
-                    //TODO: do not clone
-                    let table_schema = self.get_table_schema(table_id)?.clone();
-                    // self.client
-                    //     .delete_row(&self.dataset_id, table_schema, &table_row)
-                    //     .await?;
+                    let table_schema = self.get_table_schema(table_id)?;
+                    //TODO: remove this clone
+                    let table_name = &table_schema.table_name.name.clone();
+                    let table_descriptor = table_schema.into();
                     table_row.values.push(Cell::String("DELETE".to_string()));
                     self.client
-                        .stream_rows(&self.dataset_id, &table_schema, &mut [table_row])
+                        .stream_rows(
+                            &self.dataset_id,
+                            table_name,
+                            &table_descriptor,
+                            &mut [table_row],
+                        )
                         .await?;
                 }
                 CdcEvent::Relation(_) => {}

@@ -264,10 +264,10 @@ impl BigQueryClient {
     pub async fn stream_rows(
         &mut self,
         dataset_id: &str,
-        table_schema: &TableSchema,
+        table_name: &str,
+        table_descriptor: &TableDescriptor,
         table_rows: &mut [TableRow],
     ) -> Result<(), BQError> {
-        let table_name = &table_schema.table_name.name;
         let default_stream = StreamName::new_default(
             self.project_id.clone(),
             dataset_id.to_string(),
@@ -280,89 +280,12 @@ impl BigQueryClient {
             let mut response_stream = self
                 .client
                 .storage_mut()
-                .append_rows(
-                    &default_stream,
-                    &table_schema.into(),
-                    &[table_row],
-                    trace_id,
-                )
+                .append_rows(&default_stream, table_descriptor, &[table_row], trace_id)
                 .await?;
 
             if let Some(r) = response_stream.next().await {
                 let _ = r?;
             }
-        }
-
-        Ok(())
-    }
-
-    //TODO: append rows in a batch instead of one by one
-    pub async fn stream_upsert_row(
-        &mut self,
-        dataset_id: &str,
-        table_schema: &TableSchema,
-        table_row: &mut TableRow,
-    ) -> Result<(), BQError> {
-        let table_name = &table_schema.table_name.name;
-        let default_stream = StreamName::new_default(
-            self.project_id.clone(),
-            dataset_id.to_string(),
-            table_name.to_string(),
-        );
-
-        table_row.values.push(Cell::String("UPSERT".to_string()));
-
-        let trace_id = "pg_replicate bigquery client".to_string();
-
-        let mut response_stream = self
-            .client
-            .storage_mut()
-            .append_rows(
-                &default_stream,
-                &table_schema.into(),
-                &[table_row],
-                trace_id,
-            )
-            .await?;
-
-        if let Some(r) = response_stream.next().await {
-            let _ = r?;
-        }
-
-        Ok(())
-    }
-
-    //TODO: append rows in a batch instead of one by one
-    pub async fn stream_delete_row(
-        &mut self,
-        dataset_id: &str,
-        table_schema: &TableSchema,
-        table_row: &mut TableRow,
-    ) -> Result<(), BQError> {
-        let table_name = &table_schema.table_name.name;
-        let default_stream = StreamName::new_default(
-            self.project_id.clone(),
-            dataset_id.to_string(),
-            table_name.to_string(),
-        );
-
-        table_row.values.push(Cell::String("DELETE".to_string()));
-
-        let trace_id = "pg_replicate bigquery client".to_string();
-
-        let mut response_stream = self
-            .client
-            .storage_mut()
-            .append_rows(
-                &default_stream,
-                &table_schema.into(),
-                &[table_row],
-                trace_id,
-            )
-            .await?;
-
-        if let Some(r) = response_stream.next().await {
-            let _ = r?;
         }
 
         Ok(())
