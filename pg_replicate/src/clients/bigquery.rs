@@ -122,11 +122,7 @@ impl BigQueryClient {
         info!("creating table {project_id}.{dataset_id}.{table_name} in bigquery");
         let query =
             format!("create table `{project_id}.{dataset_id}.{table_name}` {columns_spec} {max_staleness_option}",);
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
         Ok(())
     }
 
@@ -195,11 +191,7 @@ impl BigQueryClient {
         let query =
             format!("update `{project_id}.{dataset_id}.last_lsn` set lsn = {lsn} where id = 1",);
 
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
 
         Ok(())
     }
@@ -209,11 +201,7 @@ impl BigQueryClient {
         let query =
             format!("insert into `{project_id}.{dataset_id}.last_lsn` (id, lsn) values (1, 0)",);
 
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
 
         Ok(())
     }
@@ -247,11 +235,7 @@ impl BigQueryClient {
             "insert into `{project_id}.{dataset_id}.copied_tables` (table_id) values ({table_id})",
         );
 
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
 
         Ok(())
     }
@@ -264,11 +248,7 @@ impl BigQueryClient {
     ) -> Result<(), BQError> {
         let query = self.create_insert_row_query(dataset_id, table_name, table_row);
 
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
 
         Ok(())
     }
@@ -366,11 +346,7 @@ impl BigQueryClient {
         let table_name = &format!("`{project_id}.{dataset_id}.{table_name}`");
         let column_schemas = &table_schema.column_schemas;
         let query = Self::create_update_row_query(table_name, column_schemas, table_row);
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
         Ok(())
     }
 
@@ -445,11 +421,7 @@ impl BigQueryClient {
         let table_name = &format!("`{project_id}.{dataset_id}.{table_name}`");
         let column_schemas = &table_schema.column_schemas;
         let query = Self::create_delete_row_query(table_name, column_schemas, table_row);
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
 
         Ok(())
     }
@@ -474,31 +446,19 @@ impl BigQueryClient {
         info!("dropping table {project_id}.{dataset_id}.{table_name} in bigquery");
         let query = format!("drop table `{project_id}.{dataset_id}.{table_name}`",);
 
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let _ = self.query(query).await?;
 
         Ok(())
     }
 
     pub async fn begin_transaction(&self) -> Result<(), BQError> {
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new("begin transaction"))
-            .await?;
+        let _ = self.query("begin transaction".to_string()).await?;
 
         Ok(())
     }
 
     pub async fn commit_transaction(&self) -> Result<(), BQError> {
-        let _ = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new("commit"))
-            .await?;
+        let _ = self.query("commit".to_string()).await?;
 
         Ok(())
     }
