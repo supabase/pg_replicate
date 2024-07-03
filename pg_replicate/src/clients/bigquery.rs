@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use bytes::{Buf, BufMut};
 use futures::StreamExt;
@@ -6,12 +6,14 @@ use gcp_bigquery_client::{
     error::BQError,
     google::cloud::bigquery::storage::v1::{WriteStream, WriteStreamView},
     model::{
-        query_request::QueryRequest, table_data_insert_all_request::TableDataInsertAllRequest,
+        query_request::QueryRequest, query_response::ResultSet,
+        table_data_insert_all_request::TableDataInsertAllRequest,
     },
     storage::{ColumnType, FieldDescriptor, StreamName, TableDescriptor},
     Client,
 };
 use prost::Message;
+use tokio::time::sleep;
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
 
@@ -155,15 +157,13 @@ impl BigQueryClient {
                     where table_name = '{table_name}'
                 ) as table_exists;",
         );
-        let mut res = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+
+        let mut rs = self.query(query).await?;
 
         let mut exists = false;
-        if res.next_row() {
-            exists = res
+
+        if rs.next_row() {
+            exists = rs
                 .get_bool_by_name("table_exists")?
                 .expect("no column named `table_exists` found in query result");
         }
@@ -175,14 +175,10 @@ impl BigQueryClient {
         let project_id = &self.project_id;
         let query = format!("select lsn from `{project_id}.{dataset_id}.last_lsn`",);
 
-        let mut res = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
+        let mut rs = self.query(query).await?;
 
-        let lsn: i64 = if res.next_row() {
-            res.get_i64_by_name("lsn")?
+        let lsn: i64 = if rs.next_row() {
+            rs.get_i64_by_name("lsn")?
                 .expect("no column named `lsn` found in query result")
         } else {
             //TODO: return error instead of panicking
@@ -229,15 +225,10 @@ impl BigQueryClient {
         let project_id = &self.project_id;
         let query = format!("select table_id from `{project_id}.{dataset_id}.copied_tables`",);
 
-        let mut res = self
-            .client
-            .job()
-            .query(&self.project_id, QueryRequest::new(query))
-            .await?;
-
+        let mut rs = self.query(query).await?;
         let mut table_ids = HashSet::new();
-        while res.next_row() {
-            let table_id = res
+        while rs.next_row() {
+            let table_id = rs
                 .get_i64_by_name("table_id")?
                 .expect("no column named `table_id` found in query result");
             table_ids.insert(table_id as TableId);
@@ -520,6 +511,41 @@ impl BigQueryClient {
         self.set_last_lsn(dataset_id, last_lsn).await?;
         self.commit_transaction().await?;
         Ok(())
+    }
+
+    async fn query(&self, query: String) -> Result<ResultSet, BQError> {
+        let query_response = self
+            .client
+            .job()
+            .query(&self.project_id, QueryRequest::new(query))
+            .await?;
+
+        if query_response.job_complete.unwrap_or(false) {
+            info!("job complete. returning result set");
+            Ok(ResultSet::new_from_query_response(query_response))
+        } else {
+            let job_id = query_response
+                .job_reference
+                .as_ref()
+                .expect("missing job reference")
+                .job_id
+                .as_ref()
+                .expect("missing job id");
+            loop {
+                info!("job incomplete. waiting for 5 seconds");
+                sleep(Duration::from_secs(5)).await;
+                let result = self
+                    .client
+                    .job()
+                    .get_query_results(&self.project_id, job_id, Default::default())
+                    .await?;
+                if result.job_complete.unwrap_or(false) {
+                    info!("job complete. returning result set");
+                    let result_set = ResultSet::new_from_get_query_results_response(result);
+                    break Ok(result_set);
+                }
+            }
+        }
     }
 }
 
