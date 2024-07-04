@@ -55,7 +55,7 @@ impl BigQueryClient {
             &Type::INT2 | &Type::INT4 | &Type::INT8 => "int64",
             &Type::BOOL => "bool",
             &Type::BYTEA => "bytes",
-            &Type::VARCHAR | &Type::BPCHAR => "string",
+            &Type::VARCHAR | &Type::BPCHAR | &Type::TEXT => "string",
             &Type::TIMESTAMP => "timestamp",
             typ => panic!("bigquery doesn't yet support type {typ}"),
         }
