@@ -68,6 +68,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             pin!(batch_timeout_stream);
 
             while let Some(batch) = batch_timeout_stream.next().await {
+                info!("got {} table copy events in a batch", batch.len());
                 //TODO: Avoid a vec copy
                 let mut rows = Vec::with_capacity(batch.len());
                 for row in batch {

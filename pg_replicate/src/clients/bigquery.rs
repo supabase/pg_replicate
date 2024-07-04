@@ -266,18 +266,15 @@ impl BigQueryClient {
             table_name.to_string(),
         );
 
-        for table_row in table_rows {
-            let trace_id = "pg_replicate bigquery client".to_string();
+        let trace_id = "pg_replicate bigquery client".to_string();
+        let mut response_stream = self
+            .client
+            .storage_mut()
+            .append_rows(&default_stream, table_descriptor, table_rows, trace_id)
+            .await?;
 
-            let mut response_stream = self
-                .client
-                .storage_mut()
-                .append_rows(&default_stream, table_descriptor, &[table_row], trace_id)
-                .await?;
-
-            if let Some(r) = response_stream.next().await {
-                let _ = r?;
-            }
+        if let Some(r) = response_stream.next().await {
+            let _ = r?;
         }
 
         Ok(())
@@ -509,7 +506,7 @@ impl BigQueryClient {
     }
 }
 
-impl Message for &mut TableRow {
+impl Message for TableRow {
     fn encode_raw<B>(&self, buf: &mut B)
     where
         B: BufMut,
