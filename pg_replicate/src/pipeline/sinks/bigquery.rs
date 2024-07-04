@@ -40,7 +40,6 @@ pub struct BigQueryBatchSink {
     client: BigQueryClient,
     dataset_id: String,
     table_schemas: Option<HashMap<TableId, TableSchema>>,
-    final_lsn: Option<PgLsn>,
     committed_lsn: Option<PgLsn>,
 }
 
@@ -55,7 +54,6 @@ impl BigQueryBatchSink {
             client,
             dataset_id,
             table_schemas: None,
-            final_lsn: None,
             committed_lsn: None,
         })
     }
@@ -158,34 +156,27 @@ impl BatchSink for BigQueryBatchSink {
         }
 
         self.client
-            .stream_rows(
-                &self.dataset_id,
-                table_name,
-                &table_descriptor,
-                &mut table_rows,
-            )
+            .stream_rows(&self.dataset_id, table_name, &table_descriptor, &table_rows)
             .await?;
 
         Ok(())
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, SinkError> {
+        let mut table_name_to_table_rows = HashMap::new();
+        let mut new_last_lsn = PgLsn::from(0);
+        let mut final_lsn: Option<PgLsn> = None;
         for event in events {
             match event {
                 CdcEvent::Begin(begin_body) => {
-                    let final_lsn = begin_body.final_lsn();
-                    self.final_lsn = Some(final_lsn.into());
+                    let final_lsn_u64 = begin_body.final_lsn();
+                    final_lsn = Some(final_lsn_u64.into());
                 }
                 CdcEvent::Commit(commit_body) => {
                     let commit_lsn: PgLsn = commit_body.commit_lsn().into();
-                    if let Some(final_lsn) = self.final_lsn {
+                    if let Some(final_lsn) = final_lsn {
                         if commit_lsn == final_lsn {
-                            let res = self
-                                .client
-                                .set_last_lsn(&self.dataset_id, commit_lsn)
-                                .await?;
-                            self.committed_lsn = Some(commit_lsn);
-                            res
+                            new_last_lsn = commit_lsn;
                         } else {
                             Err(BigQuerySinkError::IncorrectCommitLsn(commit_lsn, final_lsn))?
                         }
@@ -194,56 +185,42 @@ impl BatchSink for BigQueryBatchSink {
                     }
                 }
                 CdcEvent::Insert((table_id, mut table_row)) => {
-                    // info!("cdc insert: {table_row:#?}");
-                    let table_schema = self.get_table_schema(table_id)?;
-                    //TODO: remove this clone
-                    let table_name = &table_schema.table_name.name.clone();
-                    let table_descriptor = table_schema.into();
                     table_row.values.push(Cell::String("UPSERT".to_string()));
-                    self.client
-                        .stream_rows(
-                            &self.dataset_id,
-                            table_name,
-                            &table_descriptor,
-                            &mut [table_row],
-                        )
-                        .await?;
+                    let table_rows: &mut Vec<TableRow> =
+                        table_name_to_table_rows.entry(table_id).or_default();
+                    table_rows.push(table_row);
                 }
                 CdcEvent::Update((table_id, mut table_row)) => {
-                    // info!("cdc update: {table_row:#?}");
-                    let table_schema = self.get_table_schema(table_id)?;
-                    //TODO: remove this clone
-                    let table_name = &table_schema.table_name.name.clone();
-                    let table_descriptor = table_schema.into();
                     table_row.values.push(Cell::String("UPSERT".to_string()));
-                    self.client
-                        .stream_rows(
-                            &self.dataset_id,
-                            table_name,
-                            &table_descriptor,
-                            &mut [table_row],
-                        )
-                        .await?;
+                    let table_rows: &mut Vec<TableRow> =
+                        table_name_to_table_rows.entry(table_id).or_default();
+                    table_rows.push(table_row);
                 }
                 CdcEvent::Delete((table_id, mut table_row)) => {
-                    // info!("cdc delete: {table_row:#?}");
-                    let table_schema = self.get_table_schema(table_id)?;
-                    //TODO: remove this clone
-                    let table_name = &table_schema.table_name.name.clone();
-                    let table_descriptor = table_schema.into();
                     table_row.values.push(Cell::String("DELETE".to_string()));
-                    self.client
-                        .stream_rows(
-                            &self.dataset_id,
-                            table_name,
-                            &table_descriptor,
-                            &mut [table_row],
-                        )
-                        .await?;
+                    let table_rows: &mut Vec<TableRow> =
+                        table_name_to_table_rows.entry(table_id).or_default();
+                    table_rows.push(table_row);
                 }
                 CdcEvent::Relation(_) => {}
                 CdcEvent::KeepAliveRequested { reply: _ } => {}
             }
+        }
+
+        for (table_id, table_rows) in table_name_to_table_rows {
+            let table_schema = self.get_table_schema(table_id)?;
+            let table_name = &table_schema.table_name.name.clone();
+            let table_descriptor = table_schema.into();
+            self.client
+                .stream_rows(&self.dataset_id, table_name, &table_descriptor, &table_rows)
+                .await?;
+        }
+
+        if new_last_lsn != PgLsn::from(0) {
+            self.client
+                .set_last_lsn(&self.dataset_id, new_last_lsn)
+                .await?;
+            self.committed_lsn = Some(new_last_lsn);
         }
 
         let committed_lsn = self.committed_lsn.expect("committed lsn is none");

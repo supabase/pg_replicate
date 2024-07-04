@@ -258,7 +258,7 @@ impl BigQueryClient {
         dataset_id: &str,
         table_name: &str,
         table_descriptor: &TableDescriptor,
-        table_rows: &mut [TableRow],
+        table_rows: &[TableRow],
     ) -> Result<(), BQError> {
         let default_stream = StreamName::new_default(
             self.project_id.clone(),
