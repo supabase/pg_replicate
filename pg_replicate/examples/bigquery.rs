@@ -61,6 +61,12 @@ struct BqArgs {
     /// BigQuery dataset id
     #[arg(long)]
     bq_dataset_id: String,
+
+    #[arg(long)]
+    max_batch_size: usize,
+
+    #[arg(long)]
+    max_batch_fill_duration_secs: u64,
 }
 
 #[derive(Debug, Subcommand)]
@@ -133,7 +139,10 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    let batch_config = BatchConfig::new(10000, Duration::from_secs(10));
+    let batch_config = BatchConfig::new(
+        bq_args.max_batch_size,
+        Duration::from_secs(bq_args.max_batch_fill_duration_secs),
+    );
     let mut pipeline = BatchDataPipeline::new(postgres_source, bigquery_sink, action, batch_config);
 
     pipeline.start().await?;
