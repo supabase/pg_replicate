@@ -128,6 +128,16 @@ impl BatchSink for BigQueryBatchSink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError> {
+        for table_schema in table_schemas.values() {
+            self.client
+                .create_table_if_missing(
+                    &self.dataset_id,
+                    &table_schema.table_name.name,
+                    &table_schema.column_schemas,
+                )
+                .await?;
+        }
+
         self.table_schemas = Some(table_schemas);
 
         Ok(())
@@ -247,22 +257,7 @@ impl BatchSink for BigQueryBatchSink {
         Ok(())
     }
 
-    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
-        let table_schema = self.get_table_schema(table_id)?;
-        let table_name = table_schema.table_name.name.clone();
-        if self
-            .client
-            .table_exists(&self.dataset_id, &table_schema.table_name.name)
-            .await?
-        {
-            self.client
-                .drop_table(&self.dataset_id, &table_schema.table_name.name)
-                .await?;
-        }
-        self.client
-            .create_table(&self.dataset_id, &table_name, &table_schema.column_schemas)
-            .await?;
-
+    async fn truncate_table(&mut self, _table_id: TableId) -> Result<(), SinkError> {
         Ok(())
     }
 }
