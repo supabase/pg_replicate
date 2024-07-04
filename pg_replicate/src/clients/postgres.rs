@@ -5,7 +5,7 @@ use tokio_postgres::{
     binary_copy::BinaryCopyOutStream,
     config::ReplicationMode,
     replication::LogicalReplicationStream,
-    types::{PgLsn, Type},
+    types::{Kind, PgLsn, Type},
     Client as PostgresClient, Config, NoTls, SimpleQueryMessage,
 };
 use tracing::{info, warn};
@@ -127,7 +127,6 @@ impl ReplicationClient {
     pub async fn get_column_schemas(
         &self,
         table_id: TableId,
-        table_name: &TableName,
     ) -> Result<Vec<ColumnSchema>, ReplicationClientError> {
         let column_info_query = format!(
             "SELECT a.attname,
@@ -170,12 +169,13 @@ impl ReplicationClient {
                     .parse()
                     .map_err(|_| ReplicationClientError::OidColumnNotU32)?;
 
-                let typ =
-                    Type::from_oid(type_oid).ok_or(ReplicationClientError::UnsupportedType(
-                        name.clone(),
-                        type_oid,
-                        table_name.to_string(),
-                    ))?;
+                //TODO: For now we assume all types are simple, fix it later
+                let typ = Type::from_oid(type_oid).unwrap_or(Type::new(
+                    format!("unnamed(oid: {type_oid})"),
+                    type_oid,
+                    Kind::Simple,
+                    "pg_catalog".to_string(),
+                ));
 
                 let modifier = row
                     .try_get("atttypmod")?
@@ -237,7 +237,7 @@ impl ReplicationClient {
             .get_table_id(&table_name)
             .await?
             .ok_or(ReplicationClientError::MissingTable(table_name.clone()))?;
-        let column_schemas = self.get_column_schemas(table_id, &table_name).await?;
+        let column_schemas = self.get_column_schemas(table_id).await?;
         Ok(TableSchema {
             table_name,
             table_id,
