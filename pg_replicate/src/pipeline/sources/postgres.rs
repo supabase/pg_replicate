@@ -166,7 +166,7 @@ pub enum TableCopyStreamError {
     #[error("tokio_postgres error: {0}")]
     TokioPostgresError(#[from] tokio_postgres::Error),
 
-    #[error("conversion error")]
+    #[error("conversion error: {0}")]
     ConversionError(TableRowConversionError),
 }
 
