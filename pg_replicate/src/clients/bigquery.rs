@@ -15,7 +15,7 @@ use gcp_bigquery_client::{
 use prost::Message;
 use tokio::time::sleep;
 use tokio_postgres::types::{PgLsn, Type};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     conversions::table_row::{Cell, TableRow},
@@ -481,7 +481,7 @@ impl BigQueryClient {
             .await?;
 
         if query_response.job_complete.unwrap_or(false) {
-            info!("job complete. returning result set");
+            debug!("job complete. returning result set");
             Ok(ResultSet::new_from_query_response(query_response))
         } else {
             let job_id = query_response
@@ -492,7 +492,7 @@ impl BigQueryClient {
                 .as_ref()
                 .expect("missing job id");
             loop {
-                info!("job incomplete. waiting for 5 seconds");
+                debug!("job incomplete. waiting for 5 seconds");
                 sleep(Duration::from_secs(5)).await;
                 let result = self
                     .client
@@ -500,7 +500,7 @@ impl BigQueryClient {
                     .get_query_results(&self.project_id, job_id, Default::default())
                     .await?;
                 if result.job_complete.unwrap_or(false) {
-                    info!("job complete. returning result set");
+                    debug!("job complete. returning result set");
                     let result_set = ResultSet::new_from_get_query_results_response(result);
                     break Ok(result_set);
                 }
