@@ -325,6 +325,7 @@ impl ToSql for Cell {
             Cell::I64(i) => i.to_sql(),
             Cell::TimeStamp(t) => t.to_sql(),
             Cell::Null => Null.to_sql(),
+            Cell::Bytes(b) => b.to_sql(),
         }
     }
 }

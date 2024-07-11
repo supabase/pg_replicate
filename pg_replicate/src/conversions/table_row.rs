@@ -1,6 +1,10 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
+use postgres_protocol::types;
 use thiserror::Error;
-use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
+use tokio_postgres::{
+    binary_copy::BinaryCopyOutRow,
+    types::{FromSql, Type},
+};
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
@@ -13,6 +17,7 @@ pub enum Cell {
     I32(i32),
     I64(i64),
     TimeStamp(String),
+    Bytes(Vec<u8>),
 }
 
 #[derive(Debug)]
@@ -36,6 +41,44 @@ pub enum TableRowConversionError {
 }
 
 pub struct TableRowConverter;
+
+/// A wrapper type over Vec<u8> to help implement the FromSql trait.
+/// The wrapper is needed to avoid Rust's trait coherence rules. i.e.
+/// one of the trait or the implementing type must be part of the
+/// current crate.
+///
+/// This type is useful in retriveing bytes from the Postgres wire
+/// protocol for the fallback case of unsupported type.
+struct VecWrapper(Vec<u8>);
+
+impl<'a> FromSql<'a> for VecWrapper {
+    fn from_sql(
+        _: &Type,
+        raw: &'a [u8],
+    ) -> Result<VecWrapper, Box<dyn std::error::Error + Sync + Send>> {
+        let v = types::bytea_from_sql(raw).to_owned();
+        Ok(VecWrapper(v))
+    }
+
+    /// Because of the fallback nature of this impl, we accept all types here
+    fn accepts(_ty: &Type) -> bool {
+        true
+    }
+
+    fn from_sql_null(_ty: &Type) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        Ok(VecWrapper(vec![]))
+    }
+
+    fn from_sql_nullable(
+        ty: &Type,
+        raw: Option<&'a [u8]>,
+    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        match raw {
+            Some(raw) => Self::from_sql(ty, raw),
+            None => Self::from_sql_null(ty),
+        }
+    }
+}
 
 impl TableRowConverter {
     fn get_cell_value(
@@ -143,7 +186,21 @@ impl TableRowConverter {
                 };
                 Ok(val)
             }
-            ref typ => Err(TableRowConversionError::UnsupportedType(typ.clone())),
+            _ => {
+                let val = if column_schema.nullable {
+                    match row.try_get::<VecWrapper>(i) {
+                        Ok(v) => Cell::Bytes(v.0),
+                        Err(_) => {
+                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
+                            Cell::Null
+                        }
+                    }
+                } else {
+                    let val = row.get::<VecWrapper>(i);
+                    Cell::Bytes(val.0)
+                };
+                Ok(val)
+            }
         }
     }
 

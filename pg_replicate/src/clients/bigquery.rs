@@ -57,7 +57,7 @@ impl BigQueryClient {
             &Type::BYTEA => "bytes",
             &Type::VARCHAR | &Type::BPCHAR | &Type::TEXT => "string",
             &Type::TIMESTAMP => "timestamp",
-            typ => panic!("bigquery doesn't yet support type {typ}"),
+            _ => "bytes",
         }
     }
 
@@ -329,6 +329,10 @@ impl BigQueryClient {
             Cell::I32(i) => s.push_str(&format!("{i}")),
             Cell::I64(i) => s.push_str(&format!("{i}")),
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
+            Cell::Bytes(b) => {
+                let bytes: String = b.iter().map(|b| *b as char).collect();
+                s.push_str(&format!("b'{bytes}'"))
+            }
         }
     }
 
@@ -547,6 +551,11 @@ impl Message for TableRow {
                         ::prost::encoding::string::encode(tag, t, buf);
                     }
                 }
+                Cell::Bytes(b) => {
+                    if !b.is_empty() {
+                        ::prost::encoding::bytes::encode(tag, b, buf);
+                    }
+                }
             }
             tag += 1;
         }
@@ -615,6 +624,13 @@ impl Message for TableRow {
                         0
                     }
                 }
+                Cell::Bytes(b) => {
+                    if !b.is_empty() {
+                        ::prost::encoding::bytes::encoded_len(tag, b)
+                    } else {
+                        0
+                    }
+                }
             };
             tag += 1;
         }
@@ -631,6 +647,7 @@ impl Message for TableRow {
                 Cell::I32(i) => *i = 0,
                 Cell::I64(i) => *i = 0,
                 Cell::TimeStamp(t) => t.clear(),
+                Cell::Bytes(b) => b.clear(),
             }
         }
     }
@@ -650,7 +667,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::INT4 => ColumnType::Int64,
                 Type::INT8 => ColumnType::Int64,
                 Type::TIMESTAMP => ColumnType::String,
-                ref typ => unimplemented!("not yet implemented for type {typ}"),
+                _ => ColumnType::Bytes,
             };
             field_descriptors.push(FieldDescriptor {
                 number,
