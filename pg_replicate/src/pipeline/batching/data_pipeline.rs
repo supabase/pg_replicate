@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Instant};
 
 use futures::StreamExt;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     conversions::cdc_event::CdcEvent,
@@ -47,6 +47,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
     }
 
     async fn copy_tables(&mut self, copied_tables: &HashSet<TableId>) -> Result<(), PipelineError> {
+        let start = Instant::now();
         let table_schemas = self.source.get_table_schemas();
 
         for table_schema in table_schemas.values() {
@@ -82,6 +83,10 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             self.sink.table_copied(table_schema.table_id).await?;
         }
         self.source.commit_transaction().await?;
+
+        let end = Instant::now();
+        let seconds = (end - start).as_secs();
+        debug!("took {seconds} seconds to copy tables");
 
         Ok(())
     }
