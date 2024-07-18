@@ -44,12 +44,26 @@ pub struct BigQueryBatchSink {
 }
 
 impl BigQueryBatchSink {
-    pub async fn new(
+    pub async fn new_with_key_path(
         project_id: String,
         dataset_id: String,
         gcp_sa_key_path: &str,
     ) -> Result<BigQueryBatchSink, BQError> {
-        let client = BigQueryClient::new(project_id, gcp_sa_key_path).await?;
+        let client = BigQueryClient::new_with_key_path(project_id, gcp_sa_key_path).await?;
+        Ok(BigQueryBatchSink {
+            client,
+            dataset_id,
+            table_schemas: None,
+            committed_lsn: None,
+        })
+    }
+
+    pub async fn new_with_key(
+        project_id: String,
+        dataset_id: String,
+        gcp_sa_key: &str,
+    ) -> Result<BigQueryBatchSink, BQError> {
+        let client = BigQueryClient::new_with_key(project_id, gcp_sa_key).await?;
         Ok(BigQueryBatchSink {
             client,
             dataset_id,

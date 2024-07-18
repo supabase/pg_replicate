@@ -5,6 +5,8 @@ source:
     name: "postgres"
     username: "postgres"
     password: "postgres"
+    slot_name: "replicator_slot"
+    publication: "replicator_publication"
 sink:
   BigQuery:
     project_id: "project-id"

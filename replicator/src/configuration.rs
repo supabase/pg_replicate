@@ -1,4 +1,5 @@
 use secrecy::Secret;
+// use serde_aux::field_attributes::deserialize_number_from_string;
 use std::fmt::Debug;
 
 #[derive(serde::Deserialize)]
@@ -18,6 +19,12 @@ pub enum SourceSettings {
 
         /// Postgres database user password
         password: Secret<String>,
+
+        /// Postgres slot name
+        slot_name: String,
+
+        /// Postgres publication name
+        publication: String,
     },
 }
 
@@ -30,6 +37,8 @@ impl Debug for SourceSettings {
                 name,
                 username,
                 password: _,
+                slot_name,
+                publication,
             } => f
                 .debug_struct("Postgres")
                 .field("host", host)
@@ -37,6 +46,8 @@ impl Debug for SourceSettings {
                 .field("name", name)
                 .field("username", username)
                 .field("password", &"REDACTED")
+                .field("slot_name", slot_name)
+                .field("publication", publication)
                 .finish(),
         }
     }
@@ -50,13 +61,28 @@ pub enum SinkSettings {
 
         /// BigQuery dataset id
         dataset_id: String,
+
+        /// BigQuery service account key
+        service_account_key: String,
     },
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct BatchSettings {
+    /// maximum batch size in number of events
+    // #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub max_size: usize,
+
+    /// maximum duration, in seconds, to wait for a batch to fill
+    // #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub max_fill_secs: u64,
 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Settings {
     pub source: SourceSettings,
     pub sink: SinkSettings,
+    pub batch: BatchSettings,
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {

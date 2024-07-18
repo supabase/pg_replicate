@@ -1,7 +1,8 @@
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, fs, time::Duration};
 
 use bytes::{Buf, BufMut};
 use futures::StreamExt;
+use gcp_bigquery_client::yup_oauth2::parse_service_account_key;
 use gcp_bigquery_client::{
     error::BQError,
     google::cloud::bigquery::storage::v1::{WriteStream, WriteStreamView},
@@ -29,8 +30,23 @@ pub struct BigQueryClient {
 
 //TODO: fix all SQL injections
 impl BigQueryClient {
-    pub async fn new(project_id: String, gcp_sa_key_path: &str) -> Result<BigQueryClient, BQError> {
-        let client = Client::from_service_account_key_file(gcp_sa_key_path).await?;
+    pub async fn new_with_key_path(
+        project_id: String,
+        gcp_sa_key_path: &str,
+    ) -> Result<BigQueryClient, BQError> {
+        let gcp_sa_key = fs::read_to_string(gcp_sa_key_path)?;
+        let service_account_key = parse_service_account_key(gcp_sa_key)?;
+        let client = Client::from_service_account_key(service_account_key, false).await?;
+
+        Ok(BigQueryClient { project_id, client })
+    }
+
+    pub async fn new_with_key(
+        project_id: String,
+        gcp_sa_key: &str,
+    ) -> Result<BigQueryClient, BQError> {
+        let service_account_key = parse_service_account_key(gcp_sa_key)?;
+        let client = Client::from_service_account_key(service_account_key, false).await?;
 
         Ok(BigQueryClient { project_id, client })
     }

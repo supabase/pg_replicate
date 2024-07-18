@@ -1,0 +1,3 @@
+batch:
+  max_size: 1000
+  max_fill_secs: 10
