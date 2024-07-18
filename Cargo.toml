@@ -11,7 +11,7 @@ chrono = { version = "0.4", default-features = false }
 clap = { version = "4.5", default-features = false }
 duckdb = { version = "0.10", default-features = false, features = ["bundled"] }
 futures = { version = "0.3", default-features = false }
-gcp-bigquery-client = { git = "https://github.com/imor/gcp-bigquery-client.git", branch = "write_stream", default-features = false }
+gcp-bigquery-client = { git = "https://github.com/imor/gcp-bigquery-client.git", branch = "result_set", default-features = false }
 pin-project-lite = { version = "0.2", default-features = false }
 postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres" }
 prost = { version = "0.12.6", default-features = false }
