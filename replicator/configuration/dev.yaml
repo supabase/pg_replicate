@@ -1,0 +1,11 @@
+source:
+  Postgres:
+    host: "localhost"
+    port: 5432
+    name: "postgres"
+    username: "postgres"
+    password: "postgres"
+sink:
+  BigQuery:
+    project_id: "project-id"
+    dataset_id: "dataset-id"

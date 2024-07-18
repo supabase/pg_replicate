@@ -1,0 +1,14 @@
+[package]
+name = "replicator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+config = { workspace = true, features = ["yaml"] }
+pg_replicate = { path = "../pg_replicate" }
+secrecy = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tracing = { workspace = true, default-features = true }
+tracing-subscriber = { workspace = true, default-features = true }
