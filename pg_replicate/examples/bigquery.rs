@@ -132,7 +132,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let bigquery_sink = BigQueryBatchSink::new(
+    let bigquery_sink = BigQueryBatchSink::new_with_key_path(
         bq_args.bq_project_id,
         bq_args.bq_dataset_id,
         &bq_args.bq_sa_key_file,

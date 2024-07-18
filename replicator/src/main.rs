@@ -12,6 +12,8 @@ use tracing::{error, info};
 
 mod configuration;
 
+// APP_SOURCE__POSTGRES__PASSWORD and APP_SINK__BIGQUERY__PROJECT_ID environment variables must be set
+// before running because these are sensitive values which can't be configured in the config files
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     if let Err(e) = main_impl().await {
@@ -43,7 +45,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         port,
         &name,
         &username,
-        Some(password.expose_secret().clone()),
+        password.map(|p| p.expose_secret().clone()),
         Some(slot_name),
         TableNamesFrom::Publication(publication),
     )
@@ -54,9 +56,14 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         dataset_id,
         service_account_key,
     } = settings.sink;
+    info!("secret: {}", service_account_key.expose_secret());
 
-    let bigquery_sink =
-        BigQueryBatchSink::new_with_key(project_id, dataset_id, &service_account_key).await?;
+    let bigquery_sink = BigQueryBatchSink::new_with_key(
+        project_id,
+        dataset_id,
+        service_account_key.expose_secret(),
+    )
+    .await?;
 
     let BatchSettings {
         max_size,

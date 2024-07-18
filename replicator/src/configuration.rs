@@ -1,5 +1,4 @@
 use secrecy::Secret;
-// use serde_aux::field_attributes::deserialize_number_from_string;
 use std::fmt::Debug;
 
 #[derive(serde::Deserialize)]
@@ -18,7 +17,7 @@ pub enum SourceSettings {
         username: String,
 
         /// Postgres database user password
-        password: Secret<String>,
+        password: Option<Secret<String>>,
 
         /// Postgres slot name
         slot_name: String,
@@ -36,7 +35,7 @@ impl Debug for SourceSettings {
                 port,
                 name,
                 username,
-                password: _,
+                password,
                 slot_name,
                 publication,
             } => f
@@ -45,7 +44,7 @@ impl Debug for SourceSettings {
                 .field("port", port)
                 .field("name", name)
                 .field("username", username)
-                .field("password", &"REDACTED")
+                .field("password", &password.as_ref().map(|_| "REDACTED"))
                 .field("slot_name", slot_name)
                 .field("publication", publication)
                 .finish(),
@@ -53,7 +52,7 @@ impl Debug for SourceSettings {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 pub enum SinkSettings {
     BigQuery {
         /// BigQuery project id
@@ -63,8 +62,25 @@ pub enum SinkSettings {
         dataset_id: String,
 
         /// BigQuery service account key
-        service_account_key: String,
+        service_account_key: Secret<String>,
     },
+}
+
+impl Debug for SinkSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BigQuery {
+                project_id,
+                dataset_id,
+                service_account_key: _,
+            } => f
+                .debug_struct("BigQuery")
+                .field("project_id", project_id)
+                .field("dataset_id", dataset_id)
+                .field("service_account_key", &"REDACTED")
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -105,7 +121,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
             configuration_directory.join(environment_filename),
         ))
         // Add in settings from environment variables (with a prefix of APP and '__' as separator)
-        // E.g. `APP_APPLICATION__PORT=5001 would set `Settings.application.port`
+        // E.g. `APP_SINK__BIGQUERY__PROJECT_ID=my-project-id would set `Settings { sink: BigQuery { project_id }}` to my-project-id
         .add_source(
             config::Environment::with_prefix("APP")
                 .prefix_separator("_")
