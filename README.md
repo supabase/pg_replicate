@@ -64,3 +64,7 @@ CDC stream is not the only kind of data a data pipeline performs. There's also f
 ## Performance
 
 Currently the data source and sinks copy table row and CDC events one at a time. This is expected to be slow. Batching, and other strategies will likely improve the performance drastically. But at this early stage the focus is on correctness rather than performance. There are also zero benchmarks at this stage, so commentary about performance is closer to speculation than reality.
+
+## Docker
+
+To create the docker image for replicator run `docker build -f ./replicator/Dockerfile .` from the root of the repo.
