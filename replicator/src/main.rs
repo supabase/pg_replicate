@@ -56,7 +56,6 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         dataset_id,
         service_account_key,
     } = settings.sink;
-    info!("secret: {}", service_account_key.expose_secret());
 
     let bigquery_sink = BigQueryBatchSink::new_with_key(
         project_id,
