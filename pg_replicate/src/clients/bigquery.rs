@@ -527,9 +527,8 @@ impl BigQueryClient {
 }
 
 impl Message for TableRow {
-    fn encode_raw<B>(&self, buf: &mut B)
+    fn encode_raw(&self, buf: &mut impl BufMut)
     where
-        B: BufMut,
         Self: Sized,
     {
         let mut tag = 1;
@@ -577,15 +576,14 @@ impl Message for TableRow {
         }
     }
 
-    fn merge_field<B>(
+    fn merge_field(
         &mut self,
         _tag: u32,
         _wire_type: prost::encoding::WireType,
-        _buf: &mut B,
+        _buf: &mut impl Buf,
         _ctx: prost::encoding::DecodeContext,
     ) -> Result<(), prost::DecodeError>
     where
-        B: Buf,
         Self: Sized,
     {
         unimplemented!("merge_field not implemented yet");
