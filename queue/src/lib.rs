@@ -110,46 +110,50 @@ pub struct Task {
     pub updated_at: DateTime<Utc>,
 }
 
-pub async fn dequeue(client: &mut Client) -> Result<Option<Task>, tokio_postgres::Error> {
+pub async fn dequeue(
+    client: &mut Client,
+    max_tasks: i64,
+) -> Result<Vec<Task>, tokio_postgres::Error> {
     let txn = client.transaction().await?;
 
-    let row = txn
-        .query_opt(
+    let rows = txn
+        .query(
             r#"
         select id, name, data, status, created_at, updated_at
         from queue.task_queue
         where status = 'pending'
         order by id
-        limit 1
+        limit $1
         for update
         skip locked"#,
-            &[],
+            &[&max_tasks],
         )
         .await?;
 
-    let task = if let Some(row) = row {
-        let task = Task {
+    let tasks: Vec<Task> = rows
+        .iter()
+        .map(|row| Task {
             id: row.get(0),
             name: row.get(1),
             data: row.get(2),
             status: row.get(3),
             created_at: row.get(4),
             updated_at: row.get(5),
-        };
-        txn.execute(
-            r#"
-            update queue.task_queue
-            set status = 'in_progress', updated_at = now()
-            where id = $1"#,
-            &[&task.id],
-        )
-        .await?;
-        Some(task)
-    } else {
-        None
-    };
+        })
+        .collect();
+
+    let task_ids: Vec<i64> = tasks.iter().map(|task| task.id).collect();
+
+    txn.execute(
+        r#"
+        update queue.task_queue
+        set status = 'in_progress', updated_at = now()
+        where id in (select unnest($1::bigint[]))"#,
+        &[&task_ids],
+    )
+    .await?;
 
     txn.commit().await?;
 
-    Ok(task)
+    Ok(tasks)
 }

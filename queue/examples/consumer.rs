@@ -28,13 +28,9 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let task = dequeue(&mut client).await?;
+    let tasks = dequeue(&mut client, 2).await?;
 
-    if let Some(task) = task {
-        info!("task dequeued: {task:#?}");
-    } else {
-        info!("no task dequeued")
-    }
+    info!("tasks dequeued: {tasks:#?}");
 
     Ok(())
 }
