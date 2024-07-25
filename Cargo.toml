@@ -2,7 +2,7 @@
 
 resolver = "2"
 
-members = ["pg_replicate", "queue", "replicator"]
+members = [ "api","pg_replicate", "queue", "replicator"]
 
 [workspace.dependencies]
 async-trait = { version = "0.1" }
