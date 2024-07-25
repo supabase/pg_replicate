@@ -37,7 +37,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    info!("task with id {id} enqueued in pendind state");
+    info!("task with id {id} enqueued in pending state");
 
     Ok(())
 }

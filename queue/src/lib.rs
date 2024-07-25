@@ -49,7 +49,7 @@ pub async fn enqueue(
     task_name: &str,
     task_data: serde_json::Value,
     task_status: TaskStatus,
-) -> Result<i32, tokio_postgres::Error> {
+) -> Result<i64, tokio_postgres::Error> {
     let row = client
         .query_one(
             "insert into queue.task_queue(name, data, status) values($1, $2, $3) returning id",
