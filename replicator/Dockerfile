@@ -5,8 +5,9 @@ RUN apt update && apt install protobuf-compiler clang -y
 COPY . .
 RUN cargo build --release -p replicator
 
-FROM rust:1.79.0-slim-bookworm as runtime
+FROM debian:bookworm-slim
 WORKDIR /app
+RUN apt update && apt install ca-certificates -y
 COPY --from=builder /app/target/release/replicator replicator
 COPY replicator/configuration configuration
 ENTRYPOINT ["./replicator"]
