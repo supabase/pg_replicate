@@ -5,8 +5,10 @@ edition = "2021"
 
 [dependencies]
 bytes = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
 tokio-postgres = { workspace = true, features = [
     "runtime",
     "with-chrono-0_4",

@@ -1,6 +1,10 @@
+use core::str;
+
 use bytes::{BufMut, BytesMut};
+use chrono::{DateTime, Utc};
+use thiserror::Error;
 use tokio_postgres::{
-    types::{to_sql_checked, IsNull, ToSql},
+    types::{to_sql_checked, FromSql, IsNull, Kind, ToSql},
     Client,
 };
 
@@ -17,6 +21,27 @@ impl TaskStatus {
             TaskStatus::Pending => "pending",
             TaskStatus::InProgress => "in_progress",
             TaskStatus::Done => "done",
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum TaskStatusConversionError {
+    #[error("invalid task status: {0}")]
+    InvalidTaskStatus(String),
+}
+
+impl TryFrom<&str> for TaskStatus {
+    type Error = TaskStatusConversionError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "pending" => Ok(TaskStatus::Pending),
+            "in_progress" => Ok(TaskStatus::InProgress),
+            "done" => Ok(TaskStatus::Done),
+            value => Err(TaskStatusConversionError::InvalidTaskStatus(
+                value.to_string(),
+            )),
         }
     }
 }
@@ -38,10 +63,24 @@ impl ToSql for TaskStatus {
     where
         Self: Sized,
     {
-        ty.name() == "task_status"
+        ty.name() == "task_status" && matches!(ty.kind(), Kind::Enum(_)) && ty.schema() == "queue"
     }
 
     to_sql_checked!();
+}
+
+impl<'a> FromSql<'a> for TaskStatus {
+    fn from_sql(
+        _ty: &tokio_postgres::types::Type,
+        raw: &'a [u8],
+    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        let task_status_str = str::from_utf8(raw)?;
+        Ok(task_status_str.try_into()?)
+    }
+
+    fn accepts(ty: &tokio_postgres::types::Type) -> bool {
+        ty.name() == "task_status" && matches!(ty.kind(), Kind::Enum(_)) && ty.schema() == "queue"
+    }
 }
 
 pub async fn enqueue(
@@ -52,9 +91,51 @@ pub async fn enqueue(
 ) -> Result<i64, tokio_postgres::Error> {
     let row = client
         .query_one(
-            "insert into queue.task_queue(name, data, status) values($1, $2, $3) returning id",
+            r#"
+            insert into queue.task_queue (name, data, status)
+            values($1, $2, $3) returning id"#,
             &[&task_name, &task_data, &task_status],
         )
         .await?;
     Ok(row.get(0))
+}
+
+#[derive(Debug)]
+pub struct Task {
+    pub id: i64,
+    pub name: String,
+    pub data: serde_json::Value,
+    pub status: TaskStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub async fn dequeue(client: &mut Client) -> Result<Option<Task>, tokio_postgres::Error> {
+    let txn = client.transaction().await?;
+
+    let row = txn
+        .query_opt(
+            r#"
+        select id, name, data, status, created_at, updated_at
+        from queue.task_queue
+        where status = 'pending'
+        order by id
+        limit 1
+        for update
+        skip locked"#,
+            &[],
+        )
+        .await?;
+
+    let task = row.map(|r| Task {
+        id: r.get(0),
+        name: r.get(1),
+        data: r.get(2),
+        status: r.get(3),
+        created_at: r.get(4),
+        updated_at: r.get(5),
+    });
+
+    txn.commit().await?;
+    Ok(task)
 }
