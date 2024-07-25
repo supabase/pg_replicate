@@ -127,15 +127,29 @@ pub async fn dequeue(client: &mut Client) -> Result<Option<Task>, tokio_postgres
         )
         .await?;
 
-    let task = row.map(|r| Task {
-        id: r.get(0),
-        name: r.get(1),
-        data: r.get(2),
-        status: r.get(3),
-        created_at: r.get(4),
-        updated_at: r.get(5),
-    });
+    let task = if let Some(row) = row {
+        let task = Task {
+            id: row.get(0),
+            name: row.get(1),
+            data: row.get(2),
+            status: row.get(3),
+            created_at: row.get(4),
+            updated_at: row.get(5),
+        };
+        txn.execute(
+            r#"
+            update queue.task_queue
+            set status = 'in_progress', updated_at = now()
+            where id = $1"#,
+            &[&task.id],
+        )
+        .await?;
+        Some(task)
+    } else {
+        None
+    };
 
     txn.commit().await?;
+
     Ok(task)
 }
