@@ -2,6 +2,7 @@ use std::net::TcpListener;
 
 use actix_web::{dev::Server, get, App, HttpResponse, HttpServer, Responder};
 
+pub mod configuration;
 mod queue;
 
 pub fn run(listener: TcpListener) -> Result<Server, std::io::Error> {
