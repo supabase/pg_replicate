@@ -20,6 +20,7 @@ prost = { version = "0.13.1", default-features = false }
 secrecy = { version = "0.8.0", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
+sqlx = { version = "0.8", default-features = false }
 thiserror = "1.0"
 tokio = { version = "1.38", default-features = false }
 tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", default-features = false }
