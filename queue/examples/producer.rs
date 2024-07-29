@@ -29,13 +29,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let id = enqueue(
-        &client,
-        "test task",
-        json!({"key": "value"}),
-        queue::TaskStatus::Pending,
-    )
-    .await?;
+    let id = enqueue(&client, "test task", json!({"key": "value"})).await?;
 
     info!("task with id {id} enqueued in pending state");
 

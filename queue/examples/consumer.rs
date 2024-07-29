@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use queue::dequeue;
+use queue::{delete_task, dequeue};
 use tokio_postgres::NoTls;
 use tracing::{error, info};
 
@@ -28,9 +28,15 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let tasks = dequeue(&mut client, 2).await?;
+    let (txn, task) = dequeue(&mut client).await?;
 
-    info!("tasks dequeued: {tasks:#?}");
+    info!("task dequeued: {task:#?}");
+
+    if let Some(task) = task {
+        delete_task(txn, task.id).await?;
+    } else {
+        txn.commit().await?;
+    }
 
     Ok(())
 }
