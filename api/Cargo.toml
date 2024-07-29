@@ -3,6 +3,13 @@ name = "api"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "api"
+
 [dependencies]
 actix-web = { workspace = true, features = ["macros", "http2"] }
 bytes = { workspace = true }
@@ -10,9 +17,12 @@ chrono = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }
-# tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-postgres = { workspace = true, features = [
     "runtime",
     "with-chrono-0_4",
     "with-serde_json-1",
 ] }
+
+[dev-dependencies]
+reqwest = "0.12"
