@@ -1,13 +1,13 @@
 use secrecy::{ExposeSecret, Secret};
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
-    pub application_port: u16,
+    pub application: ApplicationSettings,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct DatabaseSettings {
     /// Host on which Postgres is running
     pub host: String,
@@ -50,6 +50,12 @@ impl DatabaseSettings {
     pub fn with_db(&self) -> PgConnectOptions {
         self.without_db().database(&self.name)
     }
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct ApplicationSettings {
+    pub host: String,
+    pub port: u16,
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {

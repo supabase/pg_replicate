@@ -1,7 +1,9 @@
-application_port: 8000
 database:
   host: "localhost"
   port: 5431
   name: "replicator"
   username: "raminder.singh"
   require_ssl: false
+application:
+  host: "127.0.0.1"
+  port: 8000

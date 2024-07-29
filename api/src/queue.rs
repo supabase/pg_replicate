@@ -1,67 +1,62 @@
-//TODO: remove later
-#![allow(dead_code)]
-use core::str;
+use sqlx::{PgPool, Postgres, Transaction};
 
-use tokio_postgres::{Client, Transaction};
-
-pub async fn enqueue(
-    client: &Client,
+pub async fn enqueue_task(
+    pool: &PgPool,
     task_name: &str,
     task_data: serde_json::Value,
-) -> Result<i64, tokio_postgres::Error> {
-    let row = client
-        .query_one(
-            r#"
-            insert into queue.task_queue (name, data)
-            values($1, $2) returning id"#,
-            &[&task_name, &task_data],
-        )
-        .await?;
-    Ok(row.get(0))
+) -> Result<i64, anyhow::Error> {
+    let row: (i64,) = sqlx::query_as(
+        r#"
+        insert into queue.task_queue (name, data)
+        values($1, $2) returning id
+        "#,
+    )
+    .bind(task_name)
+    .bind(task_data)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row.0)
 }
 
-#[derive(Debug)]
+type PgTransaction = Transaction<'static, Postgres>;
+
+#[derive(Debug, sqlx::FromRow)]
 pub struct Task {
     pub id: i64,
     pub name: String,
     pub data: serde_json::Value,
 }
 
-pub async fn dequeue(
-    client: &mut Client,
-) -> Result<(Transaction, Option<Task>), tokio_postgres::Error> {
-    let txn = client.transaction().await?;
+pub async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTransaction, Task)>, anyhow::Error> {
+    let mut txn = pool.begin().await?;
 
-    let row = txn
-        .query_opt(
-            r#"
+    let res = sqlx::query_as::<_, Task>(
+        r#"
         select id, name, data
         from queue.task_queue
         order by id
         limit 1
         for update
-        skip locked"#,
-            &[],
-        )
-        .await?;
+        skip locked
+        "#,
+    )
+    .fetch_optional(&mut *txn)
+    .await?
+    .map(|task| (txn, task));
 
-    let task = row.map(|row| Task {
-        id: row.get(0),
-        name: row.get(1),
-        data: row.get(2),
-    });
-
-    Ok((txn, task))
+    Ok(res)
 }
 
-pub async fn delete_task(txn: Transaction<'_>, id: i64) -> Result<(), tokio_postgres::Error> {
-    txn.execute(
+pub async fn delete_task(mut txn: PgTransaction, id: i64) -> Result<(), anyhow::Error> {
+    sqlx::query(
         r#"
         delete from queue.task_queue
         where id = $1
-    "#,
-        &[&id],
+        "#,
     )
+    .bind(id)
+    .execute(&mut *txn)
     .await?;
 
     txn.commit().await?;

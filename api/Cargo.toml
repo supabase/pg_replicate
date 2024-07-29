@@ -12,6 +12,7 @@ name = "api"
 
 [dependencies]
 actix-web = { workspace = true, features = ["macros", "http2"] }
+anyhow = { workspace = true, features = ["std"] }
 bytes = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 config = { workspace = true, features = ["yaml"] }
@@ -25,11 +26,7 @@ sqlx = { workspace = true, features = [
 ] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-tokio-postgres = { workspace = true, features = [
-    "runtime",
-    "with-chrono-0_4",
-    "with-serde_json-1",
-] }
+tracing = { workspace = true, default-features = false }
 
 [dev-dependencies]
 reqwest = "0.12"
