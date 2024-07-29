@@ -1,4 +1,5 @@
 use secrecy::{ExposeSecret, Secret};
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 #[derive(serde::Deserialize)]
 pub struct Settings {
@@ -22,25 +23,32 @@ pub struct DatabaseSettings {
 
     /// Postgres database user password
     pub password: Option<Secret<String>>,
+
+    /// Whether to enable ssl or not
+    pub require_ssl: bool,
 }
 
 impl DatabaseSettings {
-    pub fn connection_string(&self) -> String {
-        if let Some(password) = &self.password {
-            format!(
-                "postgres://{}:{}@{}:{}/{}",
-                self.username,
-                password.expose_secret(),
-                self.host,
-                self.port,
-                self.name
-            )
+    pub fn without_db(&self) -> PgConnectOptions {
+        let ssl_mode = if self.require_ssl {
+            PgSslMode::Require
         } else {
-            format!(
-                "postgres://{}@{}:{}/{}",
-                self.username, self.host, self.port, self.name
-            )
+            PgSslMode::Prefer
+        };
+        let options = PgConnectOptions::new()
+            .host(&self.host)
+            .username(&self.username)
+            .port(self.port)
+            .ssl_mode(ssl_mode);
+        if let Some(password) = &self.password {
+            options.password(password.expose_secret())
+        } else {
+            options
         }
+    }
+
+    pub fn with_db(&self) -> PgConnectOptions {
+        self.without_db().database(&self.name)
     }
 }
 

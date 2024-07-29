@@ -4,3 +4,4 @@ database:
   port: 5431
   name: "replicator"
   username: "raminder.singh"
+  require_ssl: false
