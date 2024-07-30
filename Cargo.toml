@@ -18,6 +18,7 @@ gcp-bigquery-client = { git = "https://github.com/imor/gcp-bigquery-client.git",
 pin-project-lite = { version = "0.2", default-features = false }
 postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres" }
 prost = { version = "0.13.1", default-features = false }
+kube = { version = "0.93.1", default-features = false }
 secrecy = { version = "0.8.0", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
