@@ -5,18 +5,18 @@ pub async fn enqueue_task(
     task_name: &str,
     task_data: serde_json::Value,
 ) -> Result<i64, anyhow::Error> {
-    let row: (i64,) = sqlx::query_as(
+    let task = sqlx::query!(
         r#"
         insert into queue.task_queue (name, data)
         values($1, $2) returning id
         "#,
+        task_name,
+        task_data
     )
-    .bind(task_name)
-    .bind(task_data)
     .fetch_one(pool)
     .await?;
 
-    Ok(row.0)
+    Ok(task.id)
 }
 
 type PgTransaction = Transaction<'static, Postgres>;
@@ -31,7 +31,7 @@ pub struct Task {
 pub async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTransaction, Task)>, anyhow::Error> {
     let mut txn = pool.begin().await?;
 
-    let res = sqlx::query_as::<_, Task>(
+    let res = sqlx::query!(
         r#"
         select id, name, data
         from queue.task_queue
@@ -43,19 +43,28 @@ pub async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTransaction, Task)>
     )
     .fetch_optional(&mut *txn)
     .await?
-    .map(|task| (txn, task));
+    .map(|task| {
+        (
+            txn,
+            Task {
+                id: task.id,
+                name: task.name,
+                data: task.data,
+            },
+        )
+    });
 
     Ok(res)
 }
 
 pub async fn delete_task(mut txn: PgTransaction, id: i64) -> Result<(), anyhow::Error> {
-    sqlx::query(
+    sqlx::query!(
         r#"
         delete from queue.task_queue
         where id = $1
         "#,
+        id
     )
-    .bind(id)
     .execute(&mut *txn)
     .await?;
 

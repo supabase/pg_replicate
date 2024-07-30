@@ -22,6 +22,7 @@ sqlx = { workspace = true, features = [
     "runtime-tokio-rustls",
     "macros",
     "postgres",
+    "json",
 ] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
