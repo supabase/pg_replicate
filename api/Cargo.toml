@@ -15,7 +15,8 @@ actix-web = { workspace = true, features = ["macros", "http2"] }
 anyhow = { workspace = true, features = ["std"] }
 bytes = { workspace = true }
 config = { workspace = true, features = ["yaml"] }
-kube = { workspace = true }
+k8s-openapi = { workspace = true, features = ["latest"] }
+kube = { workspace = true, features = ["runtime", "derive"] }
 secrecy = { workspace = true, features = ["serde", "alloc"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
