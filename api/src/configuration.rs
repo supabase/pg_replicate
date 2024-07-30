@@ -35,7 +35,7 @@ impl DatabaseSettings {
         } else {
             PgSslMode::Prefer
         };
-        let options = PgConnectOptions::new()
+        let options = PgConnectOptions::new_without_pgpass()
             .host(&self.host)
             .username(&self.username)
             .port(self.port)

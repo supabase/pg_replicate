@@ -1,8 +1,9 @@
 database:
   host: "localhost"
-  port: 5431
-  name: "replicator"
-  username: "raminder.singh"
+  port: 5432
+  name: "postgres"
+  username: "postgres"
+  password: "postgres"
   require_ssl: false
 application:
   host: "127.0.0.1"
