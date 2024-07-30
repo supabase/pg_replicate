@@ -7,8 +7,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Run Tests
+  test_api:
+    name: Run API Tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -24,7 +24,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: sqlx-${{ env.SQLX_VERSION }}
+          key: sqlx
       - name: Install sqlx-cli
         run: cargo install sqlx-cli
           --features native-tls,postgres
@@ -38,9 +38,27 @@ jobs:
       - name: Run api tests
         run: |
           cargo test
+
+  test_non_api:
+    name: Run non-API Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sqlx
       - name: Run non-api tests
         run: |
-          cd ..
           cargo test --workspace --exclude api
 
   fmt:
