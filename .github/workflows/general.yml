@@ -8,7 +8,7 @@ env:
 
 jobs:
   test:
-    name: Api Tests
+    name: Run Tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -33,10 +33,15 @@ jobs:
       - name: Migrate database
         run: |
           sudo apt-get install libpq-dev -y
-          cd api
           SKIP_DOCKER=true ./scripts/init_db.sh
-      - name: Run tests
-        run: cargo test
+      - name: Run api tests
+        run: |
+          cd api
+          cargo test
+      - name: Run non-api tests
+        run: |
+          cd ..
+          cargo test --workspace --exclude api
 
   fmt:
     name: Rustfmt
