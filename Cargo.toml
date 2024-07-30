@@ -26,6 +26,9 @@ thiserror = "1.0"
 tokio = { version = "1.38", default-features = false }
 tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", default-features = false }
 tracing = { version = "0.1", default-features = false }
+tracing-actix-web = { version = "0.7", default-features = false }
+tracing-bunyan-formatter = { version = "0.3", default-features = false }
+tracing-log = { version = "0.1.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
 
 # [patch."https://github.com/imor/gcp-bigquery-client.git"]
