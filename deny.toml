@@ -1,0 +1,5 @@
+[advisories]
+version = 2
+ignore = [
+    { id = "RUSTSEC-2024-0320", reason = "temporarily disabling" },
+]

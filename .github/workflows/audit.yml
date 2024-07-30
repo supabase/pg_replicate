@@ -1,12 +1,12 @@
 # copied from Luca Palmieri's gist here: https://gist.github.com/LukeMathWalker/5ae1107432ce283310c3e601fac915f3
 name: Security audit
 on:
-  # schedule:
-  #   - cron: '0 0 * * *'
+  schedule:
+    - cron: "0 0 * * *"
   push:
     paths:
-      - '**/Cargo.toml'
-      - '**/Cargo.lock'
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
 jobs:
   security_audit:
     runs-on: ubuntu-latest
