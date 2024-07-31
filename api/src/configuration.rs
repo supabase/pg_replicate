@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use secrecy::{ExposeSecret, Secret};
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
@@ -5,6 +7,16 @@ use sqlx::postgres::{PgConnectOptions, PgSslMode};
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
+    pub worker: WorkerSettings,
+}
+
+impl Display for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "configuration:")?;
+        writeln!(f, "  database:\n{}", self.database)?;
+        writeln!(f, "  application:\n{}", self.application)?;
+        writeln!(f, "  worker:\n{}", self.worker)
+    }
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -26,6 +38,17 @@ pub struct DatabaseSettings {
 
     /// Whether to enable ssl or not
     pub require_ssl: bool,
+}
+
+impl Display for DatabaseSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "    host: {}", self.host)?;
+        writeln!(f, "    port: {}", self.port)?;
+        writeln!(f, "    name: {}", self.name)?;
+        writeln!(f, "    username: {}", self.username)?;
+        writeln!(f, "    password: REDACTED")?;
+        writeln!(f, "    require_ssl: {}", self.require_ssl)
+    }
 }
 
 impl DatabaseSettings {
@@ -54,8 +77,30 @@ impl DatabaseSettings {
 
 #[derive(serde::Deserialize, Clone)]
 pub struct ApplicationSettings {
+    /// host the api listens on
     pub host: String,
+
+    /// port the api listens on
     pub port: u16,
+}
+
+impl Display for ApplicationSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "    host: {}", self.host)?;
+        writeln!(f, "    port: {}", self.port)
+    }
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct WorkerSettings {
+    /// interval after which the worker looks in the queue for tasks
+    pub poll_interval_secs: u64,
+}
+
+impl Display for WorkerSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "    poll_interval_secs: {}", self.poll_interval_secs)
+    }
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {

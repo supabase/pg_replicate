@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use sqlx::PgPool;
+use tracing::debug;
+use tracing_log::log::error;
 
 use crate::{
     configuration::Settings,
@@ -10,20 +12,24 @@ use crate::{
 
 pub async fn run_worker_until_stopped(configuration: Settings) -> Result<(), anyhow::Error> {
     let connection_pool = get_connection_pool(&configuration.database);
-    worker_loop(connection_pool).await
+    let poll_duration = Duration::from_secs(configuration.worker.poll_interval_secs);
+    worker_loop(connection_pool, poll_duration).await
 }
 
-async fn worker_loop(pool: PgPool) -> Result<(), anyhow::Error> {
+async fn worker_loop(pool: PgPool, poll_duration: Duration) -> Result<(), anyhow::Error> {
     loop {
         match try_execute_task(&pool).await {
             Ok(ExecutionOutcome::EmptyQueue) => {
-                tokio::time::sleep(Duration::from_secs(10)).await;
+                debug!("no task in queue");
             }
-            Err(_) => {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+            Ok(ExecutionOutcome::TaskCompleted) => {
+                debug!("successfully executed task");
             }
-            Ok(ExecutionOutcome::TaskCompleted) => {}
+            Err(e) => {
+                error!("error while executing task: {e}");
+            }
         }
+        tokio::time::sleep(poll_duration).await;
     }
 }
 
