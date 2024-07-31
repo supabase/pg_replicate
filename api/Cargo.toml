@@ -15,6 +15,7 @@ actix-web = { workspace = true, features = ["macros", "http2"] }
 anyhow = { workspace = true, features = ["std"] }
 bytes = { workspace = true }
 config = { workspace = true, features = ["yaml"] }
+config-types = { path = "../config-types" }
 k8s-openapi = { workspace = true, features = ["latest"] }
 kube = { workspace = true, features = ["runtime", "derive"] }
 secrecy = { workspace = true, features = ["serde", "alloc"] }

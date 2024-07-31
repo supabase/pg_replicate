@@ -1,13 +1,13 @@
 use std::{error::Error, time::Duration};
 
-use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings};
+use config_types::{BatchSettings, SinkSettings, SourceSettings};
+use configuration::get_configuration;
 use pg_replicate::pipeline::{
     batching::{data_pipeline::BatchDataPipeline, BatchConfig},
     sinks::bigquery::BigQueryBatchSink,
     sources::postgres::{PostgresSource, TableNamesFrom},
     PipelineAction,
 };
-use secrecy::ExposeSecret;
 use tracing::{error, info};
 
 mod configuration;
@@ -45,7 +45,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         port,
         &name,
         &username,
-        password.map(|p| p.expose_secret().clone()),
+        password,
         Some(slot_name),
         TableNamesFrom::Publication(publication),
     )
@@ -57,12 +57,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         service_account_key,
     } = settings.sink;
 
-    let bigquery_sink = BigQueryBatchSink::new_with_key(
-        project_id,
-        dataset_id,
-        service_account_key.expose_secret(),
-    )
-    .await?;
+    let bigquery_sink =
+        BigQueryBatchSink::new_with_key(project_id, dataset_id, &service_account_key).await?;
 
     let BatchSettings {
         max_size,

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 config = { workspace = true, features = ["yaml"] }
+config-types = { path = "../config-types" }
 pg_replicate = { path = "../pg_replicate" }
 secrecy = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }

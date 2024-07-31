@@ -1,3 +1,4 @@
+use config_types::Settings;
 use sqlx::{PgPool, Postgres, Transaction};
 
 pub async fn enqueue_task(
@@ -21,11 +22,17 @@ pub async fn enqueue_task(
 
 type PgTransaction = Transaction<'static, Postgres>;
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug)]
 pub struct Task {
     pub id: i64,
     pub name: String,
     pub data: serde_json::Value,
+}
+
+#[allow(clippy::large_enum_variant)]
+pub enum Request {
+    CreateOrUpdate(Settings),
+    Delete(String),
 }
 
 pub async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTransaction, Task)>, anyhow::Error> {
