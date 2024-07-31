@@ -17,7 +17,12 @@ bytes = { workspace = true }
 config = { workspace = true, features = ["yaml"] }
 config-types = { path = "../config-types" }
 k8s-openapi = { workspace = true, features = ["latest"] }
-kube = { workspace = true, features = ["runtime", "derive"] }
+kube = { workspace = true, features = [
+    "runtime",
+    "derive",
+    "client",
+    "rustls-tls",
+] }
 secrecy = { workspace = true, features = ["serde", "alloc"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
