@@ -4,7 +4,7 @@ use thiserror::Error;
 use tracing::*;
 
 use kube::{
-    api::{Api, PostParams, ResourceExt},
+    api::{Api, Patch, PatchParams, ResourceExt},
     Client,
 };
 
@@ -22,33 +22,29 @@ pub async fn create_bq_service_account_key_secret(
 ) -> Result<(), K8sError> {
     info!("creating BQ service account key secret");
 
-    let secret: Secret = serde_json::from_value(json!({
+    let secret_name = "bq-service-account-key";
+    let secret_json = json!({
       "apiVersion": "v1",
       "kind": "Secret",
       "metadata": {
-        "name": "bq-service-account-key"
+        "name": secret_name
       },
       "type": "Opaque",
       "stringData": {
         "service-account-key": bq_service_account_key,
       }
-    }))?;
+    });
+    let secret: Secret = serde_json::from_value(secret_json)?;
 
     let client = Client::try_default().await?;
     let secrets: Api<Secret> = Api::default_namespaced(client);
 
-    let pp = PostParams::default();
-    match secrets.create(&pp, &secret).await {
+    let pp = PatchParams::apply(secret_name);
+    match secrets.patch(secret_name, &pp, &Patch::Apply(secret)).await {
         Ok(o) => {
-            let name = o.name_any();
-            assert_eq!(secret.name_any(), name);
-            info!("created Secret {}", name);
+            info!("patched Secret {}", o.name_any());
         }
-        Err(kube::Error::Api(ae)) => {
-            error!("Error: {ae}");
-            assert_eq!(ae.code, 409);
-        } // if you skipped delete, for instance
-        Err(e) => return Err(e.into()), // any other case is probably bad
+        Err(e) => return Err(e.into()),
     }
 
     Ok(())
@@ -57,33 +53,32 @@ pub async fn create_bq_service_account_key_secret(
 pub async fn create_config_map(base_config: &str, prod_config: &str) -> Result<(), K8sError> {
     info!("creating config map");
 
-    let cm: ConfigMap = serde_json::from_value(json!({
+    let config_map_name = "replicator-config";
+    let config_map_json = json!({
       "kind": "ConfigMap",
       "apiVersion": "v1",
       "metadata": {
-        "name": "replicator-config"
+        "name": config_map_name
       },
       "data": {
         "base.yaml": base_config,
         "prod.yaml": prod_config,
       }
-    }))?;
+    });
+    let config_map: ConfigMap = serde_json::from_value(config_map_json)?;
 
     let client = Client::try_default().await?;
     let config_maps: Api<ConfigMap> = Api::default_namespaced(client);
 
-    let pp = PostParams::default();
-    match config_maps.create(&pp, &cm).await {
-        Ok(o) => {
-            let name = o.name_any();
-            assert_eq!(cm.name_any(), name);
-            info!("created ConfigMap {}", name);
+    let pp = PatchParams::apply(config_map_name);
+    match config_maps
+        .patch(config_map_name, &pp, &Patch::Apply(config_map))
+        .await
+    {
+        Ok(cm) => {
+            info!("patched ConfigMap {}", cm.name_any());
         }
-        Err(kube::Error::Api(ae)) => {
-            error!("Error: {ae}");
-            assert_eq!(ae.code, 409);
-        } // if you skipped delete, for instance
-        Err(e) => return Err(e.into()), // any other case is probably bad
+        Err(e) => return Err(e.into()),
     }
     Ok(())
 }
@@ -94,10 +89,11 @@ pub async fn create_pod() -> Result<(), K8sError> {
     let client = Client::try_default().await?;
     let pods: Api<Pod> = Api::default_namespaced(client);
 
-    let p: Pod = serde_json::from_value(json!({
+    let pod_name = "replicator";
+    let pod_json = json!({
         "apiVersion": "v1",
         "kind": "Pod",
-        "metadata": { "name": "replicator" },
+        "metadata": { "name": pod_name },
         "spec": {
             "volumes": [
               {
@@ -131,20 +127,15 @@ pub async fn create_pod() -> Result<(), K8sError> {
               }]
             }],
         }
-    }))?;
+    });
+    let pod: Pod = serde_json::from_value(pod_json)?;
 
-    let pp = PostParams::default();
-    match pods.create(&pp, &p).await {
-        Ok(o) => {
-            let name = o.name_any();
-            assert_eq!(p.name_any(), name);
-            info!("created Pod {}", name);
+    let pp = PatchParams::apply(pod_name);
+    match pods.patch(pod_name, &pp, &Patch::Apply(pod)).await {
+        Ok(p) => {
+            info!("patched Pod {}", p.name_any());
         }
-        Err(kube::Error::Api(ae)) => {
-            error!("Error: {ae}");
-            assert_eq!(ae.code, 409);
-        } // if you skipped delete, for instance
-        Err(e) => return Err(e.into()), // any other case is probably bad
+        Err(e) => return Err(e.into()),
     }
     Ok(())
 }
