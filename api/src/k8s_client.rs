@@ -38,7 +38,7 @@ impl K8sClient {
         })
     }
 
-    pub async fn create_bq_service_account_key_secret(
+    pub async fn create_or_update_bq_service_account_key_secret(
         &self,
         bq_service_account_key: &str,
     ) -> Result<(), K8sError> {
@@ -73,7 +73,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_config_map(
+    pub async fn create_or_update_config_map(
         &self,
         base_config: &str,
         prod_config: &str,
@@ -108,7 +108,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_pod(&self) -> Result<(), K8sError> {
+    pub async fn create_or_update_pod(&self) -> Result<(), K8sError> {
         info!("creating Pod instance replicator");
 
         let pod_name = "replicator";
