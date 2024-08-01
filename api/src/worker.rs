@@ -7,7 +7,7 @@ use tracing_log::log::error;
 
 use crate::{
     configuration::Settings,
-    k8s_client::{create_bq_service_account_key_secret, create_config_map, create_pod},
+    k8s_client::K8sClient,
     queue::{delete_task, dequeue_task},
     startup::get_connection_pool,
 };
@@ -19,8 +19,9 @@ pub async fn run_worker_until_stopped(configuration: Settings) -> Result<(), any
 }
 
 async fn worker_loop(pool: PgPool, poll_duration: Duration) -> Result<(), anyhow::Error> {
+    let k8s_client = K8sClient::new().await?;
     loop {
-        match try_execute_task(&pool).await {
+        match try_execute_task(&pool, &k8s_client).await {
             Ok(ExecutionOutcome::EmptyQueue) => {
                 debug!("no task in queue");
             }
@@ -47,7 +48,10 @@ pub enum Request {
     },
 }
 
-pub async fn try_execute_task(pool: &PgPool) -> Result<ExecutionOutcome, anyhow::Error> {
+pub async fn try_execute_task(
+    pool: &PgPool,
+    k8s_client: &K8sClient,
+) -> Result<ExecutionOutcome, anyhow::Error> {
     let task = dequeue_task(pool).await?;
     let Some((transaction, task)) = task else {
         return Ok(ExecutionOutcome::EmptyQueue);
@@ -70,11 +74,15 @@ pub async fn try_execute_task(pool: &PgPool) -> Result<ExecutionOutcome, anyhow:
                 dataset_id: _,
                 service_account_key,
             } = &settings.sink;
-            create_bq_service_account_key_secret(service_account_key).await?;
+            k8s_client
+                .create_bq_service_account_key_secret(service_account_key)
+                .await?;
             let base_config = "";
             let prod_config = serde_json::to_string(&settings)?;
-            create_config_map(base_config, &prod_config).await?;
-            create_pod().await?;
+            k8s_client
+                .create_config_map(base_config, &prod_config)
+                .await?;
+            k8s_client.create_pod().await?;
         }
         Request::Delete { project_ref } => {
             info!("deleting project ref: {}", project_ref);
