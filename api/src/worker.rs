@@ -75,7 +75,7 @@ pub async fn try_execute_task(
                 service_account_key,
             } = &settings.sink;
             k8s_client
-                .create_or_update_bq_service_account_key_secret(service_account_key)
+                .create_or_update_secret(service_account_key)
                 .await?;
             let base_config = "";
             let prod_config = serde_json::to_string(&settings)?;
@@ -86,6 +86,9 @@ pub async fn try_execute_task(
         }
         Request::Delete { project_ref } => {
             info!("deleting project ref: {}", project_ref);
+            k8s_client.delete_pod().await?;
+            k8s_client.delete_config_map().await?;
+            k8s_client.delete_secret().await?;
         }
     }
 

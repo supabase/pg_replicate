@@ -4,7 +4,7 @@ use thiserror::Error;
 use tracing::*;
 
 use kube::{
-    api::{Api, Patch, PatchParams, ResourceExt},
+    api::{Api, DeleteParams, Patch, PatchParams},
     Client,
 };
 
@@ -23,6 +23,10 @@ pub struct K8sClient {
     pods_api: Api<Pod>,
 }
 
+const SECRET_NAME: &str = "bq-service-account-key";
+const CONFIG_MAP_NAME: &str = "replicator-config";
+const POD_NAME: &str = "replicator";
+
 impl K8sClient {
     pub async fn new() -> Result<K8sClient, K8sError> {
         let client = Client::try_default().await?;
@@ -38,18 +42,17 @@ impl K8sClient {
         })
     }
 
-    pub async fn create_or_update_bq_service_account_key_secret(
+    pub async fn create_or_update_secret(
         &self,
         bq_service_account_key: &str,
     ) -> Result<(), K8sError> {
-        info!("creating BQ service account key secret");
+        info!("patching secret");
 
-        let secret_name = "bq-service-account-key";
         let secret_json = json!({
           "apiVersion": "v1",
           "kind": "Secret",
           "metadata": {
-            "name": secret_name
+            "name": SECRET_NAME
           },
           "type": "Opaque",
           "stringData": {
@@ -58,18 +61,30 @@ impl K8sClient {
         });
         let secret: Secret = serde_json::from_value(secret_json)?;
 
-        let pp = PatchParams::apply(secret_name);
-        match self
-            .secrets_api
-            .patch(secret_name, &pp, &Patch::Apply(secret))
-            .await
-        {
-            Ok(o) => {
-                info!("patched Secret {}", o.name_any());
-            }
-            Err(e) => return Err(e.into()),
-        }
+        let pp = PatchParams::apply(SECRET_NAME);
+        self.secrets_api
+            .patch(SECRET_NAME, &pp, &Patch::Apply(secret))
+            .await?;
+        info!("patched secret");
 
+        Ok(())
+    }
+
+    pub async fn delete_secret(&self) -> Result<(), K8sError> {
+        info!("deleting secret");
+        let dp = DeleteParams::default();
+        match self.secrets_api.delete(SECRET_NAME, &dp).await {
+            Ok(_) => {}
+            Err(e) => match e {
+                kube::Error::Api(ref er) => {
+                    if er.code != 404 {
+                        return Err(e.into());
+                    }
+                }
+                e => return Err(e.into()),
+            },
+        }
+        info!("deleted secret");
         Ok(())
     }
 
@@ -78,14 +93,13 @@ impl K8sClient {
         base_config: &str,
         prod_config: &str,
     ) -> Result<(), K8sError> {
-        info!("creating config map");
+        info!("patching config map");
 
-        let config_map_name = "replicator-config";
         let config_map_json = json!({
           "kind": "ConfigMap",
           "apiVersion": "v1",
           "metadata": {
-            "name": config_map_name
+            "name": CONFIG_MAP_NAME
           },
           "data": {
             "base.yaml": base_config,
@@ -94,28 +108,39 @@ impl K8sClient {
         });
         let config_map: ConfigMap = serde_json::from_value(config_map_json)?;
 
-        let pp = PatchParams::apply(config_map_name);
-        match self
-            .config_maps_api
-            .patch(config_map_name, &pp, &Patch::Apply(config_map))
-            .await
-        {
-            Ok(cm) => {
-                info!("patched ConfigMap {}", cm.name_any());
-            }
-            Err(e) => return Err(e.into()),
+        let pp = PatchParams::apply(CONFIG_MAP_NAME);
+        self.config_maps_api
+            .patch(CONFIG_MAP_NAME, &pp, &Patch::Apply(config_map))
+            .await?;
+        info!("patched config map");
+        Ok(())
+    }
+
+    pub async fn delete_config_map(&self) -> Result<(), K8sError> {
+        info!("deleting config map");
+        let dp = DeleteParams::default();
+        match self.config_maps_api.delete(CONFIG_MAP_NAME, &dp).await {
+            Ok(_) => {}
+            Err(e) => match e {
+                kube::Error::Api(ref er) => {
+                    if er.code != 404 {
+                        return Err(e.into());
+                    }
+                }
+                e => return Err(e.into()),
+            },
         }
+        info!("deleted config map");
         Ok(())
     }
 
     pub async fn create_or_update_pod(&self) -> Result<(), K8sError> {
-        info!("creating Pod instance replicator");
+        info!("patching pod");
 
-        let pod_name = "replicator";
         let pod_json = json!({
             "apiVersion": "v1",
             "kind": "Pod",
-            "metadata": { "name": pod_name },
+            "metadata": { "name": POD_NAME },
             "spec": {
                 "volumes": [
                   {
@@ -152,13 +177,29 @@ impl K8sClient {
         });
         let pod: Pod = serde_json::from_value(pod_json)?;
 
-        let pp = PatchParams::apply(pod_name);
-        match self.pods_api.patch(pod_name, &pp, &Patch::Apply(pod)).await {
-            Ok(p) => {
-                info!("patched Pod {}", p.name_any());
-            }
-            Err(e) => return Err(e.into()),
+        let pp = PatchParams::apply(POD_NAME);
+        self.pods_api
+            .patch(POD_NAME, &pp, &Patch::Apply(pod))
+            .await?;
+        info!("patched pod");
+        Ok(())
+    }
+
+    pub async fn delete_pod(&self) -> Result<(), K8sError> {
+        info!("deleting Pod");
+        let dp = DeleteParams::default();
+        match self.pods_api.delete(POD_NAME, &dp).await {
+            Ok(_) => {}
+            Err(e) => match e {
+                kube::Error::Api(ref er) => {
+                    if er.code != 404 {
+                        return Err(e.into());
+                    }
+                }
+                e => return Err(e.into()),
+            },
         }
+        info!("deleted Pod");
         Ok(())
     }
 }
