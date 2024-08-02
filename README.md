@@ -2,6 +2,25 @@
 
 `pg_replicate` is a Rust crate to quickly build replication solutions for Postgres. It provides building blocks to construct data pipelines which can continually copy data from Postgres to other systems. It builds abstractions on top of Postgres's [logical streaming replication protocol](https://www.postgresql.org/docs/current/protocol-logical-replication.html) and pushes users towards the pit of success without letting them worry about low level details of the protocol.
 
+## Quickstart
+
+To quickly try out `pg_replicate`, you can run the `stdout` example, which will replicate the data to standard output. First, create a publication in Postgres which includes the tables you want to replicate:
+
+```
+create publication my_publication
+for table table1, table2;
+```
+
+Then run the `stdout` example:
+
+```
+cargo run --example stdout -- --db-host localhost --db-port 5432 --db-name postgres --db-username postgres --db-password password cdc my_publication stdout_slot
+```
+
+In the above example, `pg_replicate` connects to a Postgres database named `postgres` running on `localhost:5432` with a username `postgres` and password `password`. The slot name `stdout_slot` will be created by `pg_replicate` automatically.
+
+Refer to the [examples](https://github.com/imor/pg_replicate/tree/main/pg_replicate/examples) folder to run examples for sinks other than `stdout` (currently only `bigquery` and `duckdb` supported).
+
 ## Getting Started
 
 To use `pg_replicate` in your Rust project, add it via a git dependency in `Cargo.toml`:
