@@ -1,4 +1,7 @@
-use k8s_openapi::api::core::v1::{ConfigMap, Pod, Secret};
+use k8s_openapi::api::{
+    apps::v1::StatefulSet,
+    core::v1::{ConfigMap, Secret},
+};
 use serde_json::json;
 use thiserror::Error;
 use tracing::*;
@@ -20,12 +23,13 @@ pub enum K8sError {
 pub struct K8sClient {
     secrets_api: Api<Secret>,
     config_maps_api: Api<ConfigMap>,
-    pods_api: Api<Pod>,
+    stateful_sets_api: Api<StatefulSet>,
 }
 
 const SECRET_NAME_SUFFIX: &str = "bq-service-account-key";
 const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
-const POD_NAME_SUFFIX: &str = "replicator";
+const STATEFUL_SET_NAME_SUFFIX: &str = "replicator";
+const CONTAINER_NAME_SUFFIX: &str = "replicator";
 
 impl K8sClient {
     pub async fn new() -> Result<K8sClient, K8sError> {
@@ -33,12 +37,12 @@ impl K8sClient {
 
         let secrets_api: Api<Secret> = Api::default_namespaced(client.clone());
         let config_maps_api: Api<ConfigMap> = Api::default_namespaced(client.clone());
-        let pods_api: Api<Pod> = Api::default_namespaced(client);
+        let stateful_sets_api: Api<StatefulSet> = Api::default_namespaced(client);
 
         Ok(K8sClient {
             secrets_api,
             config_maps_api,
-            pods_api,
+            stateful_sets_api,
         })
     }
 
@@ -140,18 +144,34 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_pod(&self, prefix: &str) -> Result<(), K8sError> {
-        info!("patching pod");
+    pub async fn create_or_update_stateful_set(&self, prefix: &str) -> Result<(), K8sError> {
+        info!("patching stateful set");
 
-        let pod_name = format!("{prefix}-{POD_NAME_SUFFIX}");
+        let stateful_set_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}");
+        let container_name = format!("{prefix}-{CONTAINER_NAME_SUFFIX}");
         let secret_name = format!("{prefix}-{SECRET_NAME_SUFFIX}");
         let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
 
-        let pod_json = json!({
-            "apiVersion": "v1",
-            "kind": "Pod",
-            "metadata": { "name": pod_name },
-            "spec": {
+        let stateful_set_json = json!({
+          "apiVersion": "apps/v1",
+          "kind": "StatefulSet",
+          "metadata": {
+            "name": stateful_set_name,
+          },
+          "spec": {
+            "replicas": 1,
+            "selector": {
+              "matchLabels": {
+                "app": stateful_set_name
+              }
+            },
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app": stateful_set_name
+                }
+              },
+              "spec": {
                 "volumes": [
                   {
                     "name": "config-file",
@@ -160,46 +180,53 @@ impl K8sClient {
                     }
                   }
                 ],
-                "containers": [{
-                  "name": "replicator",
-                  "image": "ramsup/replicator:0.0.7",
-                  "env": [
-                    {
-                      "name": "APP_ENVIRONMENT",
-                      "value": "prod"
-                    },
-                    {
-                      "name": "APP_SINK__BIGQUERY__SERVICE_ACCOUNT_KEY",
-                      "valueFrom": {
-                        "secretKeyRef": {
-                          "name": secret_name,
-                          "key": "service-account-key"
+                "containers": [
+                  {
+                    "name": container_name,
+                    "image": "ramsup/replicator:0.0.7",
+                    "env": [
+                      {
+                        "name": "APP_ENVIRONMENT",
+                        "value": "prod"
+                      },
+                      {
+                        "name": "APP_SINK__BIGQUERY__SERVICE_ACCOUNT_KEY",
+                        "valueFrom": {
+                          "secretKeyRef": {
+                            "name": secret_name,
+                            "key": "service-account-key"
+                          }
                         }
                       }
-                    }
-                  ],
-                  "volumeMounts": [{
-                    "name": "config-file",
-                    "mountPath": "/app/configuration"
-                  }]
-                }],
+                    ],
+                    "volumeMounts": [{
+                      "name": "config-file",
+                      "mountPath": "/app/configuration"
+                    }]
+                  }
+                ]
+              }
             }
+          }
         });
-        let pod: Pod = serde_json::from_value(pod_json)?;
 
-        let pp = PatchParams::apply(&pod_name);
-        self.pods_api
-            .patch(&pod_name, &pp, &Patch::Apply(pod))
+        let stateful_set: StatefulSet = serde_json::from_value(stateful_set_json)?;
+
+        let pp = PatchParams::apply(&stateful_set_name);
+        self.stateful_sets_api
+            .patch(&stateful_set_name, &pp, &Patch::Apply(stateful_set))
             .await?;
-        info!("patched pod");
+
+        info!("patched stateful set");
+
         Ok(())
     }
 
-    pub async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError> {
-        info!("deleting Pod");
-        let pod_name = format!("{prefix}-{POD_NAME_SUFFIX}");
+    pub async fn delete_stateful_set(&self, prefix: &str) -> Result<(), K8sError> {
+        info!("deleting stateful set");
+        let stateful_set_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}");
         let dp = DeleteParams::default();
-        match self.pods_api.delete(&pod_name, &dp).await {
+        match self.stateful_sets_api.delete(&stateful_set_name, &dp).await {
             Ok(_) => {}
             Err(e) => match e {
                 kube::Error::Api(ref er) => {
@@ -210,7 +237,7 @@ impl K8sClient {
                 e => return Err(e.into()),
             },
         }
-        info!("deleted Pod");
+        info!("deleted stateful set");
         Ok(())
     }
 }

@@ -82,11 +82,13 @@ pub async fn try_execute_task(
             k8s_client
                 .create_or_update_config_map(&project_ref, base_config, &prod_config)
                 .await?;
-            k8s_client.create_or_update_pod(&project_ref).await?;
+            k8s_client
+                .create_or_update_stateful_set(&project_ref)
+                .await?;
         }
         Request::Delete { project_ref } => {
             info!("deleting project ref: {}", project_ref);
-            k8s_client.delete_pod(&project_ref).await?;
+            k8s_client.delete_stateful_set(&project_ref).await?;
             k8s_client.delete_config_map(&project_ref).await?;
             k8s_client.delete_secret(&project_ref).await?;
         }
