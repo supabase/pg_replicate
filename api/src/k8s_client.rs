@@ -1,6 +1,6 @@
 use k8s_openapi::api::{
     apps::v1::StatefulSet,
-    core::v1::{ConfigMap, Secret},
+    core::v1::{ConfigMap, Pod, Secret},
 };
 use serde_json::json;
 use thiserror::Error;
@@ -24,6 +24,7 @@ pub struct K8sClient {
     secrets_api: Api<Secret>,
     config_maps_api: Api<ConfigMap>,
     stateful_sets_api: Api<StatefulSet>,
+    pods_api: Api<Pod>,
 }
 
 const SECRET_NAME_SUFFIX: &str = "bq-service-account-key";
@@ -37,12 +38,14 @@ impl K8sClient {
 
         let secrets_api: Api<Secret> = Api::default_namespaced(client.clone());
         let config_maps_api: Api<ConfigMap> = Api::default_namespaced(client.clone());
-        let stateful_sets_api: Api<StatefulSet> = Api::default_namespaced(client);
+        let stateful_sets_api: Api<StatefulSet> = Api::default_namespaced(client.clone());
+        let pods_api: Api<Pod> = Api::default_namespaced(client);
 
         Ok(K8sClient {
             secrets_api,
             config_maps_api,
             stateful_sets_api,
+            pods_api,
         })
     }
 
@@ -217,6 +220,8 @@ impl K8sClient {
             .patch(&stateful_set_name, &pp, &Patch::Apply(stateful_set))
             .await?;
 
+        self.delete_pod(prefix).await?;
+
         info!("patched stateful set");
 
         Ok(())
@@ -238,6 +243,25 @@ impl K8sClient {
             },
         }
         info!("deleted stateful set");
+        Ok(())
+    }
+
+    pub async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError> {
+        info!("deleting pod");
+        let pod_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}-0");
+        let dp = DeleteParams::default();
+        match self.pods_api.delete(&pod_name, &dp).await {
+            Ok(_) => {}
+            Err(e) => match e {
+                kube::Error::Api(ref er) => {
+                    if er.code != 404 {
+                        return Err(e.into());
+                    }
+                }
+                e => return Err(e.into()),
+            },
+        }
+        info!("deleted pod");
         Ok(())
     }
 }
