@@ -242,6 +242,7 @@ impl K8sClient {
                 e => return Err(e.into()),
             },
         }
+        self.delete_pod(prefix).await?;
         info!("deleted stateful set");
         Ok(())
     }
