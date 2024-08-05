@@ -23,9 +23,9 @@ pub struct K8sClient {
     pods_api: Api<Pod>,
 }
 
-const SECRET_NAME: &str = "bq-service-account-key";
-const CONFIG_MAP_NAME: &str = "replicator-config";
-const POD_NAME: &str = "replicator";
+const SECRET_NAME_SUFFIX: &str = "bq-service-account-key";
+const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
+const POD_NAME_SUFFIX: &str = "replicator";
 
 impl K8sClient {
     pub async fn new() -> Result<K8sClient, K8sError> {
@@ -44,15 +44,17 @@ impl K8sClient {
 
     pub async fn create_or_update_secret(
         &self,
+        prefix: &str,
         bq_service_account_key: &str,
     ) -> Result<(), K8sError> {
         info!("patching secret");
 
+        let secret_name = format!("{prefix}-{SECRET_NAME_SUFFIX}");
         let secret_json = json!({
           "apiVersion": "v1",
           "kind": "Secret",
           "metadata": {
-            "name": SECRET_NAME
+            "name": secret_name
           },
           "type": "Opaque",
           "stringData": {
@@ -61,19 +63,20 @@ impl K8sClient {
         });
         let secret: Secret = serde_json::from_value(secret_json)?;
 
-        let pp = PatchParams::apply(SECRET_NAME);
+        let pp = PatchParams::apply(&secret_name);
         self.secrets_api
-            .patch(SECRET_NAME, &pp, &Patch::Apply(secret))
+            .patch(&secret_name, &pp, &Patch::Apply(secret))
             .await?;
         info!("patched secret");
 
         Ok(())
     }
 
-    pub async fn delete_secret(&self) -> Result<(), K8sError> {
+    pub async fn delete_secret(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting secret");
+        let secret_name = format!("{prefix}-{SECRET_NAME_SUFFIX}");
         let dp = DeleteParams::default();
-        match self.secrets_api.delete(SECRET_NAME, &dp).await {
+        match self.secrets_api.delete(&secret_name, &dp).await {
             Ok(_) => {}
             Err(e) => match e {
                 kube::Error::Api(ref er) => {
@@ -90,16 +93,18 @@ impl K8sClient {
 
     pub async fn create_or_update_config_map(
         &self,
+        prefix: &str,
         base_config: &str,
         prod_config: &str,
     ) -> Result<(), K8sError> {
         info!("patching config map");
 
+        let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
         let config_map_json = json!({
           "kind": "ConfigMap",
           "apiVersion": "v1",
           "metadata": {
-            "name": CONFIG_MAP_NAME
+            "name": config_map_name
           },
           "data": {
             "base.yaml": base_config,
@@ -108,18 +113,19 @@ impl K8sClient {
         });
         let config_map: ConfigMap = serde_json::from_value(config_map_json)?;
 
-        let pp = PatchParams::apply(CONFIG_MAP_NAME);
+        let pp = PatchParams::apply(&config_map_name);
         self.config_maps_api
-            .patch(CONFIG_MAP_NAME, &pp, &Patch::Apply(config_map))
+            .patch(&config_map_name, &pp, &Patch::Apply(config_map))
             .await?;
         info!("patched config map");
         Ok(())
     }
 
-    pub async fn delete_config_map(&self) -> Result<(), K8sError> {
+    pub async fn delete_config_map(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting config map");
+        let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
         let dp = DeleteParams::default();
-        match self.config_maps_api.delete(CONFIG_MAP_NAME, &dp).await {
+        match self.config_maps_api.delete(&config_map_name, &dp).await {
             Ok(_) => {}
             Err(e) => match e {
                 kube::Error::Api(ref er) => {
@@ -134,19 +140,23 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_pod(&self) -> Result<(), K8sError> {
+    pub async fn create_or_update_pod(&self, prefix: &str) -> Result<(), K8sError> {
         info!("patching pod");
+
+        let pod_name = format!("{prefix}-{POD_NAME_SUFFIX}");
+        let secret_name = format!("{prefix}-{SECRET_NAME_SUFFIX}");
+        let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
 
         let pod_json = json!({
             "apiVersion": "v1",
             "kind": "Pod",
-            "metadata": { "name": POD_NAME },
+            "metadata": { "name": pod_name },
             "spec": {
                 "volumes": [
                   {
                     "name": "config-file",
                     "configMap": {
-                      "name": "replicator-config"
+                      "name": config_map_name
                     }
                   }
                 ],
@@ -162,7 +172,7 @@ impl K8sClient {
                       "name": "APP_SINK__BIGQUERY__SERVICE_ACCOUNT_KEY",
                       "valueFrom": {
                         "secretKeyRef": {
-                          "name": "bq-service-account-key",
+                          "name": secret_name,
                           "key": "service-account-key"
                         }
                       }
@@ -177,18 +187,19 @@ impl K8sClient {
         });
         let pod: Pod = serde_json::from_value(pod_json)?;
 
-        let pp = PatchParams::apply(POD_NAME);
+        let pp = PatchParams::apply(&pod_name);
         self.pods_api
-            .patch(POD_NAME, &pp, &Patch::Apply(pod))
+            .patch(&pod_name, &pp, &Patch::Apply(pod))
             .await?;
         info!("patched pod");
         Ok(())
     }
 
-    pub async fn delete_pod(&self) -> Result<(), K8sError> {
+    pub async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting Pod");
+        let pod_name = format!("{prefix}-{POD_NAME_SUFFIX}");
         let dp = DeleteParams::default();
-        match self.pods_api.delete(POD_NAME, &dp).await {
+        match self.pods_api.delete(&pod_name, &dp).await {
             Ok(_) => {}
             Err(e) => match e {
                 kube::Error::Api(ref er) => {
