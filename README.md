@@ -19,7 +19,7 @@ cargo run --example stdout -- --db-host localhost --db-port 5432 --db-name postg
 
 In the above example, `pg_replicate` connects to a Postgres database named `postgres` running on `localhost:5432` with a username `postgres` and password `password`. The slot name `stdout_slot` will be created by `pg_replicate` automatically.
 
-Refer to the [examples](https://github.com/imor/pg_replicate/tree/main/pg_replicate/examples) folder to run examples for sinks other than `stdout` (currently only `bigquery` and `duckdb` supported). A quick tip: to see all the command line options is to just run e.g. `cargo run --example bigquery` which will print the detailed usage instructions for the `bigquery` sink.
+Refer to the [examples](https://github.com/imor/pg_replicate/tree/main/pg_replicate/examples) folder to run examples for sinks other than `stdout` (currently only `bigquery` and `duckdb` supported). A quick tip: to see all the command line options, run the example wihout any options specified, e.g. `cargo run --example bigquery` will print the detailed usage instructions for the `bigquery` sink.
 
 ## Getting Started
 
