@@ -108,6 +108,8 @@ The repository is a cargo workspace. Each of the individual sub-folders are crat
 - [ ] Add ClickHouse Sink
 - [ ] Many more to come...
 
+Note: DuckDb and MotherDuck sinks do no use the batched pipeline, hence they currently perform poorly. A batched pipeline version of these sinks is planned.
+
 See the [open issues](https://github.com/imor/pg_replicate/issues) for a full list of proposed features (and known issues).
 
 ## License
