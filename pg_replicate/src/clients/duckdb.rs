@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::Path};
 use duckdb::{
     params_from_iter,
     types::{Null, ToSqlOutput},
-    Connection, ToSql,
+    Config, Connection, ToSql,
 };
 use tokio_postgres::types::{PgLsn, Type};
 
@@ -25,6 +25,15 @@ impl DuckDbClient {
 
     pub fn open_file<P: AsRef<Path>>(file_name: P) -> Result<DuckDbClient, duckdb::Error> {
         let conn = Connection::open(file_name)?;
+        Ok(DuckDbClient { conn })
+    }
+
+    pub fn open_mother_duck(access_token: &str) -> Result<DuckDbClient, duckdb::Error> {
+        let conf = Config::default()
+            .with("motherduck_token", access_token)?
+            .with("custom_user_agent", "pg_replicate")?;
+
+        let conn = Connection::open_with_flags("md:my_db", conf)?;
         Ok(DuckDbClient { conn })
     }
 

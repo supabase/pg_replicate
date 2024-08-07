@@ -44,9 +44,20 @@ struct DbArgs {
     #[arg(long)]
     db_password: Option<String>,
 
+    #[clap(flatten)]
+    duckdb: DuckDbOptions,
+}
+
+#[derive(Debug, clap::Args)]
+#[group(required = true, multiple = false)]
+pub struct DuckDbOptions {
     /// DuckDb file name
-    #[arg(long)]
-    duckdb_file: String,
+    #[clap(long)]
+    duckdb_file: Option<String>,
+
+    /// motherduck access token
+    #[clap(long)]
+    motherduck_access_token: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -111,7 +122,16 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let duckdb_sink = DuckDbSink::file(db_args.duckdb_file).await?;
+    let duckdb_sink = match (
+        db_args.duckdb.duckdb_file,
+        db_args.duckdb.motherduck_access_token,
+    ) {
+        (Some(duckdb_file), None) => DuckDbSink::file(duckdb_file).await?,
+        (None, Some(access_token)) => DuckDbSink::mother_duck(&access_token).await?,
+        _ => {
+            unreachable!()
+        }
+    };
 
     let mut pipeline = DataPipeline::new(postgres_source, duckdb_sink, action);
 
