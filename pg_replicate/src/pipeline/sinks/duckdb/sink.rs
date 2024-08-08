@@ -43,10 +43,13 @@ impl DuckDbSink {
         })
     }
 
-    pub async fn mother_duck(access_token: &str) -> Result<DuckDbSink, duckdb::Error> {
+    pub async fn mother_duck(
+        access_token: &str,
+        db_name: &str,
+    ) -> Result<DuckDbSink, duckdb::Error> {
         let (req_sender, req_receiver) = channel(CHANNEL_SIZE);
         let (res_sender, res_receiver) = channel(CHANNEL_SIZE);
-        let client = DuckDbClient::open_mother_duck(access_token)?;
+        let client = DuckDbClient::open_mother_duck(access_token, db_name)?;
         let executor = DuckDbExecutor {
             client,
             req_receiver,

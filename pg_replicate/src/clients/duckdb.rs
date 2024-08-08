@@ -28,12 +28,15 @@ impl DuckDbClient {
         Ok(DuckDbClient { conn })
     }
 
-    pub fn open_mother_duck(access_token: &str) -> Result<DuckDbClient, duckdb::Error> {
+    pub fn open_mother_duck(
+        access_token: &str,
+        db_name: &str,
+    ) -> Result<DuckDbClient, duckdb::Error> {
         let conf = Config::default()
             .with("motherduck_token", access_token)?
             .with("custom_user_agent", "pg_replicate")?;
 
-        let conn = Connection::open_with_flags("md:my_db", conf)?;
+        let conn = Connection::open_with_flags(format!("md:{db_name}"), conf)?;
         Ok(DuckDbClient { conn })
     }
 
