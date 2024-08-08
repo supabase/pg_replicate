@@ -8,5 +8,3 @@ database:
 application:
   host: "127.0.0.1"
   port: 8000
-worker:
-  poll_interval_secs: 10
