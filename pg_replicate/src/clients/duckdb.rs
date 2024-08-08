@@ -14,18 +14,27 @@ use crate::{
 
 pub struct DuckDbClient {
     conn: Connection,
+    current_database: String,
 }
 
 //TODO: fix all sql injections
 impl DuckDbClient {
     pub fn open_in_memory() -> Result<DuckDbClient, duckdb::Error> {
         let conn = Connection::open_in_memory()?;
-        Ok(DuckDbClient { conn })
+        let current_database = Self::current_database(&conn)?;
+        Ok(DuckDbClient {
+            conn,
+            current_database,
+        })
     }
 
     pub fn open_file<P: AsRef<Path>>(file_name: P) -> Result<DuckDbClient, duckdb::Error> {
         let conn = Connection::open(file_name)?;
-        Ok(DuckDbClient { conn })
+        let current_database = Self::current_database(&conn)?;
+        Ok(DuckDbClient {
+            conn,
+            current_database,
+        })
     }
 
     pub fn open_mother_duck(
@@ -37,7 +46,21 @@ impl DuckDbClient {
             .with("custom_user_agent", "pg_replicate")?;
 
         let conn = Connection::open_with_flags(format!("md:{db_name}"), conf)?;
-        Ok(DuckDbClient { conn })
+        let current_database = Self::current_database(&conn)?;
+        Ok(DuckDbClient {
+            conn,
+            current_database,
+        })
+    }
+
+    fn current_database(conn: &Connection) -> Result<String, duckdb::Error> {
+        let mut stmt = conn.prepare("select current_database()")?;
+        let mut rows = stmt.query([])?;
+
+        let row = rows
+            .next()?
+            .expect("no rows returned when getting current database");
+        row.get(0)
     }
 
     pub fn create_schema_if_missing(&self, schema_name: &str) -> Result<(), duckdb::Error> {
@@ -55,9 +78,10 @@ impl DuckDbClient {
     }
 
     pub fn schema_exists(&self, schema_name: &str) -> Result<bool, duckdb::Error> {
-        let query = "select * from information_schema.schemata where schema_name = ?;";
+        let query =
+            "select * from information_schema.schemata where catalog_name = ? and schema_name = ?;";
         let mut stmt = self.conn.prepare(query)?;
-        let exists = stmt.exists([schema_name])?;
+        let exists = stmt.exists([&self.current_database, schema_name])?;
         Ok(exists)
     }
 
@@ -127,9 +151,9 @@ impl DuckDbClient {
 
     pub fn table_exists(&self, table_name: &TableName) -> Result<bool, duckdb::Error> {
         let query =
-            "select * from information_schema.tables where table_schema = ? and table_name = ?;";
+            "select * from information_schema.tables where table_catalog = ? and table_schema = ? and table_name = ?;";
         let mut stmt = self.conn.prepare(query)?;
-        let exists = stmt.exists([&table_name.schema, &table_name.name])?;
+        let exists = stmt.exists([&self.current_database, &table_name.schema, &table_name.name])?;
         Ok(exists)
     }
 
