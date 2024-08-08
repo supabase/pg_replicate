@@ -49,24 +49,23 @@ struct DbArgs {
 }
 
 #[derive(Debug, clap::Args)]
+#[group(required = true, multiple = true)]
 pub struct DuckDbOptions {
     /// DuckDb file name
     #[clap(long)]
     duckdb_file: Option<String>,
 
-    #[clap(flatten)]
-    motherduck: Option<MotherDuckOptions>,
-}
-
-#[derive(Debug, Args)]
-struct MotherDuckOptions {
     /// MotherDuck access token
-    #[clap(long)]
-    motherduck_access_token: String,
+    #[clap(long, conflicts_with = "duckdb_file", requires = "motherduck_db_name")]
+    motherduck_access_token: Option<String>,
 
     /// MotherDuck database name
-    #[clap(long)]
-    motherduck_db_name: String,
+    #[clap(
+        long,
+        conflicts_with = "duckdb_file",
+        requires = "motherduck_access_token"
+    )]
+    motherduck_db_name: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -131,14 +130,14 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let duckdb_sink = match (db_args.duckdb.duckdb_file, db_args.duckdb.motherduck) {
-        (Some(duckdb_file), None) => DuckDbSink::file(duckdb_file).await?,
-        (None, Some(motherduck)) => {
-            DuckDbSink::mother_duck(
-                &motherduck.motherduck_access_token,
-                &motherduck.motherduck_db_name,
-            )
-            .await?
+    let duckdb_sink = match (
+        db_args.duckdb.duckdb_file,
+        db_args.duckdb.motherduck_access_token,
+        db_args.duckdb.motherduck_db_name,
+    ) {
+        (Some(duckdb_file), None, None) => DuckDbSink::file(duckdb_file).await?,
+        (None, Some(access_token), Some(db_name)) => {
+            DuckDbSink::mother_duck(&access_token, &db_name).await?
         }
         _ => {
             unreachable!()
