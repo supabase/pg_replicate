@@ -118,7 +118,7 @@ Distributed under the Apache-2.0 License. See `LICENSE` for more information.
 
 ## Docker
 
-To create the docker image for replicator run `docker build -f ./replicator/Dockerfile .` from the root of the repo.
+To create the docker image for `replicator` run `docker build -f ./replicator/Dockerfile .` from the root of the repo. Similarly, to create the docker image for `api` run `docker build -f ./api/Dockerfile .`.
 
 ## Design
 
