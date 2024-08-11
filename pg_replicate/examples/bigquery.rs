@@ -11,6 +11,7 @@ use pg_replicate::{
     table::TableName,
 };
 use tracing::error;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Parser)]
 #[command(name = "bigquery", version, about, arg_required_else_help = true)]
@@ -90,8 +91,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "bigquery=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+}
+
 async fn main_impl() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
+    init_tracing();
 
     let args = AppArgs::parse();
     let db_args = args.db_args;
