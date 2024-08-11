@@ -27,4 +27,6 @@ clap = { workspace = true, default-features = true, features = [
     "std",
     "derive",
 ] }
-tracing-subscriber = { workspace = true, default-features = true }
+tracing-subscriber = { workspace = true, default-features = true, features = [
+    "env-filter",
+] }
