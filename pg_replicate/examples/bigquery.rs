@@ -104,6 +104,10 @@ fn init_tracing() {
 async fn main_impl() -> Result<(), Box<dyn Error>> {
     init_tracing();
 
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("failed to install default crypto provider");
+
     let args = AppArgs::parse();
     let db_args = args.db_args;
     let bq_args = args.bq_args;

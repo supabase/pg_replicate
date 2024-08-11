@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs, time::Duration};
+use std::{collections::HashSet, fs};
 
 use bytes::{Buf, BufMut};
 use futures::StreamExt;
@@ -14,9 +14,8 @@ use gcp_bigquery_client::{
     Client,
 };
 use prost::Message;
-use tokio::time::sleep;
 use tokio_postgres::types::{PgLsn, Type};
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::{
     conversions::table_row::{Cell, TableRow},
@@ -496,33 +495,7 @@ impl BigQueryClient {
             .job()
             .query(&self.project_id, QueryRequest::new(query))
             .await?;
-
-        if query_response.job_complete.unwrap_or(false) {
-            debug!("job complete. returning result set");
-            Ok(ResultSet::new_from_query_response(query_response))
-        } else {
-            let job_id = query_response
-                .job_reference
-                .as_ref()
-                .expect("missing job reference")
-                .job_id
-                .as_ref()
-                .expect("missing job id");
-            loop {
-                debug!("job incomplete. waiting for 5 seconds");
-                sleep(Duration::from_secs(5)).await;
-                let result = self
-                    .client
-                    .job()
-                    .get_query_results(&self.project_id, job_id, Default::default())
-                    .await?;
-                if result.job_complete.unwrap_or(false) {
-                    debug!("job complete. returning result set");
-                    let result_set = ResultSet::new_from_get_query_results_response(result);
-                    break Ok(result_set);
-                }
-            }
-        }
+        Ok(query_response)
     }
 }
 
