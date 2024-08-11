@@ -9,6 +9,7 @@ use pg_replicate::pipeline::{
     PipelineAction,
 };
 use tracing::{error, info};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod configuration;
 
@@ -23,8 +24,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "replicator=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+}
+
 async fn main_impl() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
+    init_tracing();
 
     let settings = get_configuration()?;
 
