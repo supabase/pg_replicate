@@ -109,6 +109,6 @@ jobs:
       - name: Build and push api image
         uses: docker/build-push-action@v6
         with:
-          context: api
+          context: ./api
           push: true
           tags: ramsup/api:0.0.8
