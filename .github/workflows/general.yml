@@ -111,4 +111,4 @@ jobs:
         with:
           context: ${GITHUB_WORKSPACE}/api
           push: true
-          tags: ramsup/api:0.0.8
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/api:0.0.8
