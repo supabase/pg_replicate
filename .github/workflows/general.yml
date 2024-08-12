@@ -109,6 +109,6 @@ jobs:
       - name: Build and push api image
         uses: docker/build-push-action@v6
         with:
-          context: ${GITHUB_WORKSPACE}/api
+          file: ./api/Dockerfile
           push: true
           tags: ${{ vars.DOCKERHUB_USERNAME }}/api:0.0.8
