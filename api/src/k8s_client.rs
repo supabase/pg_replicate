@@ -147,7 +147,11 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_stateful_set(&self, prefix: &str) -> Result<(), K8sError> {
+    pub async fn create_or_update_stateful_set(
+        &self,
+        prefix: &str,
+        replicator_image: &str,
+    ) -> Result<(), K8sError> {
         info!("patching stateful set");
 
         let stateful_set_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}");
@@ -186,7 +190,7 @@ impl K8sClient {
                 "containers": [
                   {
                     "name": container_name,
-                    "image": "ramsup/replicator:0.0.7",
+                    "image": replicator_image,
                     "env": [
                       {
                         "name": "APP_ENVIRONMENT",

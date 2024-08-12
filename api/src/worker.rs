@@ -83,7 +83,7 @@ pub async fn try_execute_task(
                 .create_or_update_config_map(&project_ref, base_config, &prod_config)
                 .await?;
             k8s_client
-                .create_or_update_stateful_set(&project_ref)
+                .create_or_update_stateful_set(&project_ref, &settings.replicator_image)
                 .await?;
         }
         Request::Delete { project_ref } => {
