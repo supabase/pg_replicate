@@ -111,4 +111,10 @@ jobs:
         with:
           file: ./api/Dockerfile
           push: true
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/api:0.0.8
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/api:0.0.9
+      - name: Build and push replicator image
+        uses: docker/build-push-action@v6
+        with:
+          file: ./replicator/Dockerfile
+          push: true
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/replicator:0.0.9
