@@ -93,7 +93,6 @@ For more examples, please refer to the [examples](https://github.com/imor/pg_rep
 The repository is a cargo workspace. Each of the individual sub-folders are crate in the workspace. A brief explanation of each crate is as follows:
 
 - `api` - REST api used for hosting `pg_replicate` in a cloud environment.
-- `config-types` - Common types for configuration used in projects across the workspace.
 - `pg_replicate` - The main library crate containing the core logic.
 - `replicator` - A binary crate using `pg_replicate`. Packaged as a docker container for use in cloud hosting.
 
