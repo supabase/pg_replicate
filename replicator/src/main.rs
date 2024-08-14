@@ -1,7 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use config_types::{BatchSettings, SinkSettings, SourceSettings};
-use configuration::get_configuration;
+use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings};
 use pg_replicate::pipeline::{
     batching::{data_pipeline::BatchDataPipeline, BatchConfig},
     sinks::bigquery::BigQueryBatchSink,

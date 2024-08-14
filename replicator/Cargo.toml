@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 config = { workspace = true, features = ["yaml"] }
-config-types = { path = "../config-types" }
 pg_replicate = { path = "../pg_replicate" }
 rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 secrecy = { workspace = true, features = ["serde"] }
