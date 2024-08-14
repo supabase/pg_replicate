@@ -106,16 +106,12 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        run: echo "$GITHUB_CONTEXT"
       - name: Build and push api image
         uses: docker/build-push-action@v6
         with:
           file: ./api/Dockerfile
           push: true
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/api:${{ github.head_ref }}.${{ github.sha }}
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/api:${{ github.head_ref || github.ref_name }}.${{ github.sha }}
       - name: Build and push replicator image
         uses: docker/build-push-action@v6
         with:
