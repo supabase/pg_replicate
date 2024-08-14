@@ -106,20 +106,15 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Declare branch and short_sha variables
-        shell: bash
-        run: |
-          echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> "$GITHUB_ENV"
-          echo "short_sha=$(git rev-parse --short "$GITHUB_SHA")" >> "$GITHUB_ENV"
       - name: Build and push api image
         uses: docker/build-push-action@v6
         with:
           file: ./api/Dockerfile
           push: true
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/api:${{ env.branch }}.${{ env.short_sha }}
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/api:${{ github.head_ref }}.${{ github.sha }}
       - name: Build and push replicator image
         uses: docker/build-push-action@v6
         with:
           file: ./replicator/Dockerfile
           push: true
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/replicator:${{ env.branch }}.${{ env.short_sha }}
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/replicator:${{ github.head_ref }}.${{ github.sha }}
