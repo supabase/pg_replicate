@@ -98,11 +98,11 @@ pub async fn try_execute_task(
         }
         Request::CreateOrUpdateConfig {
             project_ref,
-            config: settings,
+            config,
         } => {
             info!("creating config map for project ref: {}", project_ref);
             let base_config = "";
-            let prod_config = serde_json::to_string(&settings)?;
+            let prod_config = serde_json::to_string(&config)?;
             k8s_client
                 .create_or_update_config_map(&project_ref, base_config, &prod_config)
                 .await?;
