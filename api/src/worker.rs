@@ -24,15 +24,16 @@ async fn worker_loop(pool: PgPool, poll_duration: Duration) -> Result<(), anyhow
         match try_execute_task(&pool, &k8s_client).await {
             Ok(ExecutionOutcome::EmptyQueue) => {
                 debug!("no task in queue");
+                tokio::time::sleep(poll_duration).await;
             }
             Ok(ExecutionOutcome::TaskCompleted) => {
                 debug!("successfully executed task");
             }
             Err(e) => {
                 error!("error while executing task: {e:#?}");
+                tokio::time::sleep(poll_duration).await;
             }
         }
-        tokio::time::sleep(poll_duration).await;
     }
 }
 
