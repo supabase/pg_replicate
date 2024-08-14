@@ -206,7 +206,8 @@ impl K8sClient {
 
         let stateful_set_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}");
         let container_name = format!("{prefix}-{CONTAINER_NAME_SUFFIX}");
-        let secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
+        let postgres_secret_name = format!("{prefix}-{POSTGRES_SECRET_NAME_SUFFIX}");
+        let bq_secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
         let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
 
         let stateful_set_json = json!({
@@ -247,10 +248,19 @@ impl K8sClient {
                         "value": "prod"
                       },
                       {
+                        "name": "APP_SOURCE__POSTGRES__PASSWORD",
+                        "valueFrom": {
+                          "secretKeyRef": {
+                            "name": postgres_secret_name,
+                            "key": "password"
+                          }
+                        }
+                      },
+                      {
                         "name": "APP_SINK__BIGQUERY__SERVICE_ACCOUNT_KEY",
                         "valueFrom": {
                           "secretKeyRef": {
-                            "name": secret_name,
+                            "name": bq_secret_name,
                             "key": "service-account-key"
                           }
                         }
