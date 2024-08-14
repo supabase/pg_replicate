@@ -27,7 +27,8 @@ pub struct K8sClient {
     pods_api: Api<Pod>,
 }
 
-const SECRET_NAME_SUFFIX: &str = "bq-service-account-key";
+const BQ_SECRET_NAME_SUFFIX: &str = "bq-service-account-key";
+const POSTGRES_SECRET_NAME_SUFFIX: &str = "postgres-password";
 const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
 const STATEFUL_SET_NAME_SUFFIX: &str = "replicator";
 const CONTAINER_NAME_SUFFIX: &str = "replicator";
@@ -49,14 +50,44 @@ impl K8sClient {
         })
     }
 
-    pub async fn create_or_update_secret(
+    pub async fn create_or_update_postgres_secret(
+        &self,
+        prefix: &str,
+        postgres_password: &str,
+    ) -> Result<(), K8sError> {
+        info!("patching postgres secret");
+
+        let secret_name = format!("{prefix}-{POSTGRES_SECRET_NAME_SUFFIX}");
+        let secret_json = json!({
+          "apiVersion": "v1",
+          "kind": "Secret",
+          "metadata": {
+            "name": secret_name
+          },
+          "type": "Opaque",
+          "stringData": {
+            "password": postgres_password,
+          }
+        });
+        let secret: Secret = serde_json::from_value(secret_json)?;
+
+        let pp = PatchParams::apply(&secret_name);
+        self.secrets_api
+            .patch(&secret_name, &pp, &Patch::Apply(secret))
+            .await?;
+        info!("patched postgres secret");
+
+        Ok(())
+    }
+
+    pub async fn create_or_update_bq_secret(
         &self,
         prefix: &str,
         bq_service_account_key: &str,
     ) -> Result<(), K8sError> {
-        info!("patching secret");
+        info!("patching bq secret");
 
-        let secret_name = format!("{prefix}-{SECRET_NAME_SUFFIX}");
+        let secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
         let secret_json = json!({
           "apiVersion": "v1",
           "kind": "Secret",
@@ -74,14 +105,14 @@ impl K8sClient {
         self.secrets_api
             .patch(&secret_name, &pp, &Patch::Apply(secret))
             .await?;
-        info!("patched secret");
+        info!("patched bq secret");
 
         Ok(())
     }
 
-    pub async fn delete_secret(&self, prefix: &str) -> Result<(), K8sError> {
-        info!("deleting secret");
-        let secret_name = format!("{prefix}-{SECRET_NAME_SUFFIX}");
+    pub async fn delete_postgres_secret(&self, prefix: &str) -> Result<(), K8sError> {
+        info!("deleting postgres secret");
+        let secret_name = format!("{prefix}-{POSTGRES_SECRET_NAME_SUFFIX}");
         let dp = DeleteParams::default();
         match self.secrets_api.delete(&secret_name, &dp).await {
             Ok(_) => {}
@@ -94,7 +125,26 @@ impl K8sClient {
                 e => return Err(e.into()),
             },
         }
-        info!("deleted secret");
+        info!("deleted postgres secret");
+        Ok(())
+    }
+
+    pub async fn delete_bq_secret(&self, prefix: &str) -> Result<(), K8sError> {
+        info!("deleting bq secret");
+        let secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
+        let dp = DeleteParams::default();
+        match self.secrets_api.delete(&secret_name, &dp).await {
+            Ok(_) => {}
+            Err(e) => match e {
+                kube::Error::Api(ref er) => {
+                    if er.code != 404 {
+                        return Err(e.into());
+                    }
+                }
+                e => return Err(e.into()),
+            },
+        }
+        info!("deleted bq secret");
         Ok(())
     }
 
@@ -156,7 +206,7 @@ impl K8sClient {
 
         let stateful_set_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}");
         let container_name = format!("{prefix}-{CONTAINER_NAME_SUFFIX}");
-        let secret_name = format!("{prefix}-{SECRET_NAME_SUFFIX}");
+        let secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
         let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
 
         let stateful_set_json = json!({

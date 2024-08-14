@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use config_types::SinkSettings;
 use sqlx::PgPool;
 use tracing::{debug, info};
 use tracing_log::log::error;
@@ -9,6 +8,7 @@ use crate::{
     configuration::Settings,
     k8s_client::K8sClient,
     queue::{delete_task, dequeue_task},
+    replicator_config,
     startup::get_connection_pool,
 };
 
@@ -36,14 +36,34 @@ async fn worker_loop(pool: PgPool, poll_duration: Duration) -> Result<(), anyhow
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct Secrets {
+    postgres_password: String,
+    bigquery_service_account_key: String,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum Request {
-    CreateOrUpdate {
+    CreateOrUpdateSecrets {
         project_ref: String,
-        settings: config_types::Settings,
+        secrets: Secrets,
     },
-    Delete {
+    CreateOrUpdateConfig {
+        project_ref: String,
+        config: replicator_config::Config,
+    },
+    CreateOrUpdateReplicator {
+        project_ref: String,
+        replicator_image: String,
+    },
+    DeleteSecrets {
+        project_ref: String,
+    },
+    DeleteConfig {
+        project_ref: String,
+    },
+    DeleteReplicator {
         project_ref: String,
     },
 }
@@ -60,37 +80,58 @@ pub async fn try_execute_task(
     let request = serde_json::from_value::<Request>(task.data)?;
 
     match request {
-        Request::CreateOrUpdate {
+        Request::CreateOrUpdateSecrets {
             project_ref,
-            settings,
+            secrets,
         } => {
-            info!(
-                "creating or updating k8s objects for project ref: {}",
-                project_ref
-            );
-
-            let SinkSettings::BigQuery {
-                project_id: _,
-                dataset_id: _,
-                service_account_key,
-            } = &settings.sink;
+            info!("creating secrets for project ref: {}", project_ref);
+            let Secrets {
+                postgres_password,
+                bigquery_service_account_key,
+            } = secrets;
             k8s_client
-                .create_or_update_secret(&project_ref, service_account_key)
+                .create_or_update_postgres_secret(&project_ref, &postgres_password)
                 .await?;
+            k8s_client
+                .create_or_update_bq_secret(&project_ref, &bigquery_service_account_key)
+                .await?;
+        }
+        Request::CreateOrUpdateConfig {
+            project_ref,
+            config: settings,
+        } => {
+            info!("creating config map for project ref: {}", project_ref);
             let base_config = "";
             let prod_config = serde_json::to_string(&settings)?;
             k8s_client
                 .create_or_update_config_map(&project_ref, base_config, &prod_config)
                 .await?;
+        }
+        Request::CreateOrUpdateReplicator {
+            project_ref,
+            replicator_image,
+        } => {
+            info!(
+                "creating or updating stateful set for project ref: {}",
+                project_ref
+            );
+
             k8s_client
-                .create_or_update_stateful_set(&project_ref, &settings.replicator_image)
+                .create_or_update_stateful_set(&project_ref, &replicator_image)
                 .await?;
         }
-        Request::Delete { project_ref } => {
-            info!("deleting project ref: {}", project_ref);
-            k8s_client.delete_stateful_set(&project_ref).await?;
+        Request::DeleteSecrets { project_ref } => {
+            info!("deleting secrets for project ref: {}", project_ref);
+            k8s_client.delete_postgres_secret(&project_ref).await?;
+            k8s_client.delete_bq_secret(&project_ref).await?;
+        }
+        Request::DeleteConfig { project_ref } => {
+            info!("deleting config map for project ref: {}", project_ref);
             k8s_client.delete_config_map(&project_ref).await?;
-            k8s_client.delete_secret(&project_ref).await?;
+        }
+        Request::DeleteReplicator { project_ref } => {
+            info!("deleting stateful set for project ref: {}", project_ref);
+            k8s_client.delete_stateful_set(&project_ref).await?;
         }
     }
 
