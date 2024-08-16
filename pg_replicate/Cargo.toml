@@ -5,6 +5,14 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[example]]
+name = "bigquery"
+required-features = ["bigquery"]
+
+[[example]]
+name = "duckdb"
+required-features = ["duckdb"]
+
 [dependencies]
 async-trait = { workspace = true }
 bytes = { workspace = true }
