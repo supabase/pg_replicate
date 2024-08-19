@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 config = { workspace = true, features = ["yaml"] }
-pg_replicate = { path = "../pg_replicate" }
+pg_replicate = { path = "../pg_replicate", features = ["bigquery"] }
 rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }

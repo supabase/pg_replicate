@@ -59,7 +59,7 @@ jobs:
           key: sqlx
       - name: Run non-api tests
         run: |
-          cargo test --workspace --exclude api
+          cargo test --workspace --all-features --exclude api
 
   fmt:
     name: Rustfmt
@@ -95,7 +95,7 @@ jobs:
         uses: actions/checkout@v3
       - name: Generate code coverage
         run: |
-          cargo tarpaulin --verbose --workspace
+          cargo tarpaulin --verbose --workspace --all-features
   docker:
     runs-on: ubuntu-latest
     steps:
