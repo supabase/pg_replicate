@@ -13,6 +13,10 @@ required-features = ["bigquery"]
 name = "duckdb"
 required-features = ["duckdb"]
 
+[[example]]
+name = "stdout"
+required-features = ["stdout"]
+
 [dependencies]
 async-trait = { workspace = true }
 bytes = { workspace = true }
@@ -46,4 +50,5 @@ tracing-subscriber = { workspace = true, default-features = true, features = [
 [features]
 bigquery = ["dep:gcp-bigquery-client", "dep:prost"]
 duckdb = ["dep:duckdb"]
+stdout = []
 default = []

@@ -25,6 +25,7 @@ use self::duckdb::{DuckDbExecutorError, DuckDbRequest};
 pub mod bigquery;
 #[cfg(feature = "duckdb")]
 pub mod duckdb;
+#[cfg(feature = "stdout")]
 pub mod stdout;
 
 #[derive(Debug, Error)]
