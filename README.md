@@ -14,7 +14,7 @@ for table table1, table2;
 Then run the `stdout` example:
 
 ```
-cargo run --example stdout -- --db-host localhost --db-port 5432 --db-name postgres --db-username postgres --db-password password cdc my_publication stdout_slot
+cargo run -p pg_replicate --example stdout --features="stdout" -- --db-host localhost --db-port 5432 --db-name postgres --db-username postgres --db-password password cdc my_publication stdout_slot
 ```
 
 In the above example, `pg_replicate` connects to a Postgres database named `postgres` running on `localhost:5432` with a username `postgres` and password `password`. The slot name `stdout_slot` will be created by `pg_replicate` automatically.
@@ -27,10 +27,10 @@ To use `pg_replicate` in your Rust project, add it via a git dependency in `Carg
 
 ```toml
 [dependencies]
-pg_replicate = { git = "https://github.com/supabase/pg_replicate" }
+pg_replicate = { git = "https://github.com/supabase/pg_replicate", features = ["stdout"] }
 ```
 
-The git dependency is needed for now because `pg_replicate` is not yet published on crates.io. You'd also need to add a dependency to tokio:
+Each sink is behind a feature of the same name, so remember to enable the right feature. The git dependency is needed for now because `pg_replicate` is not yet published on crates.io. You'd also need to add a dependency to tokio:
 
 ```toml
 [dependencies]
@@ -87,6 +87,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 ```
 
 For more examples, please refer to the [examples](https://github.com/imor/pg_replicate/tree/main/pg_replicate/examples) folder in the source.
+
+## Features
+
+The `pg_replicate` crate has the following features:
+
+* duckdb
+* bigquery
+* stdout
+
+Each feature enables the corresponding sink of the same name.
+
+## Running the Examples
+
+To run the `pg_replicate` examples from the root of the repository, use the following command:
+
+`cargo run -p pg_replicate --example <example_name> --features="<example_name>" ...`
+
+In the above command we ask cargo to run the examples from the `pg_replicate` crate in the workspace. We also enable the right features needed for the example. Usually the feature is named the same as the example. E.g.:
+
+`cargo run -p pg_replicate --example duckdb --features="duckdb"`
+
+If you are inside the `pg_replicate` folder inside the root, then you can omit the `-p pg_replicate` part from the command.
 
 ## Repository Structure
 
