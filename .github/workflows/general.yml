@@ -22,9 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: sqlx
+      # - uses: Swatinem/rust-cache@v2
+      #   with:
+      #     key: sqlx
       - name: Install sqlx-cli
         run: cargo install sqlx-cli
           --features native-tls,postgres
@@ -54,9 +54,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: sqlx
+      # - uses: Swatinem/rust-cache@v2
+      #   with:
+      #     key: sqlx
       - name: Run non-api tests
         run: |
           cargo test --workspace --all-features --exclude api
@@ -80,7 +80,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      # - uses: Swatinem/rust-cache@v2
       - name: Linting
         run: cargo clippy -- -D warnings
 
