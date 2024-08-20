@@ -15,10 +15,11 @@ async fn tenant_can_be_saved() {
 
     // Assert
     assert!(response.status().is_success());
-    let _response: TenantIdResponse = response
+    let response: TenantIdResponse = response
         .json()
         .await
-        .expect("failed to deserialize into a TeantResponse");
+        .expect("failed to deserialize response");
+    assert_eq!(response.id, 1);
 }
 
 #[tokio::test]
