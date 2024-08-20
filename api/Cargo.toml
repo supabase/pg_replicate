@@ -40,4 +40,4 @@ tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["registry", "env-filter"] }
 
 [dev-dependencies]
-reqwest = "0.12"
+reqwest = { version = "0.12", features = ["json"] }
