@@ -106,3 +106,38 @@ async fn an_non_existing_tenant_cant_be_updated() {
     // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn an_existing_tenant_can_be_deleted() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant = TenantRequest {
+        name: "NewTenant".to_string(),
+    };
+    let response = app.create_tenant(&tenant).await;
+    let response: TenantIdResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let tenant_id = response.id;
+
+    // Act
+    let response = app.delete_tenant(tenant_id).await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response = app.read_tenant(tenant_id).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn an_non_existing_tenant_cant_be_deleted() {
+    // Arrange
+    let app = spawn_app().await;
+
+    // Act
+    let response = app.delete_tenant(42).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

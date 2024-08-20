@@ -1,5 +1,5 @@
 use actix_web::{
-    get,
+    delete, get,
     http::StatusCode,
     post,
     web::{Data, Json, Path},
@@ -79,6 +79,18 @@ pub async fn update_tenant(
 ) -> Result<impl Responder, TenantError> {
     let tenant_id = tenant_id.into_inner();
     db::tenants::update_tenant(&pool, tenant_id, &tenant.0.name)
+        .await?
+        .ok_or(TenantError::NotFound(tenant_id))?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[delete("/tenants/{tenant_id}")]
+pub async fn delete_tenant(
+    pool: Data<PgPool>,
+    tenant_id: Path<i64>,
+) -> Result<impl Responder, TenantError> {
+    let tenant_id = tenant_id.into_inner();
+    db::tenants::delete_tenant(&pool, tenant_id)
         .await?
         .ok_or(TenantError::NotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())

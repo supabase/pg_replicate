@@ -55,6 +55,14 @@ impl TestApp {
             .await
             .expect("Failed to execute request.")
     }
+
+    pub async fn delete_tenant(&self, tenant_id: i64) -> reqwest::Response {
+        self.api_client
+            .delete(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {

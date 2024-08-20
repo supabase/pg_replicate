@@ -58,3 +58,18 @@ pub async fn update_tenant(
 
     Ok(record.map(|r| r.id))
 }
+
+pub async fn delete_tenant(pool: &PgPool, tenant_id: i64) -> Result<Option<i64>, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        delete from tenants
+        where id = $1
+        returning id
+        "#,
+        tenant_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| r.id))
+}
