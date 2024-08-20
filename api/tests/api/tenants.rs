@@ -1,3 +1,5 @@
+use reqwest::StatusCode;
+
 use crate::helpers::{spawn_app, TenantIdResponse, TenantRequest, TenantResponse};
 
 #[tokio::test]
@@ -20,7 +22,7 @@ async fn tenant_can_be_saved() {
 }
 
 #[tokio::test]
-async fn tenant_can_be_read() {
+async fn an_existing_tenant_can_be_read() {
     // Arrange
     let app = spawn_app().await;
     let tenant = TenantRequest {
@@ -44,4 +46,16 @@ async fn tenant_can_be_read() {
         .expect("failed to deserialize response");
     assert_eq!(response.id, tenant_id);
     assert_eq!(response.name, tenant.name);
+}
+
+#[tokio::test]
+async fn an_non_existing_tenant_cant_be_read() {
+    // Arrange
+    let app = spawn_app().await;
+
+    // Act
+    let response = app.get_tenant(42).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

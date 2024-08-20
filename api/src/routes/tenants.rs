@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
+use crate::db;
+
 #[derive(Deserialize)]
 struct PostTenantRequest {
     name: String,
@@ -38,11 +40,11 @@ impl ResponseError for TenantError {
 }
 
 #[post("/tenants")]
-pub async fn post_tenant(
+pub async fn create_tenant(
     pool: Data<PgPool>,
     tenant: Json<PostTenantRequest>,
 ) -> Result<impl Responder, TenantError> {
-    let id = save_tenant(&pool, tenant.0).await?;
+    let id = db::tenants::save_tenant(&pool, &tenant.0.name).await?;
     let response = PostTenantResponse { id };
     Ok(Json(response))
 }
@@ -54,49 +56,17 @@ struct GetTenantResponse {
 }
 
 #[get("/tenants/{tenant_id}")]
-pub async fn get_tenant(
+pub async fn read_tenant(
     pool: Data<PgPool>,
     tenant_id: Path<i64>,
 ) -> Result<impl Responder, TenantError> {
     let tenant_id = tenant_id.into_inner();
-    let response = read_tenant(&pool, tenant_id)
+    let response = db::tenants::read_tenant(&pool, tenant_id)
         .await?
+        .map(|t| GetTenantResponse {
+            id: t.id,
+            name: t.name,
+        })
         .ok_or(TenantError::NotFound(tenant_id))?;
     Ok(Json(response))
-}
-
-async fn save_tenant(pool: &PgPool, tenant: PostTenantRequest) -> Result<i64, TenantError> {
-    let record = sqlx::query!(
-        r#"
-        insert into tenants (name)
-        values ($1)
-        returning id
-        "#,
-        tenant.name
-    )
-    .fetch_one(pool)
-    .await?;
-
-    Ok(record.id)
-}
-
-async fn read_tenant(
-    pool: &PgPool,
-    tenant_id: i64,
-) -> Result<Option<GetTenantResponse>, TenantError> {
-    let record = sqlx::query!(
-        r#"
-        select id, name
-        from tenants
-        where id = $1
-        "#,
-        tenant_id
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(record.map(|r| GetTenantResponse {
-        id: r.id,
-        name: r.name,
-    }))
 }
