@@ -8,7 +8,7 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     routes::{
         health_check::health_check,
-        tenants::{create_tenant, read_tenant},
+        tenants::{create_tenant, read_tenant, update_tenant},
     },
 };
 
@@ -51,7 +51,12 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
         App::new()
             .wrap(TracingLogger::default())
             .service(health_check)
-            .service(web::scope("v1").service(read_tenant).service(create_tenant))
+            .service(
+                web::scope("v1")
+                    .service(create_tenant)
+                    .service(read_tenant)
+                    .service(update_tenant),
+            )
             .app_data(connection_pool.clone())
     })
     .listen(listener)?

@@ -30,7 +30,7 @@ pub struct TenantResponse {
 }
 
 impl TestApp {
-    pub async fn post_tenant(&self, tenant: &TenantRequest) -> reqwest::Response {
+    pub async fn create_tenant(&self, tenant: &TenantRequest) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/v1/tenants", &self.address))
             .json(tenant)
@@ -39,12 +39,21 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn get_tenant(&self, tenant_id: i64) -> reqwest::Response {
+    pub async fn read_tenant(&self, tenant_id: i64) -> reqwest::Response {
         self.api_client
             .get(&format!("{}/v1/tenants/{tenant_id}", &self.address))
             .send()
             .await
             .expect("failed to execute request")
+    }
+
+    pub async fn update_tenant(&self, tenant_id: i64, tenant: &TenantRequest) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .json(tenant)
+            .send()
+            .await
+            .expect("Failed to execute request.")
     }
 }
 

@@ -3,7 +3,7 @@ use actix_web::{
     http::StatusCode,
     post,
     web::{Data, Json, Path},
-    Responder, ResponseError,
+    HttpResponse, Responder, ResponseError,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -39,20 +39,20 @@ impl ResponseError for TenantError {
     }
 }
 
+#[derive(Serialize)]
+struct GetTenantResponse {
+    id: i64,
+    name: String,
+}
+
 #[post("/tenants")]
 pub async fn create_tenant(
     pool: Data<PgPool>,
     tenant: Json<PostTenantRequest>,
 ) -> Result<impl Responder, TenantError> {
-    let id = db::tenants::save_tenant(&pool, &tenant.0.name).await?;
+    let id = db::tenants::create_tenant(&pool, &tenant.0.name).await?;
     let response = PostTenantResponse { id };
     Ok(Json(response))
-}
-
-#[derive(Serialize)]
-struct GetTenantResponse {
-    id: i64,
-    name: String,
 }
 
 #[get("/tenants/{tenant_id}")]
@@ -69,4 +69,17 @@ pub async fn read_tenant(
         })
         .ok_or(TenantError::NotFound(tenant_id))?;
     Ok(Json(response))
+}
+
+#[post("/tenants/{tenant_id}")]
+pub async fn update_tenant(
+    pool: Data<PgPool>,
+    tenant_id: Path<i64>,
+    tenant: Json<PostTenantRequest>,
+) -> Result<impl Responder, TenantError> {
+    let tenant_id = tenant_id.into_inner();
+    db::tenants::update_tenant(&pool, tenant_id, &tenant.0.name)
+        .await?
+        .ok_or(TenantError::NotFound(tenant_id))?;
+    Ok(HttpResponse::Ok().finish())
 }
