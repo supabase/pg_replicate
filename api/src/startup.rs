@@ -1,10 +1,13 @@
 use std::net::TcpListener;
 
-use actix_web::{dev::Server, get, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{dev::Server, web, App, HttpServer};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tracing_actix_web::TracingLogger;
 
-use crate::configuration::{DatabaseSettings, Settings};
+use crate::{
+    configuration::{DatabaseSettings, Settings},
+    routes::health_check::health_check,
+};
 
 pub struct Application {
     port: u16,
@@ -51,9 +54,4 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
     .run();
 
     Ok(server)
-}
-
-#[get("/health_check")]
-async fn health_check() -> impl Responder {
-    HttpResponse::Ok().body("ok")
 }
