@@ -6,7 +6,10 @@ use tracing_actix_web::TracingLogger;
 
 use crate::{
     configuration::{DatabaseSettings, Settings},
-    routes::{health_check::health_check, tenants::post_tenant},
+    routes::{
+        health_check::health_check,
+        tenants::{get_tenant, post_tenant},
+    },
 };
 
 pub struct Application {
@@ -48,7 +51,7 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
         App::new()
             .wrap(TracingLogger::default())
             .service(health_check)
-            .service(web::scope("v1").service(post_tenant))
+            .service(web::scope("v1").service(get_tenant).service(post_tenant))
             .app_data(connection_pool.clone())
     })
     .listen(listener)?

@@ -17,8 +17,14 @@ pub struct TenantRequest {
 }
 
 #[derive(Deserialize)]
+pub struct TenantIdResponse {
+    pub id: i64,
+}
+
+#[derive(Deserialize)]
 pub struct TenantResponse {
     pub id: i64,
+    pub name: String,
 }
 
 impl TestApp {
@@ -29,6 +35,14 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn get_tenant(&self, tenant_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .send()
+            .await
+            .expect("failed to execute request")
     }
 }
 
