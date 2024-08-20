@@ -42,15 +42,6 @@ jobs:
   test_non_api:
     name: Run non-API Tests
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -87,15 +78,6 @@ jobs:
   coverage:
     name: Code coverage
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
     container:
       image: xd009642/tarpaulin
       options: --security-opt seccomp=unconfined
@@ -104,7 +86,7 @@ jobs:
         uses: actions/checkout@v3
       - name: Generate code coverage
         run: |
-          cargo tarpaulin --verbose --workspace --all-features
+          cargo tarpaulin --verbose --workspace --all-features --exclude api
   docker:
     runs-on: ubuntu-latest
     steps:
