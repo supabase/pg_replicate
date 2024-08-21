@@ -8,6 +8,7 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     routes::{
         health_check::health_check,
+        sources::create_source,
         tenants::{create_tenant, delete_tenant, read_tenant, update_tenant},
     },
 };
@@ -56,7 +57,8 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(create_tenant)
                     .service(read_tenant)
                     .service(update_tenant)
-                    .service(delete_tenant),
+                    .service(delete_tenant)
+                    .service(create_source),
             )
             .app_data(connection_pool.clone())
     })

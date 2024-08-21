@@ -1,8 +1,8 @@
 use api::utils::generate_random_alpha_str;
 use reqwest::StatusCode;
 
-use crate::helpers::{
-    spawn_app, CreateTenantRequest, TenantIdResponse, TenantResponse, UpdateTenantRequest,
+use crate::test_app::{
+    spawn_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, UpdateTenantRequest,
 };
 
 #[tokio::test]
@@ -20,7 +20,7 @@ async fn tenant_can_be_created_with_supabase_project_ref() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: TenantIdResponse = response
+    let response: CreateTenantResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
@@ -53,7 +53,7 @@ async fn tenant_can_be_created_without_supabase_project_ref() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: TenantIdResponse = response
+    let response: CreateTenantResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
@@ -81,7 +81,7 @@ async fn an_existing_tenant_can_be_read() {
         supabase_project_ref: None,
     };
     let response = app.create_tenant(&tenant).await;
-    let response: TenantIdResponse = response
+    let response: CreateTenantResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
@@ -121,7 +121,7 @@ async fn an_existing_tenant_can_be_updated() {
         supabase_project_ref: None,
     };
     let response = app.create_tenant(&tenant).await;
-    let response: TenantIdResponse = response
+    let response: CreateTenantResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
@@ -168,7 +168,7 @@ async fn an_existing_tenant_can_be_deleted() {
         supabase_project_ref: None,
     };
     let response = app.create_tenant(&tenant).await;
-    let response: TenantIdResponse = response
+    let response: CreateTenantResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
