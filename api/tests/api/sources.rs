@@ -1,7 +1,8 @@
 use api::db::sources::SourceConfig;
 
 use crate::test_app::{
-    spawn_app, CreateSourceRequest, CreateSourceResponse, CreateTenantRequest, CreateTenantResponse,
+    spawn_app, CreateSourceRequest, CreateSourceResponse, CreateTenantRequest,
+    CreateTenantResponse, TestApp,
 };
 
 fn new_source_config() -> SourceConfig {
@@ -16,10 +17,7 @@ fn new_source_config() -> SourceConfig {
     }
 }
 
-#[tokio::test]
-async fn source_can_be_created() {
-    // Arrange
-    let app = spawn_app().await;
+async fn create_tenant(app: &TestApp) -> i64 {
     let tenant = CreateTenantRequest {
         name: "NewTenant".to_string(),
         supabase_project_ref: None,
@@ -29,7 +27,14 @@ async fn source_can_be_created() {
         .json()
         .await
         .expect("failed to deserialize response");
-    let tenant_id = response.id;
+    response.id
+}
+
+#[tokio::test]
+async fn source_can_be_created() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant_id = create_tenant(&app).await;
 
     // Act
     let source = CreateSourceRequest {
