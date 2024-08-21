@@ -17,7 +17,7 @@ fn new_source_config() -> SourceConfig {
 }
 
 #[tokio::test]
-async fn tenant_can_be_created_with_supabase_project_ref() {
+async fn source_can_be_created() {
     // Arrange
     let app = spawn_app().await;
     let tenant = CreateTenantRequest {
