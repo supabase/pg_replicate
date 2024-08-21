@@ -38,10 +38,9 @@ async fn source_can_be_created() {
 
     // Act
     let source = CreateSourceRequest {
-        tenant_id,
         config: new_source_config(),
     };
-    let response = app.create_source(&source).await;
+    let response = app.create_source(tenant_id, &source).await;
 
     // Assert
     assert!(response.status().is_success());
@@ -59,10 +58,9 @@ async fn an_existing_source_can_be_read() {
     let tenant_id = create_tenant(&app).await;
 
     let source = CreateSourceRequest {
-        tenant_id,
         config: new_source_config(),
     };
-    let response = app.create_source(&source).await;
+    let response = app.create_source(tenant_id, &source).await;
     let response: CreateSourceResponse = response
         .json()
         .await
@@ -70,7 +68,7 @@ async fn an_existing_source_can_be_read() {
     let source_id = response.id;
 
     // Act
-    let response = app.read_source(source_id, tenant_id).await;
+    let response = app.read_source(tenant_id, source_id).await;
 
     // Assert
     println!("RS: {}", response.status());

@@ -41,7 +41,6 @@ pub struct TenantResponse {
 
 #[derive(Serialize)]
 pub struct CreateSourceRequest {
-    pub tenant_id: i64,
     pub config: SourceConfig,
 }
 
@@ -96,16 +95,21 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn create_source(&self, source: &CreateSourceRequest) -> reqwest::Response {
+    pub async fn create_source(
+        &self,
+        tenant_id: i64,
+        source: &CreateSourceRequest,
+    ) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/v1/sources", &self.address))
+            .header("tenant_id", tenant_id)
             .json(source)
             .send()
             .await
             .expect("Failed to execute request.")
     }
 
-    pub async fn read_source(&self, source_id: i64, tenant_id: i64) -> reqwest::Response {
+    pub async fn read_source(&self, tenant_id: i64, source_id: i64) -> reqwest::Response {
         self.api_client
             .get(&format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)

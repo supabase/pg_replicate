@@ -45,7 +45,6 @@ impl ResponseError for SourceError {
 
 #[derive(Deserialize)]
 struct PostSourceRequest {
-    pub tenant_id: i64,
     pub config: SourceConfig,
 }
 
@@ -63,11 +62,12 @@ struct GetSourceResponse {
 
 #[post("/sources")]
 pub async fn create_source(
+    req: HttpRequest,
     pool: Data<PgPool>,
     source: Json<PostSourceRequest>,
 ) -> Result<impl Responder, SourceError> {
     let source = source.0;
-    let tenant_id = source.tenant_id;
+    let tenant_id = extract_tenant_id(&req)?;
     let config = source.config;
     let id = db::sources::create_source(&pool, tenant_id, &config).await?;
     let response = PostSourceResponse { id };
