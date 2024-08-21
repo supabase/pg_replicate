@@ -14,7 +14,13 @@ pub struct TestApp {
 }
 
 #[derive(Serialize)]
-pub struct TenantRequest {
+pub struct CreateTenantRequest {
+    pub name: String,
+    pub supabase_project_ref: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct UpdateTenantRequest {
     pub name: String,
 }
 
@@ -27,10 +33,12 @@ pub struct TenantIdResponse {
 pub struct TenantResponse {
     pub id: i64,
     pub name: String,
+    pub supabase_project_ref: Option<String>,
+    pub prefix: String,
 }
 
 impl TestApp {
-    pub async fn create_tenant(&self, tenant: &TenantRequest) -> reqwest::Response {
+    pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/v1/tenants", &self.address))
             .json(tenant)
@@ -47,7 +55,11 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
-    pub async fn update_tenant(&self, tenant_id: i64, tenant: &TenantRequest) -> reqwest::Response {
+    pub async fn update_tenant(
+        &self,
+        tenant_id: i64,
+        tenant: &UpdateTenantRequest,
+    ) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/v1/tenants/{tenant_id}", &self.address))
             .json(tenant)

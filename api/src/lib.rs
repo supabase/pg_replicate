@@ -6,4 +6,5 @@ pub mod replicator_config;
 pub mod routes;
 pub mod startup;
 pub mod telemetry;
+pub mod utils;
 pub mod worker;

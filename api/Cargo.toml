@@ -22,6 +22,7 @@ kube = { workspace = true, features = [
     "client",
     "rustls-tls",
 ] }
+rand = { workspace = true, features = ["std"] }
 secrecy = { workspace = true, features = ["serde", "alloc"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
