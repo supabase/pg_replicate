@@ -77,7 +77,14 @@ fn init_tracing() {
         .init();
 }
 
+fn set_log_level() {
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+}
+
 async fn main_impl() -> Result<(), Box<dyn Error>> {
+    set_log_level();
     init_tracing();
     let args = AppArgs::parse();
     let db_args = args.db_args;
