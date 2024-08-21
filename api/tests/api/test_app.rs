@@ -50,6 +50,13 @@ pub struct CreateSourceResponse {
     pub id: i64,
 }
 
+#[derive(Deserialize)]
+pub struct SourceResponse {
+    pub id: i64,
+    pub tenant_id: i64,
+    pub config: SourceConfig,
+}
+
 impl TestApp {
     pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.api_client
@@ -96,6 +103,15 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn read_source(&self, source_id: i64, tenant_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/sources/{source_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
     }
 }
 

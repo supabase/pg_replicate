@@ -39,7 +39,6 @@ impl Debug for SourceConfig {
                 .field("port", port)
                 .field("name", name)
                 .field("username", username)
-                .field("password", &"REDACTED")
                 .field("slot_name", slot_name)
                 .field("publication", publication)
                 .finish(),
@@ -68,7 +67,6 @@ impl Debug for SinkConfig {
                 .debug_struct("BigQuery")
                 .field("project_id", project_id)
                 .field("dataset_id", dataset_id)
-                .field("service_account_key", &"REDACTED")
                 .finish(),
         }
     }

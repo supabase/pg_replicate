@@ -1,4 +1,5 @@
 use sqlx::PgPool;
+use std::fmt::{Debug, Formatter};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SourceConfig {
@@ -27,10 +28,35 @@ pub enum SourceConfig {
     },
 }
 
+impl Debug for SourceConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceConfig::Postgres {
+                host,
+                port,
+                name,
+                username,
+                password: _,
+                slot_name,
+                publication,
+            } => f
+                .debug_struct("Postgres")
+                .field("host", host)
+                .field("port", port)
+                .field("name", name)
+                .field("username", username)
+                .field("password", &"REDACTED")
+                .field("slot_name", slot_name)
+                .field("publication", publication)
+                .finish(),
+        }
+    }
+}
+
 pub struct Source {
     pub id: i64,
     pub tenant_id: i64,
-    pub config: SourceConfig,
+    pub config: serde_json::Value,
 }
 
 pub async fn create_source(
@@ -52,4 +78,28 @@ pub async fn create_source(
     .await?;
 
     Ok(record.id)
+}
+
+pub async fn read_source(
+    pool: &PgPool,
+    tenant_id: i64,
+    source_id: i64,
+) -> Result<Option<Source>, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        select id, tenant_id, config
+        from sources
+        where tenant_id = $1 and id = $2
+        "#,
+        tenant_id,
+        source_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| Source {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        config: r.config,
+    }))
 }
