@@ -2,7 +2,7 @@ use std::net::TcpListener;
 
 use api::{
     configuration::get_configuration,
-    db::sources::SourceConfig,
+    db::{sinks::SinkConfig, sources::SourceConfig},
     startup::{get_connection_pool, run},
 };
 use serde::{Deserialize, Serialize};
@@ -59,6 +59,28 @@ pub struct SourceResponse {
     pub id: i64,
     pub tenant_id: i64,
     pub config: SourceConfig,
+}
+
+#[derive(Serialize)]
+pub struct CreateSinkRequest {
+    pub config: SinkConfig,
+}
+
+#[derive(Deserialize)]
+pub struct CreateSinkResponse {
+    pub id: i64,
+}
+
+#[derive(Serialize)]
+pub struct UpdateSinkRequest {
+    pub config: SinkConfig,
+}
+
+#[derive(Deserialize)]
+pub struct SinkResponse {
+    pub id: i64,
+    pub tenant_id: i64,
+    pub config: SinkConfig,
 }
 
 impl TestApp {
@@ -141,6 +163,49 @@ impl TestApp {
     pub async fn delete_source(&self, tenant_id: i64, source_id: i64) -> reqwest::Response {
         self.api_client
             .delete(&format!("{}/v1/sources/{source_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn create_sink(&self, tenant_id: i64, sink: &CreateSinkRequest) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/sinks", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(sink)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn read_sink(&self, tenant_id: i64, sink_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn update_sink(
+        &self,
+        tenant_id: i64,
+        sink_id: i64,
+        sink: &UpdateSinkRequest,
+    ) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(sink)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn delete_sink(&self, tenant_id: i64, sink_id: i64) -> reqwest::Response {
+        self.api_client
+            .delete(&format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
