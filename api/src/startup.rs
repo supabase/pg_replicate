@@ -8,7 +8,7 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     routes::{
         health_check::health_check,
-        pipelines::create_pipeline,
+        pipelines::{create_pipeline, read_pipeline},
         sinks::{create_sink, delete_sink, read_sink, update_sink},
         sources::{create_source, delete_source, read_source, update_source},
         tenants::{create_tenant, delete_tenant, read_tenant, update_tenant},
@@ -68,7 +68,8 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(read_sink)
                     .service(update_sink)
                     .service(delete_sink)
-                    .service(create_pipeline),
+                    .service(create_pipeline)
+                    .service(read_pipeline),
             )
             .app_data(connection_pool.clone())
     })

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select id, tenant_id, source_id, sink_id, config\n        from pipelines\n        where tenant_id = $1 and id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "sink_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "config",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0e4e254e9d8416495fbb0de3e61f257832d249a1fbe3369f587c75f616e88c2d"
+}

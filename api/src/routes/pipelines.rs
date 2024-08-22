@@ -1,7 +1,8 @@
 use actix_web::{
+    get,
     http::StatusCode,
     post,
-    web::{Data, Json},
+    web::{Data, Json, Path},
     HttpRequest, Responder, ResponseError,
 };
 use serde::{Deserialize, Serialize};
@@ -15,8 +16,9 @@ enum PipelineError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
-    // #[error("sink with id {0} not found")]
-    // NotFound(i64),
+    #[error("sink with id {0} not found")]
+    NotFound(i64),
+
     #[error("tenant id missing in request")]
     TenantIdMissing,
 
@@ -33,7 +35,7 @@ impl ResponseError for PipelineError {
             PipelineError::DatabaseError(_) | PipelineError::InvalidConfig(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            // PipelineError::NotFound(_) => StatusCode::NOT_FOUND,
+            PipelineError::NotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantIdMissing | PipelineError::TenantIdIllFormed => {
                 StatusCode::BAD_REQUEST
             }
@@ -53,14 +55,14 @@ struct PostPipelineResponse {
     id: i64,
 }
 
-// #[derive(Serialize)]
-// struct GetPipelineResponse {
-//     id: i64,
-//     tenant_id: i64,
-//     source_id: i64,
-//     sink_id: i64,
-//     config: PipelineConfig,
-// }
+#[derive(Serialize)]
+struct GetPipelineResponse {
+    id: i64,
+    tenant_id: i64,
+    source_id: i64,
+    sink_id: i64,
+    config: PipelineConfig,
+}
 
 // TODO: read tenant_id from a jwt
 fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PipelineError> {
@@ -95,5 +97,30 @@ pub async fn create_pipeline(
     )
     .await?;
     let response = PostPipelineResponse { id };
+    Ok(Json(response))
+}
+
+#[get("/pipelines/{pipeline_id}")]
+pub async fn read_pipeline(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    pipeline_id: Path<i64>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let pipeline_id = pipeline_id.into_inner();
+    let response = db::pipelines::read_pipeline(&pool, tenant_id, pipeline_id)
+        .await?
+        .map(|s| {
+            let config: PipelineConfig = serde_json::from_value(s.config)?;
+            Ok::<GetPipelineResponse, serde_json::Error>(GetPipelineResponse {
+                id: s.id,
+                tenant_id: s.tenant_id,
+                source_id: s.source_id,
+                sink_id: s.sink_id,
+                config,
+            })
+        })
+        .transpose()?
+        .ok_or(PipelineError::NotFound(pipeline_id))?;
     Ok(Json(response))
 }

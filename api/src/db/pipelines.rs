@@ -46,3 +46,29 @@ pub async fn create_pipeline(
 
     Ok(record.id)
 }
+
+pub async fn read_pipeline(
+    pool: &PgPool,
+    tenant_id: i64,
+    pipeline_id: i64,
+) -> Result<Option<Pipeline>, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        select id, tenant_id, source_id, sink_id, config
+        from pipelines
+        where tenant_id = $1 and id = $2
+        "#,
+        tenant_id,
+        pipeline_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| Pipeline {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        source_id: r.source_id,
+        sink_id: r.sink_id,
+        config: r.config,
+    }))
+}

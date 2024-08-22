@@ -95,6 +95,15 @@ pub struct CreatePipelineResponse {
     pub id: i64,
 }
 
+#[derive(Deserialize)]
+pub struct PipelineResponse {
+    pub id: i64,
+    pub tenant_id: i64,
+    pub source_id: i64,
+    pub sink_id: i64,
+    pub config: PipelineConfig,
+}
+
 impl TestApp {
     pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.api_client
@@ -236,6 +245,15 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn read_pipeline(&self, tenant_id: i64, pipeline_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
     }
 }
 
