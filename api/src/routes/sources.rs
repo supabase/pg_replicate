@@ -3,7 +3,7 @@ use actix_web::{
     http::StatusCode,
     post,
     web::{Data, Json, Path},
-    HttpRequest, Responder, ResponseError,
+    HttpRequest, HttpResponse, Responder, ResponseError,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -110,4 +110,20 @@ pub async fn read_source(
         .transpose()?
         .ok_or(SourceError::NotFound(source_id))?;
     Ok(Json(response))
+}
+
+#[post("/sources/{source_id}")]
+pub async fn update_source(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    source_id: Path<i64>,
+    source: Json<PostSourceRequest>,
+) -> Result<impl Responder, SourceError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let source_id = source_id.into_inner();
+    let config = &source.config;
+    db::sources::update_source(&pool, tenant_id, source_id, config)
+        .await?
+        .ok_or(SourceError::NotFound(source_id))?;
+    Ok(HttpResponse::Ok().finish())
 }

@@ -49,6 +49,11 @@ pub struct CreateSourceResponse {
     pub id: i64,
 }
 
+#[derive(Serialize)]
+pub struct UpdateSourceRequest {
+    pub config: SourceConfig,
+}
+
 #[derive(Deserialize)]
 pub struct SourceResponse {
     pub id: i64,
@@ -113,6 +118,21 @@ impl TestApp {
         self.api_client
             .get(&format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn update_source(
+        &self,
+        tenant_id: i64,
+        source_id: i64,
+        source: &UpdateSourceRequest,
+    ) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/sources/{source_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(source)
             .send()
             .await
             .expect("failed to execute request")

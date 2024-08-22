@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update sources\n        set config = $1\n        where tenant_id = $2 and id = $3\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b0909a3edbd0c3b166930877d18541b3d8cea96ac36be09953ce7e1370c4449e"
+}

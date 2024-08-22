@@ -103,3 +103,27 @@ pub async fn read_source(
         config: r.config,
     }))
 }
+
+pub async fn update_source(
+    pool: &PgPool,
+    tenant_id: i64,
+    source_id: i64,
+    config: &SourceConfig,
+) -> Result<Option<i64>, sqlx::Error> {
+    let config = serde_json::to_value(config).expect("failed to serialize config");
+    let record = sqlx::query!(
+        r#"
+        update sources
+        set config = $1
+        where tenant_id = $2 and id = $3
+        returning id
+        "#,
+        config,
+        tenant_id,
+        source_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| r.id))
+}
