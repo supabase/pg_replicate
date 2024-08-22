@@ -1,5 +1,5 @@
 use actix_web::{
-    get,
+    delete, get,
     http::StatusCode,
     post,
     web::{Data, Json, Path},
@@ -145,5 +145,19 @@ pub async fn update_pipeline(
     )
     .await?
     .ok_or(PipelineError::NotFound(pipeline_id))?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[delete("/pipelines/{pipeline_id}")]
+pub async fn delete_pipeline(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    pipeline_id: Path<i64>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let pipeline_id = pipeline_id.into_inner();
+    db::pipelines::delete_pipeline(&pool, tenant_id, pipeline_id)
+        .await?
+        .ok_or(PipelineError::NotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }

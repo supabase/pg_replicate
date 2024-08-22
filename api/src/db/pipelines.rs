@@ -100,3 +100,23 @@ pub async fn update_pipeline(
 
     Ok(record.map(|r| r.id))
 }
+
+pub async fn delete_pipeline(
+    pool: &PgPool,
+    tenant_id: i64,
+    pipeline_id: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        delete from pipelines
+        where tenant_id = $1 and id = $2
+        returning id
+        "#,
+        tenant_id,
+        pipeline_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| r.id))
+}
