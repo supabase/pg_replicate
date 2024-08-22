@@ -72,3 +72,31 @@ pub async fn read_pipeline(
         config: r.config,
     }))
 }
+
+pub async fn update_pipeline(
+    pool: &PgPool,
+    tenant_id: i64,
+    pipeline_id: i64,
+    source_id: i64,
+    sink_id: i64,
+    config: &PipelineConfig,
+) -> Result<Option<i64>, sqlx::Error> {
+    let config = serde_json::to_value(config).expect("failed to serialize config");
+    let record = sqlx::query!(
+        r#"
+        update pipelines
+        set source_id = $1, sink_id = $2, config = $3
+        where tenant_id = $4 and id = $5
+        returning id
+        "#,
+        source_id,
+        sink_id,
+        config,
+        tenant_id,
+        pipeline_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| r.id))
+}

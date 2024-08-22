@@ -3,7 +3,7 @@ use actix_web::{
     http::StatusCode,
     post,
     web::{Data, Json, Path},
-    HttpRequest, Responder, ResponseError,
+    HttpRequest, HttpResponse, Responder, ResponseError,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -123,4 +123,27 @@ pub async fn read_pipeline(
         .transpose()?
         .ok_or(PipelineError::NotFound(pipeline_id))?;
     Ok(Json(response))
+}
+
+#[post("/pipelines/{pipeline_id}")]
+pub async fn update_pipeline(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    pipeline_id: Path<i64>,
+    pipeline: Json<PostPipelineRequest>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let pipeline_id = pipeline_id.into_inner();
+    let config = &pipeline.config;
+    db::pipelines::update_pipeline(
+        &pool,
+        tenant_id,
+        pipeline_id,
+        pipeline.source_id,
+        pipeline.sink_id,
+        config,
+    )
+    .await?
+    .ok_or(PipelineError::NotFound(pipeline_id))?;
+    Ok(HttpResponse::Ok().finish())
 }

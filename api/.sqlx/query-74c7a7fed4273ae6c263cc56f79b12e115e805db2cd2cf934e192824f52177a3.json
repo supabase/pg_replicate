@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update pipelines\n        set source_id = $1, sink_id = $2, config = $3\n        where tenant_id = $4 and id = $5\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "74c7a7fed4273ae6c263cc56f79b12e115e805db2cd2cf934e192824f52177a3"
+}

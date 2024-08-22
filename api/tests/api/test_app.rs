@@ -104,6 +104,13 @@ pub struct PipelineResponse {
     pub config: PipelineConfig,
 }
 
+#[derive(Serialize)]
+pub struct UpdatePipelineRequest {
+    pub source_id: i64,
+    pub sink_id: i64,
+    pub config: PipelineConfig,
+}
+
 impl TestApp {
     pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.api_client
@@ -251,6 +258,21 @@ impl TestApp {
         self.api_client
             .get(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn update_pipeline(
+        &self,
+        tenant_id: i64,
+        pipeline_id: i64,
+        pipeline: &UpdatePipelineRequest,
+    ) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(pipeline)
             .send()
             .await
             .expect("failed to execute request")
