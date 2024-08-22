@@ -60,20 +60,6 @@ struct GetSourceResponse {
     config: SourceConfig,
 }
 
-#[post("/sources")]
-pub async fn create_source(
-    req: HttpRequest,
-    pool: Data<PgPool>,
-    source: Json<PostSourceRequest>,
-) -> Result<impl Responder, SourceError> {
-    let source = source.0;
-    let tenant_id = extract_tenant_id(&req)?;
-    let config = source.config;
-    let id = db::sources::create_source(&pool, tenant_id, &config).await?;
-    let response = PostSourceResponse { id };
-    Ok(Json(response))
-}
-
 // TODO: read tenant_id from a jwt
 fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
     let headers = req.headers();
@@ -87,6 +73,20 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
         .parse()
         .map_err(|_| SourceError::TenantIdIllFormed)?;
     Ok(tenant_id)
+}
+
+#[post("/sources")]
+pub async fn create_source(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    source: Json<PostSourceRequest>,
+) -> Result<impl Responder, SourceError> {
+    let source = source.0;
+    let tenant_id = extract_tenant_id(&req)?;
+    let config = source.config;
+    let id = db::sources::create_source(&pool, tenant_id, &config).await?;
+    let response = PostSourceResponse { id };
+    Ok(Json(response))
 }
 
 #[get("/sources/{source_id}")]

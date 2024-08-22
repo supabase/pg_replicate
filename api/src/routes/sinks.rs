@@ -58,6 +58,19 @@ struct GetSinkResponse {
     config: SinkConfig,
 }
 
+// TODO: read tenant_id from a jwt
+fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SinkError> {
+    let headers = req.headers();
+    let tenant_id = headers.get("tenant_id").ok_or(SinkError::TenantIdMissing)?;
+    let tenant_id = tenant_id
+        .to_str()
+        .map_err(|_| SinkError::TenantIdIllFormed)?;
+    let tenant_id: i64 = tenant_id
+        .parse()
+        .map_err(|_| SinkError::TenantIdIllFormed)?;
+    Ok(tenant_id)
+}
+
 #[post("/sinks")]
 pub async fn create_sink(
     req: HttpRequest,
@@ -70,19 +83,6 @@ pub async fn create_sink(
     let id = db::sinks::create_sink(&pool, tenant_id, &config).await?;
     let response = PostSinkResponse { id };
     Ok(Json(response))
-}
-
-// TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SinkError> {
-    let headers = req.headers();
-    let tenant_id = headers.get("tenant_id").ok_or(SinkError::TenantIdMissing)?;
-    let tenant_id = tenant_id
-        .to_str()
-        .map_err(|_| SinkError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
-        .map_err(|_| SinkError::TenantIdIllFormed)?;
-    Ok(tenant_id)
 }
 
 #[get("/sinks/{sink_id}")]

@@ -1,9 +1,11 @@
 use api::db::sinks::SinkConfig;
 use reqwest::StatusCode;
 
-use crate::test_app::{
-    spawn_app, CreateSinkRequest, CreateSinkResponse, CreateTenantRequest, CreateTenantResponse,
-    SinkResponse, TestApp, UpdateSinkRequest,
+use crate::{
+    tenants::create_tenant,
+    test_app::{
+        spawn_app, CreateSinkRequest, CreateSinkResponse, SinkResponse, TestApp, UpdateSinkRequest,
+    },
 };
 
 fn new_sink_config() -> SinkConfig {
@@ -22,13 +24,12 @@ fn updated_sink_config() -> SinkConfig {
     }
 }
 
-async fn create_tenant(app: &TestApp) -> i64 {
-    let tenant = CreateTenantRequest {
-        name: "NewTenant".to_string(),
-        supabase_project_ref: None,
+pub async fn create_sink(app: &TestApp, tenant_id: i64) -> i64 {
+    let sink = CreateSinkRequest {
+        config: new_sink_config(),
     };
-    let response = app.create_tenant(&tenant).await;
-    let response: CreateTenantResponse = response
+    let response = app.create_sink(tenant_id, &sink).await;
+    let response: CreateSinkResponse = response
         .json()
         .await
         .expect("failed to deserialize response");

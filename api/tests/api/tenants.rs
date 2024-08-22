@@ -2,8 +2,22 @@ use api::utils::generate_random_alpha_str;
 use reqwest::StatusCode;
 
 use crate::test_app::{
-    spawn_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, UpdateTenantRequest,
+    spawn_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, TestApp,
+    UpdateTenantRequest,
 };
+
+pub async fn create_tenant(app: &TestApp) -> i64 {
+    let tenant = CreateTenantRequest {
+        name: "NewTenant".to_string(),
+        supabase_project_ref: None,
+    };
+    let response = app.create_tenant(&tenant).await;
+    let response: CreateTenantResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    response.id
+}
 
 #[tokio::test]
 async fn tenant_can_be_created_with_supabase_project_ref() {

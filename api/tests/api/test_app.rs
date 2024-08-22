@@ -2,7 +2,7 @@ use std::net::TcpListener;
 
 use api::{
     configuration::get_configuration,
-    db::{sinks::SinkConfig, sources::SourceConfig},
+    db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
     startup::{get_connection_pool, run},
 };
 use serde::{Deserialize, Serialize};
@@ -81,6 +81,18 @@ pub struct SinkResponse {
     pub id: i64,
     pub tenant_id: i64,
     pub config: SinkConfig,
+}
+
+#[derive(Serialize)]
+pub struct CreatePipelineRequest {
+    pub source_id: i64,
+    pub sink_id: i64,
+    pub config: PipelineConfig,
+}
+
+#[derive(Deserialize)]
+pub struct CreatePipelineResponse {
+    pub id: i64,
 }
 
 impl TestApp {
@@ -207,6 +219,20 @@ impl TestApp {
         self.api_client
             .delete(&format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn create_pipeline(
+        &self,
+        tenant_id: i64,
+        pipeline: &CreatePipelineRequest,
+    ) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/pipelines", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(pipeline)
             .send()
             .await
             .expect("Failed to execute request.")

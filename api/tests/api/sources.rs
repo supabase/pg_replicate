@@ -1,9 +1,12 @@
 use api::db::sources::SourceConfig;
 use reqwest::StatusCode;
 
-use crate::test_app::{
-    spawn_app, CreateSourceRequest, CreateSourceResponse, CreateTenantRequest,
-    CreateTenantResponse, SourceResponse, TestApp, UpdateSourceRequest,
+use crate::{
+    tenants::create_tenant,
+    test_app::{
+        spawn_app, CreateSourceRequest, CreateSourceResponse, SourceResponse, TestApp,
+        UpdateSourceRequest,
+    },
 };
 
 fn new_source_config() -> SourceConfig {
@@ -30,13 +33,12 @@ fn updated_source_config() -> SourceConfig {
     }
 }
 
-async fn create_tenant(app: &TestApp) -> i64 {
-    let tenant = CreateTenantRequest {
-        name: "NewTenant".to_string(),
-        supabase_project_ref: None,
+pub async fn create_source(app: &TestApp, tenant_id: i64) -> i64 {
+    let source = CreateSourceRequest {
+        config: new_source_config(),
     };
-    let response = app.create_tenant(&tenant).await;
-    let response: CreateTenantResponse = response
+    let response = app.create_source(tenant_id, &source).await;
+    let response: CreateSourceResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
