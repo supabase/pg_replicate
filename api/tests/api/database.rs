@@ -39,7 +39,7 @@ async fn delete_all_test_databases() {
         .await
         .expect("Failed to connect to Postgres");
     let databases = connection
-        .fetch_all(&*format!(r#"select datname from pg_database where datname not in ('postgres', 'template0', 'template1');"#))
+        .fetch_all(&*r#"select datname from pg_database where datname not in ('postgres', 'template0', 'template1');"#.to_string())
         .await
         .expect("Failed to get databases.");
     for database in databases {
