@@ -158,3 +158,41 @@ async fn an_non_existing_source_cant_be_updated() {
     // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn an_existing_source_can_be_deleted() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant_id = create_tenant(&app).await;
+
+    let source = CreateSourceRequest {
+        config: new_source_config(),
+    };
+    let response = app.create_source(tenant_id, &source).await;
+    let response: CreateSourceResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let source_id = response.id;
+
+    // Act
+    let response = app.delete_source(tenant_id, source_id).await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response = app.read_source(tenant_id, source_id).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn an_non_existing_source_cant_be_deleted() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant_id = create_tenant(&app).await;
+
+    // Act
+    let response = app.delete_source(tenant_id, 42).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

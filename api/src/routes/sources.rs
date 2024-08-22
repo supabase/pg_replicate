@@ -1,5 +1,5 @@
 use actix_web::{
-    get,
+    delete, get,
     http::StatusCode,
     post,
     web::{Data, Json, Path},
@@ -125,5 +125,19 @@ pub async fn update_source(
     db::sources::update_source(&pool, tenant_id, source_id, config)
         .await?
         .ok_or(SourceError::NotFound(source_id))?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[delete("/sources/{source_id}")]
+pub async fn delete_source(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    source_id: Path<i64>,
+) -> Result<impl Responder, SourceError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let source_id = source_id.into_inner();
+    db::sources::delete_source(&pool, tenant_id, source_id)
+        .await?
+        .ok_or(SourceError::NotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }

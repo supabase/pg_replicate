@@ -127,3 +127,23 @@ pub async fn update_source(
 
     Ok(record.map(|r| r.id))
 }
+
+pub async fn delete_source(
+    pool: &PgPool,
+    tenant_id: i64,
+    source_id: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        delete from sources
+        where tenant_id = $1 and id = $2
+        returning id
+        "#,
+        tenant_id,
+        source_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(record.map(|r| r.id))
+}
