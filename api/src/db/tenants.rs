@@ -84,3 +84,24 @@ pub async fn delete_tenant(pool: &PgPool, tenant_id: i64) -> Result<Option<i64>,
 
     Ok(record.map(|r| r.id))
 }
+
+pub async fn read_all_tenants(pool: &PgPool) -> Result<Vec<Tenant>, sqlx::Error> {
+    let mut record = sqlx::query!(
+        r#"
+        select id, name, supabase_project_ref, prefix
+        from tenants
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(record
+        .drain(..)
+        .map(|r| Tenant {
+            id: r.id,
+            name: r.name,
+            supabase_project_ref: r.supabase_project_ref,
+            prefix: r.prefix,
+        })
+        .collect())
+}

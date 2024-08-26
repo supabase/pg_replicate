@@ -24,16 +24,18 @@ fn updated_sink_config() -> SinkConfig {
     }
 }
 
-pub async fn create_sink(app: &TestApp, tenant_id: i64) -> i64 {
-    let sink = CreateSinkRequest {
-        config: new_sink_config(),
-    };
+pub async fn create_sink_with_config(app: &TestApp, tenant_id: i64, config: SinkConfig) -> i64 {
+    let sink = CreateSinkRequest { config };
     let response = app.create_sink(tenant_id, &sink).await;
     let response: CreateSinkResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
     response.id
+}
+
+pub async fn create_sink(app: &TestApp, tenant_id: i64) -> i64 {
+    create_sink_with_config(app, tenant_id, new_sink_config()).await
 }
 
 #[tokio::test]
@@ -186,4 +188,34 @@ async fn an_non_existing_sink_cant_be_deleted() {
 
     // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn all_sinks_can_be_read() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant_id = create_tenant(&app).await;
+    let sink1_id = create_sink_with_config(&app, tenant_id, new_sink_config()).await;
+    let sink2_id = create_sink_with_config(&app, tenant_id, updated_sink_config()).await;
+
+    // Act
+    let response = app.read_all_sinks(tenant_id).await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response: Vec<SinkResponse> = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    for sink in response {
+        if sink.id == sink1_id {
+            let config = new_sink_config();
+            assert_eq!(sink.tenant_id, tenant_id);
+            assert_eq!(sink.config, config);
+        } else if sink.id == sink2_id {
+            let config = updated_sink_config();
+            assert_eq!(sink.tenant_id, tenant_id);
+            assert_eq!(sink.config, config);
+        }
+    }
 }

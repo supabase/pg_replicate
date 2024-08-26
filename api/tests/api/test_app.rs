@@ -150,6 +150,14 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
+    pub async fn read_all_tenants(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/tenants", &self.address))
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
     pub async fn create_source(
         &self,
         tenant_id: i64,
@@ -197,6 +205,15 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
+    pub async fn read_all_sources(&self, tenant_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/sources", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
     pub async fn create_sink(&self, tenant_id: i64, sink: &CreateSinkRequest) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/v1/sinks", &self.address))
@@ -238,6 +255,15 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn read_all_sinks(&self, tenant_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/sinks", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
     }
 
     pub async fn create_pipeline(
@@ -285,6 +311,15 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn read_all_pipelines(&self, tenant_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/pipelines", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
     }
 }
 

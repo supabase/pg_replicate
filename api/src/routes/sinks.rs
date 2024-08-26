@@ -137,3 +137,22 @@ pub async fn delete_sink(
         .ok_or(SinkError::NotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
+
+#[get("/sinks")]
+pub async fn read_all_sinks(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+) -> Result<impl Responder, SinkError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let mut sinks = vec![];
+    for sink in db::sinks::read_all_sinks(&pool, tenant_id).await? {
+        let config: SinkConfig = serde_json::from_value(sink.config)?;
+        let sink = GetSinkResponse {
+            id: sink.id,
+            tenant_id: sink.tenant_id,
+            config,
+        };
+        sinks.push(sink);
+    }
+    Ok(Json(sinks))
+}

@@ -141,3 +141,22 @@ pub async fn delete_source(
         .ok_or(SourceError::NotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
+
+#[get("/sources")]
+pub async fn read_all_sources(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+) -> Result<impl Responder, SourceError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let mut sources = vec![];
+    for source in db::sources::read_all_sources(&pool, tenant_id).await? {
+        let config: SourceConfig = serde_json::from_value(source.config)?;
+        let source = GetSourceResponse {
+            id: source.id,
+            tenant_id: source.tenant_id,
+            config,
+        };
+        sources.push(source);
+    }
+    Ok(Json(sources))
+}

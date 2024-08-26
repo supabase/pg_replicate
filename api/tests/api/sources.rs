@@ -34,9 +34,11 @@ fn updated_source_config() -> SourceConfig {
 }
 
 pub async fn create_source(app: &TestApp, tenant_id: i64) -> i64 {
-    let source = CreateSourceRequest {
-        config: new_source_config(),
-    };
+    create_source_with_config(app, tenant_id, new_source_config()).await
+}
+
+pub async fn create_source_with_config(app: &TestApp, tenant_id: i64, config: SourceConfig) -> i64 {
+    let source = CreateSourceRequest { config };
     let response = app.create_source(tenant_id, &source).await;
     let response: CreateSourceResponse = response
         .json()
@@ -197,4 +199,34 @@ async fn an_non_existing_source_cant_be_deleted() {
 
     // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn all_sources_can_be_read() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant_id = create_tenant(&app).await;
+    let source1_id = create_source_with_config(&app, tenant_id, new_source_config()).await;
+    let source2_id = create_source_with_config(&app, tenant_id, updated_source_config()).await;
+
+    // Act
+    let response = app.read_all_sources(tenant_id).await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response: Vec<SourceResponse> = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    for source in response {
+        if source.id == source1_id {
+            let config = new_source_config();
+            assert_eq!(source.tenant_id, tenant_id);
+            assert_eq!(source.config, config);
+        } else if source.id == source2_id {
+            let config = updated_source_config();
+            assert_eq!(source.tenant_id, tenant_id);
+            assert_eq!(source.config, config);
+        }
+    }
 }

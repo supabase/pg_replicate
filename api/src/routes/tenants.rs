@@ -111,3 +111,18 @@ pub async fn delete_tenant(
         .ok_or(TenantError::NotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
+
+#[get("/tenants")]
+pub async fn read_all_tenants(pool: Data<PgPool>) -> Result<impl Responder, TenantError> {
+    let response: Vec<GetTenantResponse> = db::tenants::read_all_tenants(&pool)
+        .await?
+        .drain(..)
+        .map(|t| GetTenantResponse {
+            id: t.id,
+            name: t.name,
+            supabase_project_ref: t.supabase_project_ref,
+            prefix: t.prefix,
+        })
+        .collect();
+    Ok(Json(response))
+}

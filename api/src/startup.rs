@@ -8,10 +8,12 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     routes::{
         health_check::health_check,
-        pipelines::{create_pipeline, delete_pipeline, read_pipeline, update_pipeline},
-        sinks::{create_sink, delete_sink, read_sink, update_sink},
-        sources::{create_source, delete_source, read_source, update_source},
-        tenants::{create_tenant, delete_tenant, read_tenant, update_tenant},
+        pipelines::{
+            create_pipeline, delete_pipeline, read_all_pipelines, read_pipeline, update_pipeline,
+        },
+        sinks::{create_sink, delete_sink, read_all_sinks, read_sink, update_sink},
+        sources::{create_source, delete_source, read_all_sources, read_source, update_source},
+        tenants::{create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant},
     },
 };
 
@@ -56,22 +58,30 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
             .service(health_check)
             .service(
                 web::scope("v1")
+                    //tenants
                     .service(create_tenant)
                     .service(read_tenant)
                     .service(update_tenant)
                     .service(delete_tenant)
+                    .service(read_all_tenants)
+                    //sources
                     .service(create_source)
                     .service(read_source)
                     .service(update_source)
                     .service(delete_source)
+                    .service(read_all_sources)
+                    //sinks
                     .service(create_sink)
                     .service(read_sink)
                     .service(update_sink)
                     .service(delete_sink)
+                    .service(read_all_sinks)
+                    //pipelines
                     .service(create_pipeline)
                     .service(read_pipeline)
                     .service(update_pipeline)
-                    .service(delete_pipeline),
+                    .service(delete_pipeline)
+                    .service(read_all_pipelines),
             )
             .app_data(connection_pool.clone())
     })

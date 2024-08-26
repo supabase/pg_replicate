@@ -7,8 +7,12 @@ use crate::test_app::{
 };
 
 pub async fn create_tenant(app: &TestApp) -> i64 {
+    create_tenant_with_name(app, "NewTenant".to_string()).await
+}
+
+pub async fn create_tenant_with_name(app: &TestApp, name: String) -> i64 {
     let tenant = CreateTenantRequest {
-        name: "NewTenant".to_string(),
+        name,
         supabase_project_ref: None,
     };
     let response = app.create_tenant(&tenant).await;
@@ -207,4 +211,29 @@ async fn an_non_existing_tenant_cant_be_deleted() {
 
     // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn all_tenants_can_be_read() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant_with_name(&app, "Tenant1".to_string()).await;
+    let tenant2_id = create_tenant_with_name(&app, "Tenant2".to_string()).await;
+
+    // Act
+    let response = app.read_all_tenants().await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response: Vec<TenantResponse> = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    for tenant in response {
+        if tenant.id == tenant1_id {
+            assert_eq!(tenant.name, "Tenant1");
+        } else if tenant.id == tenant2_id {
+            assert_eq!(tenant.name, "Tenant2");
+        }
+    }
 }

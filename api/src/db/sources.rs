@@ -147,3 +147,25 @@ pub async fn delete_source(
 
     Ok(record.map(|r| r.id))
 }
+
+pub async fn read_all_sources(pool: &PgPool, tenant_id: i64) -> Result<Vec<Source>, sqlx::Error> {
+    let mut record = sqlx::query!(
+        r#"
+        select id, tenant_id, config
+        from sources
+        where tenant_id = $1
+        "#,
+        tenant_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(record
+        .drain(..)
+        .map(|r| Source {
+            id: r.id,
+            tenant_id: r.tenant_id,
+            config: r.config,
+        })
+        .collect())
+}

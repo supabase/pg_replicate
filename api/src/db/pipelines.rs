@@ -120,3 +120,30 @@ pub async fn delete_pipeline(
 
     Ok(record.map(|r| r.id))
 }
+
+pub async fn read_all_pipelines(
+    pool: &PgPool,
+    tenant_id: i64,
+) -> Result<Vec<Pipeline>, sqlx::Error> {
+    let mut record = sqlx::query!(
+        r#"
+        select id, tenant_id, source_id, sink_id, config
+        from pipelines
+        where tenant_id = $1
+        "#,
+        tenant_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(record
+        .drain(..)
+        .map(|r| Pipeline {
+            id: r.id,
+            tenant_id: r.tenant_id,
+            source_id: r.source_id,
+            sink_id: r.sink_id,
+            config: r.config,
+        })
+        .collect())
+}
