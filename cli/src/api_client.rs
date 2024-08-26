@@ -230,13 +230,13 @@ impl ApiClient {
         Ok(())
     }
 
-    // pub async fn delete_tenant(&self, tenant_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .delete(&format!("{}/v1/tenants/{tenant_id}", &self.address))
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+    pub async fn delete_tenant(&self, tenant_id: i64) -> Result<(), ApiClientError> {
+        self.client
+            .delete(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .send()
+            .await?;
+        Ok(())
+    }
 
     // pub async fn read_all_tenants(&self) -> reqwest::Response {
     //     self.client

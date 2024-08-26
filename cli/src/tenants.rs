@@ -61,6 +61,17 @@ pub async fn update_tenant(
     Ok(())
 }
 
+pub async fn delete_tenant(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<(), CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+
+    api_client.delete_tenant(tenant_id).await?;
+
+    Ok(())
+}
+
 fn get_tenant_name(editor: &mut DefaultEditor) -> Result<String, CliError> {
     let name = editor.readline("enter tenant name: ")?;
     let name = name.trim().to_string();

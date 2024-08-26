@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     api_client::ApiClient,
-    tenants::{create_tenant, read_tenant, update_tenant},
+    tenants::{create_tenant, delete_tenant, read_tenant, update_tenant},
 };
 
 pub enum Command {
@@ -79,7 +79,7 @@ pub async fn execute_commands(
                 println!("tenant created: {tenant}");
             }
             Err(e) => {
-                println!("error creating tenant: {e:#?}");
+                println!("error creating tenant: {e:?}");
             }
         },
         (Command::Add, SubCommand::Sources) => todo!(),
@@ -88,13 +88,18 @@ pub async fn execute_commands(
         (Command::Update, SubCommand::Tenants) => match update_tenant(api_client, editor).await {
             Ok(()) => println!("tenant updated"),
             Err(e) => {
-                println!("error updating tenant: {e:#?}");
+                println!("error updating tenant: {e:?}");
             }
         },
         (Command::Update, SubCommand::Sources) => todo!(),
         (Command::Update, SubCommand::Sinks) => todo!(),
         (Command::Update, SubCommand::Pipelines) => todo!(),
-        (Command::Delete, SubCommand::Tenants) => todo!(),
+        (Command::Delete, SubCommand::Tenants) => match delete_tenant(api_client, editor).await {
+            Ok(()) => println!("tenant deleted"),
+            Err(e) => {
+                println!("error deleting tenant: {e:?}");
+            }
+        },
         (Command::Delete, SubCommand::Sources) => todo!(),
         (Command::Delete, SubCommand::Sinks) => todo!(),
         (Command::Delete, SubCommand::Pipelines) => todo!(),
@@ -103,7 +108,7 @@ pub async fn execute_commands(
                 println!("tenant: {tenant}")
             }
             Err(e) => {
-                println!("error reading tenant: {e:#?}");
+                println!("error reading tenant: {e:?}");
             }
         },
         (Command::Show, SubCommand::Sources) => todo!(),
