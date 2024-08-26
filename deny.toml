@@ -1,6 +1,3 @@
 [advisories]
 version = 2
-ignore = [
-    { id = "RUSTSEC-2024-0320", reason = "temporarily disabling" },
-    { id = "RUSTSEC-2024-0363", reason = "disabling until sqlx publishes a fix" },
-]
+ignore = [{ id = "RUSTSEC-2024-0320", reason = "temporarily disabling" }]
