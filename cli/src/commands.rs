@@ -3,9 +3,9 @@ use thiserror::Error;
 
 use crate::{
     api_client::ApiClient,
-    pipelines::{create_pipeline, show_pipeline},
-    sinks::{create_sink, show_sink},
-    sources::{create_source, show_source},
+    pipelines::{create_pipeline, delete_pipeline, list_pipelines, show_pipeline, update_pipeline},
+    sinks::{create_sink, delete_sink, list_sinks, show_sink, update_sink},
+    sources::{create_source, delete_source, list_sources, show_source, update_source},
     tenants::{create_tenant, delete_tenant, list_tenants, show_tenant, update_tenant},
 };
 
@@ -115,18 +115,50 @@ pub async fn execute_commands(
                 println!("error updating tenant: {e:?}");
             }
         },
-        (Command::Update, SubCommand::Sources) => todo!(),
-        (Command::Update, SubCommand::Sinks) => todo!(),
-        (Command::Update, SubCommand::Pipelines) => todo!(),
+        (Command::Update, SubCommand::Sources) => match update_source(api_client, editor).await {
+            Ok(()) => println!("source updated"),
+            Err(e) => {
+                println!("error updating source: {e:?}");
+            }
+        },
+        (Command::Update, SubCommand::Sinks) => match update_sink(api_client, editor).await {
+            Ok(()) => println!("sink updated"),
+            Err(e) => {
+                println!("error updating sink: {e:?}");
+            }
+        },
+        (Command::Update, SubCommand::Pipelines) => match update_pipeline(api_client, editor).await
+        {
+            Ok(()) => println!("pipeline updated"),
+            Err(e) => {
+                println!("error updating pipeline: {e:?}");
+            }
+        },
         (Command::Delete, SubCommand::Tenants) => match delete_tenant(api_client, editor).await {
             Ok(()) => println!("tenant deleted"),
             Err(e) => {
                 println!("error deleting tenant: {e:?}");
             }
         },
-        (Command::Delete, SubCommand::Sources) => todo!(),
-        (Command::Delete, SubCommand::Sinks) => todo!(),
-        (Command::Delete, SubCommand::Pipelines) => todo!(),
+        (Command::Delete, SubCommand::Sources) => match delete_source(api_client, editor).await {
+            Ok(()) => println!("source deleted"),
+            Err(e) => {
+                println!("error deleting source: {e:?}");
+            }
+        },
+        (Command::Delete, SubCommand::Sinks) => match delete_sink(api_client, editor).await {
+            Ok(()) => println!("sink deleted"),
+            Err(e) => {
+                println!("error deleting sink: {e:?}");
+            }
+        },
+        (Command::Delete, SubCommand::Pipelines) => match delete_pipeline(api_client, editor).await
+        {
+            Ok(()) => println!("pipeline deleted"),
+            Err(e) => {
+                println!("error deleting pipeline: {e:?}");
+            }
+        },
         (Command::Show, SubCommand::Tenants) => match show_tenant(api_client, editor).await {
             Ok(tenant) => {
                 println!("tenant: {tenant}")
@@ -170,8 +202,38 @@ pub async fn execute_commands(
                 println!("error reading tenant: {e:?}");
             }
         },
-        (Command::List, SubCommand::Sources) => todo!(),
-        (Command::List, SubCommand::Sinks) => todo!(),
-        (Command::List, SubCommand::Pipelines) => todo!(),
+        (Command::List, SubCommand::Sources) => match list_sources(api_client, editor).await {
+            Ok(sources) => {
+                println!("sources: ");
+                for source in sources {
+                    println!("  {source}")
+                }
+            }
+            Err(e) => {
+                println!("error reading source: {e:?}");
+            }
+        },
+        (Command::List, SubCommand::Sinks) => match list_sinks(api_client, editor).await {
+            Ok(sinks) => {
+                println!("sinks: ");
+                for sink in sinks {
+                    println!("  {sink}")
+                }
+            }
+            Err(e) => {
+                println!("error reading sink: {e:?}");
+            }
+        },
+        (Command::List, SubCommand::Pipelines) => match list_pipelines(api_client, editor).await {
+            Ok(pipelines) => {
+                println!("pipelines: ");
+                for pipeline in pipelines {
+                    println!("  {pipeline}")
+                }
+            }
+            Err(e) => {
+                println!("error reading pipelines: {e:?}");
+            }
+        },
     }
 }

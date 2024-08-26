@@ -372,38 +372,47 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn update_source(
-    //     &self,
-    //     tenant_id: i64,
-    //     source_id: i64,
-    //     source: &UpdateSourceRequest,
-    // ) -> reqwest::Response {
-    //     self.client
-    //         .post(&format!("{}/v1/sources/{source_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .json(source)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn update_source(
+        &self,
+        tenant_id: i64,
+        source_id: i64,
+        source: &UpdateSourceRequest,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .post(&format!("{}/v1/sources/{source_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(source)
+            .send()
+            .await?;
+        Ok(())
+    }
 
-    // pub async fn delete_source(&self, tenant_id: i64, source_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .delete(&format!("{}/v1/sources/{source_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+    pub async fn delete_source(
+        &self,
+        tenant_id: i64,
+        source_id: i64,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .delete(&format!("{}/v1/sources/{source_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?;
+        Ok(())
+    }
 
-    // pub async fn read_all_sources(&self, tenant_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/sources", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn read_all_sources(
+        &self,
+        tenant_id: i64,
+    ) -> Result<Vec<SourceResponse>, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/sources", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     pub async fn create_sink(
         &self,
@@ -436,38 +445,45 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn update_sink(
-    //     &self,
-    //     tenant_id: i64,
-    //     sink_id: i64,
-    //     sink: &UpdateSinkRequest,
-    // ) -> reqwest::Response {
-    //     self.client
-    //         .post(&format!("{}/v1/sinks/{sink_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .json(sink)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn update_sink(
+        &self,
+        tenant_id: i64,
+        sink_id: i64,
+        sink: &UpdateSinkRequest,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .post(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(sink)
+            .send()
+            .await?;
 
-    // pub async fn delete_sink(&self, tenant_id: i64, sink_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .delete(&format!("{}/v1/sinks/{sink_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+        Ok(())
+    }
 
-    // pub async fn read_all_sinks(&self, tenant_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/sinks", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn delete_sink(&self, tenant_id: i64, sink_id: i64) -> Result<(), ApiClientError> {
+        self.client
+            .delete(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn read_all_sinks(
+        &self,
+        tenant_id: i64,
+    ) -> Result<Vec<SinkResponse>, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/sinks", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     pub async fn create_pipeline(
         &self,
@@ -500,36 +516,47 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn update_pipeline(
-    //     &self,
-    //     tenant_id: i64,
-    //     pipeline_id: i64,
-    //     pipeline: &UpdatePipelineRequest,
-    // ) -> reqwest::Response {
-    //     self.client
-    //         .post(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .json(pipeline)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn update_pipeline(
+        &self,
+        tenant_id: i64,
+        pipeline_id: i64,
+        pipeline: &UpdatePipelineRequest,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .post(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(pipeline)
+            .send()
+            .await?;
 
-    // pub async fn delete_pipeline(&self, tenant_id: i64, pipeline_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .delete(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+        Ok(())
+    }
 
-    // pub async fn read_all_pipelines(&self, tenant_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/pipelines", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn delete_pipeline(
+        &self,
+        tenant_id: i64,
+        pipeline_id: i64,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .delete(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn read_all_pipelines(
+        &self,
+        tenant_id: i64,
+    ) -> Result<Vec<PipelineResponse>, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/pipelines", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 }

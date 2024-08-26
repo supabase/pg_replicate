@@ -3,6 +3,7 @@ use rustyline::DefaultEditor;
 use crate::{
     api_client::{
         ApiClient, CreateSourceRequest, CreateSourceResponse, SourceConfig, SourceResponse,
+        UpdateSourceRequest,
     },
     get_id, get_string,
     tenants::get_tenant_id,
@@ -32,6 +33,44 @@ pub async fn show_source(
     let source = api_client.read_source(tenant_id, source_id).await?;
 
     Ok(source)
+}
+
+pub async fn update_source(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<(), CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let source_id = get_source_id(editor)?;
+    let config = get_source_config(editor)?;
+
+    let source = UpdateSourceRequest { config };
+    api_client
+        .update_source(tenant_id, source_id, &source)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn delete_source(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<(), CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let source_id = get_source_id(editor)?;
+
+    api_client.delete_source(tenant_id, source_id).await?;
+
+    Ok(())
+}
+
+pub async fn list_sources(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<Vec<SourceResponse>, CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let tenants = api_client.read_all_sources(tenant_id).await?;
+
+    Ok(tenants)
 }
 
 fn get_source_config(editor: &mut DefaultEditor) -> Result<SourceConfig, CliError> {

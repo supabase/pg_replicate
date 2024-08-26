@@ -3,7 +3,7 @@ use rustyline::DefaultEditor;
 use crate::{
     api_client::{
         ApiClient, BatchConfig, CreatePipelineRequest, CreatePipelineResponse, PipelineConfig,
-        PipelineResponse,
+        PipelineResponse, UpdatePipelineRequest,
     },
     get_id, get_u64, get_usize,
     sinks::get_sink_id,
@@ -44,6 +44,50 @@ pub async fn show_pipeline(
     let pipeline = api_client.read_pipeline(tenant_id, pipeline_id).await?;
 
     Ok(pipeline)
+}
+
+pub async fn update_pipeline(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<(), CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let source_id = get_source_id(editor)?;
+    let sink_id = get_sink_id(editor)?;
+    let pipeline_id = get_pipeline_id(editor)?;
+    let config = get_pipeline_config(editor)?;
+
+    let pipeline = UpdatePipelineRequest {
+        source_id,
+        sink_id,
+        config,
+    };
+    api_client
+        .update_pipeline(tenant_id, pipeline_id, &pipeline)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn delete_pipeline(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<(), CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let pipeline_id = get_pipeline_id(editor)?;
+
+    api_client.delete_pipeline(tenant_id, pipeline_id).await?;
+
+    Ok(())
+}
+
+pub async fn list_pipelines(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<Vec<PipelineResponse>, CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let tenants = api_client.read_all_pipelines(tenant_id).await?;
+
+    Ok(tenants)
 }
 
 fn get_pipeline_config(editor: &mut DefaultEditor) -> Result<PipelineConfig, CliError> {
