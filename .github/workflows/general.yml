@@ -101,11 +101,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           file: ./api/Dockerfile
+          no-cache: true
           push: true
           tags: ${{ vars.DOCKERHUB_USERNAME }}/api:${{ github.head_ref || github.ref_name }}.${{ github.sha }}
       - name: Build and push replicator image
         uses: docker/build-push-action@v6
         with:
           file: ./replicator/Dockerfile
+          no-cache: true
           push: true
           tags: ${{ vars.DOCKERHUB_USERNAME }}/replicator:${{ github.head_ref || github.ref_name }}.${{ github.sha }}
