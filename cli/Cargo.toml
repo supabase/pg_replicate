@@ -1,0 +1,8 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rustyline = "14.0.0"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
