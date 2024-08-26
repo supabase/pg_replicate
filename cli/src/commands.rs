@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     api_client::ApiClient,
-    tenants::{create_tenant, delete_tenant, read_tenant, update_tenant},
+    tenants::{create_tenant, delete_tenant, list_tenants, show_tenant, update_tenant},
 };
 
 pub enum Command {
@@ -103,7 +103,7 @@ pub async fn execute_commands(
         (Command::Delete, SubCommand::Sources) => todo!(),
         (Command::Delete, SubCommand::Sinks) => todo!(),
         (Command::Delete, SubCommand::Pipelines) => todo!(),
-        (Command::Show, SubCommand::Tenants) => match read_tenant(api_client, editor).await {
+        (Command::Show, SubCommand::Tenants) => match show_tenant(api_client, editor).await {
             Ok(tenant) => {
                 println!("tenant: {tenant}")
             }
@@ -114,7 +114,17 @@ pub async fn execute_commands(
         (Command::Show, SubCommand::Sources) => todo!(),
         (Command::Show, SubCommand::Sinks) => todo!(),
         (Command::Show, SubCommand::Pipelines) => todo!(),
-        (Command::List, SubCommand::Tenants) => todo!(),
+        (Command::List, SubCommand::Tenants) => match list_tenants(api_client).await {
+            Ok(tenants) => {
+                println!("tenants: ");
+                for tenant in tenants {
+                    println!("  {tenant}")
+                }
+            }
+            Err(e) => {
+                println!("error reading tenant: {e:?}");
+            }
+        },
         (Command::List, SubCommand::Sources) => todo!(),
         (Command::List, SubCommand::Sinks) => todo!(),
         (Command::List, SubCommand::Pipelines) => todo!(),

@@ -238,13 +238,15 @@ impl ApiClient {
         Ok(())
     }
 
-    // pub async fn read_all_tenants(&self) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/tenants", &self.address))
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn read_all_tenants(&self) -> Result<Vec<TenantResponse>, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/tenants", &self.address))
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn create_source(
     //     &self,

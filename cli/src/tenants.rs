@@ -37,7 +37,7 @@ pub async fn create_tenant(
     Ok(tenant)
 }
 
-pub async fn read_tenant(
+pub async fn show_tenant(
     api_client: &ApiClient,
     editor: &mut DefaultEditor,
 ) -> Result<TenantResponse, CliError> {
@@ -70,6 +70,12 @@ pub async fn delete_tenant(
     api_client.delete_tenant(tenant_id).await?;
 
     Ok(())
+}
+
+pub async fn list_tenants(api_client: &ApiClient) -> Result<Vec<TenantResponse>, CliError> {
+    let tenants = api_client.read_all_tenants().await?;
+
+    Ok(tenants)
 }
 
 fn get_tenant_name(editor: &mut DefaultEditor) -> Result<String, CliError> {
