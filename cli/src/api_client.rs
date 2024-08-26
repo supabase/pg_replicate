@@ -217,18 +217,18 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn update_tenant(
-    //     &self,
-    //     tenant_id: i64,
-    //     tenant: &UpdateTenantRequest,
-    // ) -> reqwest::Response {
-    //     self.client
-    //         .post(&format!("{}/v1/tenants/{tenant_id}", &self.address))
-    //         .json(tenant)
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+    pub async fn update_tenant(
+        &self,
+        tenant_id: i64,
+        tenant: &UpdateTenantRequest,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .post(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .json(tenant)
+            .send()
+            .await?;
+        Ok(())
+    }
 
     // pub async fn delete_tenant(&self, tenant_id: i64) -> reqwest::Response {
     //     self.client

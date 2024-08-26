@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     api_client::ApiClient,
-    tenants::{create_tenant, read_tenant},
+    tenants::{create_tenant, read_tenant, update_tenant},
 };
 
 pub enum Command {
@@ -85,7 +85,12 @@ pub async fn execute_commands(
         (Command::Add, SubCommand::Sources) => todo!(),
         (Command::Add, SubCommand::Sinks) => todo!(),
         (Command::Add, SubCommand::Pipelines) => todo!(),
-        (Command::Update, SubCommand::Tenants) => todo!(),
+        (Command::Update, SubCommand::Tenants) => match update_tenant(api_client, editor).await {
+            Ok(()) => println!("tenant updated"),
+            Err(e) => {
+                println!("error updating tenant: {e:#?}");
+            }
+        },
         (Command::Update, SubCommand::Sources) => todo!(),
         (Command::Update, SubCommand::Sinks) => todo!(),
         (Command::Update, SubCommand::Pipelines) => todo!(),
