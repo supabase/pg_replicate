@@ -92,6 +92,23 @@ pub struct TenantResponse {
     pub prefix: String,
 }
 
+impl Display for TenantResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "id: {}, name: {}, prefix: {}, hosted_on_supabase: {}",
+            self.id,
+            self.name,
+            self.prefix,
+            if self.supabase_project_ref.is_some() {
+                "true"
+            } else {
+                "false"
+            }
+        )
+    }
+}
+
 #[derive(Serialize)]
 pub struct CreateSourceRequest {
     pub config: SourceConfig,
@@ -180,24 +197,25 @@ impl ApiClient {
         &self,
         tenant: &CreateTenantRequest,
     ) -> Result<CreateTenantResponse, ApiClientError> {
-        let response: CreateTenantResponse = self
+        Ok(self
             .client
             .post(&format!("{}/v1/tenants", &self.address))
             .json(tenant)
             .send()
             .await?
             .json()
-            .await?;
-        Ok(response)
+            .await?)
     }
 
-    // pub async fn read_tenant(&self, tenant_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/tenants/{tenant_id}", &self.address))
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn read_tenant(&self, tenant_id: i64) -> Result<TenantResponse, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn update_tenant(
     //     &self,

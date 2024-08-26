@@ -1,9 +1,10 @@
 use api_client::ApiClient;
+use commands::{execute_commands, Command, SubCommand};
 use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, Result};
-use tenants::create_tenant;
 
 mod api_client;
+mod commands;
 mod tenants;
 
 #[tokio::main]
@@ -32,27 +33,22 @@ async fn main() -> Result<()> {
                         continue;
                     }
                     let main_command = tokens[0].trim().to_lowercase();
+                    let command: Command = match main_command.as_str().try_into() {
+                        Ok(command) => command,
+                        Err(e) => {
+                            println!("error parsing command: {e:?}");
+                            continue;
+                        }
+                    };
                     let subcommand = tokens[1].trim().to_lowercase();
-                    match main_command.as_ref() {
-                        "a" | "ad" | "add" => {
-                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
+                    let subcommand: SubCommand = match subcommand.as_str().try_into() {
+                        Ok(subcommand) => subcommand,
+                        Err(e) => {
+                            println!("error parsing subcommand: {e:?}");
+                            continue;
                         }
-                        "u" | "up" | "upd" | "upda" | "updat" | "update" => {
-                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
-                        }
-                        "d" | "de" | "del" | "dele" | "delet" | "delete" => {
-                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
-                        }
-                        "s" | "sh" | "sho" | "show" => {
-                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
-                        }
-                        "l" | "li" | "lis" | "list" => {
-                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
-                        }
-                        _ => {
-                            print_invalid_command_help(command);
-                        }
-                    }
+                    };
+                    execute_commands(command, subcommand, &api_client, &mut editor).await;
                 }
             },
             Err(ReadlineError::Interrupted) => {
@@ -68,37 +64,6 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
-}
-
-async fn handle_subcommand(subcommand: &str, api_client: &ApiClient, editor: &mut DefaultEditor) {
-    match subcommand {
-        "t" | "te" | "ten" | "tena" | "tenan" | "tenant" | "tenants" => {
-            match create_tenant(api_client, editor).await {
-                Ok(tenant) => {
-                    println!("tenant created: {tenant}");
-                }
-                Err(e) => {
-                    println!("error creating tenant: {e:#?}");
-                    return;
-                }
-            }
-        }
-        "so" | "sou" | "sour" | "sourc" | "source" | "sources" => {
-            println!("sources:");
-        }
-        "si" | "sin" | "sink" | "sinks" => {
-            println!("sinks:");
-        }
-        "p" | "pi" | "pip" | "pipe" | "pipel" | "pipeli" | "pipelin" | "pipeline" | "pipelines" => {
-            println!("pipelines:");
-        }
-        subcommand => {
-            println!("unknown subcommand: {subcommand}");
-            if subcommand == "s" {
-                println!("'s' is ambiguous between sources and sinks");
-            }
-        }
-    }
 }
 
 fn print_invalid_command_help(command: &str) {

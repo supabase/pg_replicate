@@ -1,21 +1,28 @@
+use std::num::ParseIntError;
+
 use rustyline::{error::ReadlineError, DefaultEditor};
 use thiserror::Error;
 
-use crate::api_client::{ApiClient, ApiClientError, CreateTenantRequest, CreateTenantResponse};
+use crate::api_client::{
+    ApiClient, ApiClientError, CreateTenantRequest, CreateTenantResponse, TenantResponse,
+};
 
 #[derive(Debug, Error)]
-pub enum CreateTenantError {
+pub enum CliError {
     #[error("readline error: {0}")]
     Readline(#[from] ReadlineError),
 
     #[error("api client error: {0}")]
     ApiClient(#[from] ApiClientError),
+
+    #[error("parse int error: {0}")]
+    ParseInt(#[from] ParseIntError),
 }
 
 pub async fn create_tenant(
     api_client: &ApiClient,
     editor: &mut DefaultEditor,
-) -> Result<CreateTenantResponse, CreateTenantError> {
+) -> Result<CreateTenantResponse, CliError> {
     let name = editor.readline("enter tenant name: ")?;
     let name = name.trim().to_string();
 
@@ -36,5 +43,15 @@ pub async fn create_tenant(
         })
         .await?;
 
+    Ok(tenant)
+}
+
+pub async fn read_tenant(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<TenantResponse, CliError> {
+    let tenant_id = editor.readline("enter tenant id: ")?;
+    let tenant_id = tenant_id.trim().parse()?;
+    let tenant = api_client.read_tenant(tenant_id).await?;
     Ok(tenant)
 }
