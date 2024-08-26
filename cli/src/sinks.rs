@@ -1,7 +1,7 @@
 use rustyline::DefaultEditor;
 
 use crate::{
-    api_client::{ApiClient, CreateSinkRequest, CreateSinkResponse, SinkConfig},
+    api_client::{ApiClient, CreateSinkRequest, CreateSinkResponse, SinkConfig, SinkResponse},
     get_id, get_string,
     tenants::get_tenant_id,
     CliError,
@@ -16,6 +16,18 @@ pub async fn create_sink(
     let sink = api_client
         .create_sink(tenant_id, &CreateSinkRequest { config })
         .await?;
+
+    Ok(sink)
+}
+
+pub async fn show_sink(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<SinkResponse, CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let sink_id = get_sink_id(editor)?;
+
+    let sink = api_client.read_sink(tenant_id, sink_id).await?;
 
     Ok(sink)
 }

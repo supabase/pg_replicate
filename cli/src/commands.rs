@@ -3,9 +3,9 @@ use thiserror::Error;
 
 use crate::{
     api_client::ApiClient,
-    pipelines::create_pipeline,
-    sinks::create_sink,
-    sources::create_source,
+    pipelines::{create_pipeline, show_pipeline},
+    sinks::{create_sink, show_sink},
+    sources::{create_source, show_source},
     tenants::{create_tenant, delete_tenant, list_tenants, show_tenant, update_tenant},
 };
 
@@ -135,9 +135,30 @@ pub async fn execute_commands(
                 println!("error reading tenant: {e:?}");
             }
         },
-        (Command::Show, SubCommand::Sources) => todo!(),
-        (Command::Show, SubCommand::Sinks) => todo!(),
-        (Command::Show, SubCommand::Pipelines) => todo!(),
+        (Command::Show, SubCommand::Sources) => match show_source(api_client, editor).await {
+            Ok(source) => {
+                println!("source: {source}")
+            }
+            Err(e) => {
+                println!("error reading source: {e:?}");
+            }
+        },
+        (Command::Show, SubCommand::Sinks) => match show_sink(api_client, editor).await {
+            Ok(sink) => {
+                println!("sink: {sink}")
+            }
+            Err(e) => {
+                println!("error reading sink: {e:?}");
+            }
+        },
+        (Command::Show, SubCommand::Pipelines) => match show_pipeline(api_client, editor).await {
+            Ok(pipeline) => {
+                println!("pipeline: {pipeline}")
+            }
+            Err(e) => {
+                println!("error reading pipeline: {e:?}");
+            }
+        },
         (Command::List, SubCommand::Tenants) => match list_tenants(api_client).await {
             Ok(tenants) => {
                 println!("tenants: ");

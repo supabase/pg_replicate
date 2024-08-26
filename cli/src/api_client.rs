@@ -34,6 +34,24 @@ pub enum SourceConfig {
     },
 }
 
+impl Display for SourceConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let SourceConfig::Postgres {
+            host,
+            port,
+            name,
+            username,
+            password,
+            slot_name,
+            publication,
+        } = self;
+        write!(
+            f,
+            "host: {host}, port: {port}, name: {name}, username: {username}, password: {password:?}, slot_name: {slot_name}, publication: {publication}",
+        )
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum SinkConfig {
     BigQuery {
@@ -48,9 +66,26 @@ pub enum SinkConfig {
     },
 }
 
+impl Display for SinkConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let SinkConfig::BigQuery {
+            project_id,
+            dataset_id,
+            service_account_key,
+        } = self;
+        write!(f, "project_id: {project_id}, dataset_id: {dataset_id}, service_account_key: {service_account_key}")
+    }
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PipelineConfig {
     pub config: BatchConfig,
+}
+
+impl Display for PipelineConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "config: {}", self.config)
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -60,6 +95,16 @@ pub struct BatchConfig {
 
     /// maximum duration, in seconds, to wait for a batch to fill
     pub max_fill_secs: u64,
+}
+
+impl Display for BatchConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "max_size: {}, max_fill_secs: {}",
+            self.max_size, self.max_fill_secs
+        )
+    }
 }
 
 #[derive(Serialize)]
@@ -137,6 +182,16 @@ pub struct SourceResponse {
     pub config: SourceConfig,
 }
 
+impl Display for SourceResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "tenant_id: {}, id: {}, config: {}",
+            self.tenant_id, self.id, self.config
+        )
+    }
+}
+
 #[derive(Serialize)]
 pub struct CreateSinkRequest {
     pub config: SinkConfig,
@@ -165,6 +220,16 @@ pub struct SinkResponse {
     pub config: SinkConfig,
 }
 
+impl Display for SinkResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "tenant_id: {}, id: {}, config: {}",
+            self.tenant_id, self.id, self.config
+        )
+    }
+}
+
 #[derive(Serialize)]
 pub struct CreatePipelineRequest {
     pub source_id: i64,
@@ -190,6 +255,16 @@ pub struct PipelineResponse {
     pub source_id: i64,
     pub sink_id: i64,
     pub config: PipelineConfig,
+}
+
+impl Display for PipelineResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "tenant_id: {}, id: {}, source_id: {}, sink_id: {}, config: {}",
+            self.tenant_id, self.id, self.source_id, self.sink_id, self.config
+        )
+    }
 }
 
 #[derive(Serialize)]
@@ -282,14 +357,20 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn read_source(&self, tenant_id: i64, source_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/sources/{source_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn read_source(
+        &self,
+        tenant_id: i64,
+        source_id: i64,
+    ) -> Result<SourceResponse, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/sources/{source_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn update_source(
     //     &self,
@@ -340,14 +421,20 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn read_sink(&self, tenant_id: i64, sink_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/sinks/{sink_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn read_sink(
+        &self,
+        tenant_id: i64,
+        sink_id: i64,
+    ) -> Result<SinkResponse, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn update_sink(
     //     &self,
@@ -398,14 +485,20 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn read_pipeline(&self, tenant_id: i64, pipeline_id: i64) -> reqwest::Response {
-    //     self.client
-    //         .get(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .send()
-    //         .await
-    //         .expect("failed to execute request")
-    // }
+    pub async fn read_pipeline(
+        &self,
+        tenant_id: i64,
+        pipeline_id: i64,
+    ) -> Result<PipelineResponse, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn update_pipeline(
     //     &self,

@@ -1,7 +1,9 @@
 use rustyline::DefaultEditor;
 
 use crate::{
-    api_client::{ApiClient, CreateSourceRequest, CreateSourceResponse, SourceConfig},
+    api_client::{
+        ApiClient, CreateSourceRequest, CreateSourceResponse, SourceConfig, SourceResponse,
+    },
     get_id, get_string,
     tenants::get_tenant_id,
     CliError,
@@ -16,6 +18,18 @@ pub async fn create_source(
     let source = api_client
         .create_source(tenant_id, &CreateSourceRequest { config })
         .await?;
+
+    Ok(source)
+}
+
+pub async fn show_source(
+    api_client: &ApiClient,
+    editor: &mut DefaultEditor,
+) -> Result<SourceResponse, CliError> {
+    let tenant_id = get_tenant_id(editor)?;
+    let source_id = get_source_id(editor)?;
+
+    let source = api_client.read_source(tenant_id, source_id).await?;
 
     Ok(source)
 }
