@@ -21,7 +21,9 @@ pin-project-lite = { version = "0.2", default-features = false }
 postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres", rev = "02336bebb28507665184c21566e5d1dc8de1dd7d" }
 prost = { version = "0.13.1", default-features = false }
 rand = { version = "0.8.5", default-features = false }
+reqwest = { version = "0.12", default-features = false }
 rustls = { version = "0.23.12", default-features = false }
+rustyline = { version = "14.0.0", default-features = false }
 secrecy = { version = "0.8.0", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }

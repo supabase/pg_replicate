@@ -1,14 +1,21 @@
+use api_client::ApiClient;
 use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, Result};
+use tenants::create_tenant;
+
+mod api_client;
+mod tenants;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut rl = DefaultEditor::new()?;
+    let address = "http://127.0.0.1:8000".to_string();
+    let api_client = ApiClient::new(address);
+    let mut editor = DefaultEditor::new()?;
     println!("replicator api CLI version 0.1.0");
     println!("type help or ? for help");
     println!();
     loop {
-        let readline = rl.readline("> ");
+        let readline = editor.readline("> ");
         match readline {
             Ok(line) => match line.to_lowercase().as_str() {
                 "quit" | "exit" => {
@@ -28,20 +35,19 @@ async fn main() -> Result<()> {
                     let subcommand = tokens[1].trim().to_lowercase();
                     match main_command.as_ref() {
                         "a" | "ad" | "add" => {
-                            handle_subcommand(&subcommand);
+                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
                         }
                         "u" | "up" | "upd" | "upda" | "updat" | "update" => {
-                            handle_subcommand(&subcommand);
+                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
                         }
                         "d" | "de" | "del" | "dele" | "delet" | "delete" => {
-                            handle_subcommand(&subcommand);
+                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
                         }
                         "s" | "sh" | "sho" | "show" => {
-                            handle_subcommand(&subcommand);
+                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
                         }
                         "l" | "li" | "lis" | "list" => {
-                            // handle subcommand
-                            handle_subcommand(&subcommand);
+                            handle_subcommand(&subcommand, &api_client, &mut editor).await;
                         }
                         _ => {
                             print_invalid_command_help(command);
@@ -64,10 +70,18 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn handle_subcommand(subcommand: &str) {
+async fn handle_subcommand(subcommand: &str, api_client: &ApiClient, editor: &mut DefaultEditor) {
     match subcommand {
         "t" | "te" | "ten" | "tena" | "tenan" | "tenant" | "tenants" => {
-            println!("tenants:");
+            match create_tenant(api_client, editor).await {
+                Ok(tenant) => {
+                    println!("tenant created: {tenant}");
+                }
+                Err(e) => {
+                    println!("error creating tenant: {e:#?}");
+                    return;
+                }
+            }
         }
         "so" | "sou" | "sour" | "sourc" | "source" | "sources" => {
             println!("sources:");

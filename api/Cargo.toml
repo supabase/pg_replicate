@@ -23,6 +23,7 @@ kube = { workspace = true, features = [
     "rustls-tls",
 ] }
 rand = { workspace = true, features = ["std"] }
+reqwest = { workspace = true, features = ["json"] }
 secrecy = { workspace = true, features = ["serde", "alloc"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
@@ -43,4 +44,3 @@ tracing-subscriber = { workspace = true, features = ["registry", "env-filter"] }
 
 [dev-dependencies]
 uuid = { version = "1.10.0", features = ["v4"] }
-reqwest = { version = "0.12", features = ["json"] }
