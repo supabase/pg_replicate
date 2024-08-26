@@ -1,24 +1,11 @@
-use std::num::ParseIntError;
+use rustyline::DefaultEditor;
 
-use rustyline::{error::ReadlineError, DefaultEditor};
-use thiserror::Error;
-
-use crate::api_client::{
-    ApiClient, ApiClientError, CreateTenantRequest, CreateTenantResponse, TenantResponse,
-    UpdateTenantRequest,
+use crate::{
+    api_client::{
+        ApiClient, CreateTenantRequest, CreateTenantResponse, TenantResponse, UpdateTenantRequest,
+    },
+    get_id, get_string, CliError,
 };
-
-#[derive(Debug, Error)]
-pub enum CliError {
-    #[error("readline error: {0}")]
-    Readline(#[from] ReadlineError),
-
-    #[error("api client error: {0}")]
-    ApiClient(#[from] ApiClientError),
-
-    #[error("parse int error: {0}")]
-    ParseInt(#[from] ParseIntError),
-}
 
 pub async fn create_tenant(
     api_client: &ApiClient,
@@ -79,9 +66,7 @@ pub async fn list_tenants(api_client: &ApiClient) -> Result<Vec<TenantResponse>,
 }
 
 fn get_tenant_name(editor: &mut DefaultEditor) -> Result<String, CliError> {
-    let name = editor.readline("enter tenant name: ")?;
-    let name = name.trim().to_string();
-    Ok(name)
+    get_string(editor, "enter tenant name: ")
 }
 
 fn get_project_ref(editor: &mut DefaultEditor) -> Result<Option<String>, CliError> {
@@ -97,8 +82,6 @@ fn get_project_ref(editor: &mut DefaultEditor) -> Result<Option<String>, CliErro
     Ok(supabase_project_ref)
 }
 
-fn get_tenant_id(editor: &mut DefaultEditor) -> Result<i64, CliError> {
-    let tenant_id = editor.readline("enter tenant id: ")?;
-    let tenant_id = tenant_id.trim().parse()?;
-    Ok(tenant_id)
+pub fn get_tenant_id(editor: &mut DefaultEditor) -> Result<i64, CliError> {
+    get_id(editor, "enter tenant id: ")
 }

@@ -3,6 +3,9 @@ use thiserror::Error;
 
 use crate::{
     api_client::ApiClient,
+    pipelines::create_pipeline,
+    sinks::create_sink,
+    sources::create_source,
     tenants::{create_tenant, delete_tenant, list_tenants, show_tenant, update_tenant},
 };
 
@@ -25,7 +28,7 @@ impl TryFrom<&str> for Command {
 
     fn try_from(command: &str) -> Result<Self, Self::Error> {
         Ok(match command {
-            "a" | "ad" | "add" => Command::Add,
+            "a" | "ad" | "add" | "c" | "cr" | "cre" | "crea" | "creat" | "create" => Command::Add,
             "u" | "up" | "upd" | "upda" | "updat" | "update" => Command::Update,
             "d" | "de" | "del" | "dele" | "delet" | "delete" => Command::Delete,
             "s" | "sh" | "sho" | "show" => Command::Show,
@@ -82,9 +85,30 @@ pub async fn execute_commands(
                 println!("error creating tenant: {e:?}");
             }
         },
-        (Command::Add, SubCommand::Sources) => todo!(),
-        (Command::Add, SubCommand::Sinks) => todo!(),
-        (Command::Add, SubCommand::Pipelines) => todo!(),
+        (Command::Add, SubCommand::Sources) => match create_source(api_client, editor).await {
+            Ok(source) => {
+                println!("source created: {source}");
+            }
+            Err(e) => {
+                println!("error creating source: {e:?}");
+            }
+        },
+        (Command::Add, SubCommand::Sinks) => match create_sink(api_client, editor).await {
+            Ok(sink) => {
+                println!("sink created: {sink}");
+            }
+            Err(e) => {
+                println!("error creating sink: {e:?}");
+            }
+        },
+        (Command::Add, SubCommand::Pipelines) => match create_pipeline(api_client, editor).await {
+            Ok(pipeline) => {
+                println!("pipeline created: {pipeline}");
+            }
+            Err(e) => {
+                println!("error creating pipeline: {e:?}");
+            }
+        },
         (Command::Update, SubCommand::Tenants) => match update_tenant(api_client, editor).await {
             Ok(()) => println!("tenant updated"),
             Err(e) => {

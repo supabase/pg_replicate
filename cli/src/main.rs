@@ -1,14 +1,32 @@
-use api_client::ApiClient;
+use std::num::ParseIntError;
+
+use api_client::{ApiClient, ApiClientError};
 use commands::{execute_commands, Command, SubCommand};
 use rustyline::error::ReadlineError;
-use rustyline::{DefaultEditor, Result};
+use rustyline::DefaultEditor;
+use thiserror::Error;
 
 mod api_client;
 mod commands;
+mod pipelines;
+mod sinks;
+mod sources;
 mod tenants;
 
+#[derive(Debug, Error)]
+pub enum CliError {
+    #[error("readline error: {0}")]
+    Readline(#[from] ReadlineError),
+
+    #[error("api client error: {0}")]
+    ApiClient(#[from] ApiClientError),
+
+    #[error("parse int error: {0}")]
+    ParseInt(#[from] ParseIntError),
+}
+
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> rustyline::Result<()> {
     let address = "http://127.0.0.1:8000".to_string();
     let api_client = ApiClient::new(address);
     let mut editor = DefaultEditor::new()?;
@@ -100,4 +118,28 @@ fn print_help() {
     println!("  list sinks - list all existing sinks");
     println!("  list pipelines - list all existing pipelines");
     println!();
+}
+
+pub fn get_string(editor: &mut DefaultEditor, prompt: &str) -> Result<String, CliError> {
+    let s = editor.readline(prompt)?;
+    let s = s.trim().to_string();
+    Ok(s)
+}
+
+pub fn get_id(editor: &mut DefaultEditor, prompt: &str) -> Result<i64, CliError> {
+    let id = get_string(editor, prompt)?;
+    let id = id.trim().parse()?;
+    Ok(id)
+}
+
+pub fn get_usize(editor: &mut DefaultEditor, prompt: &str) -> Result<usize, CliError> {
+    let usize = get_string(editor, prompt)?;
+    let usize = usize.trim().parse()?;
+    Ok(usize)
+}
+
+pub fn get_u64(editor: &mut DefaultEditor, prompt: &str) -> Result<u64, CliError> {
+    let u64 = get_string(editor, prompt)?;
+    let u64 = u64.trim().parse()?;
+    Ok(u64)
 }

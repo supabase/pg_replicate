@@ -119,6 +119,12 @@ pub struct CreateSourceResponse {
     pub id: i64,
 }
 
+impl Display for CreateSourceResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id: {}", self.id)
+    }
+}
+
 #[derive(Serialize)]
 pub struct UpdateSourceRequest {
     pub config: SourceConfig,
@@ -139,6 +145,12 @@ pub struct CreateSinkRequest {
 #[derive(Deserialize)]
 pub struct CreateSinkResponse {
     pub id: i64,
+}
+
+impl Display for CreateSinkResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id: {}", self.id)
+    }
 }
 
 #[derive(Serialize)]
@@ -163,6 +175,12 @@ pub struct CreatePipelineRequest {
 #[derive(Deserialize)]
 pub struct CreatePipelineResponse {
     pub id: i64,
+}
+
+impl Display for CreatePipelineResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id: {}", self.id)
+    }
 }
 
 #[derive(Deserialize)]
@@ -248,19 +266,21 @@ impl ApiClient {
             .await?)
     }
 
-    // pub async fn create_source(
-    //     &self,
-    //     tenant_id: i64,
-    //     source: &CreateSourceRequest,
-    // ) -> reqwest::Response {
-    //     self.client
-    //         .post(&format!("{}/v1/sources", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .json(source)
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+    pub async fn create_source(
+        &self,
+        tenant_id: i64,
+        source: &CreateSourceRequest,
+    ) -> Result<CreateSourceResponse, ApiClientError> {
+        Ok(self
+            .client
+            .post(&format!("{}/v1/sources", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(source)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn read_source(&self, tenant_id: i64, source_id: i64) -> reqwest::Response {
     //     self.client
@@ -304,15 +324,21 @@ impl ApiClient {
     //         .expect("failed to execute request")
     // }
 
-    // pub async fn create_sink(&self, tenant_id: i64, sink: &CreateSinkRequest) -> reqwest::Response {
-    //     self.client
-    //         .post(&format!("{}/v1/sinks", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .json(sink)
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+    pub async fn create_sink(
+        &self,
+        tenant_id: i64,
+        sink: &CreateSinkRequest,
+    ) -> Result<CreateSinkResponse, ApiClientError> {
+        Ok(self
+            .client
+            .post(&format!("{}/v1/sinks", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(sink)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn read_sink(&self, tenant_id: i64, sink_id: i64) -> reqwest::Response {
     //     self.client
@@ -356,19 +382,21 @@ impl ApiClient {
     //         .expect("failed to execute request")
     // }
 
-    // pub async fn create_pipeline(
-    //     &self,
-    //     tenant_id: i64,
-    //     pipeline: &CreatePipelineRequest,
-    // ) -> reqwest::Response {
-    //     self.client
-    //         .post(&format!("{}/v1/pipelines", &self.address))
-    //         .header("tenant_id", tenant_id)
-    //         .json(pipeline)
-    //         .send()
-    //         .await
-    //         .expect("Failed to execute request.")
-    // }
+    pub async fn create_pipeline(
+        &self,
+        tenant_id: i64,
+        pipeline: &CreatePipelineRequest,
+    ) -> Result<CreatePipelineResponse, ApiClientError> {
+        Ok(self
+            .client
+            .post(&format!("{}/v1/pipelines", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(pipeline)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
 
     // pub async fn read_pipeline(&self, tenant_id: i64, pipeline_id: i64) -> reqwest::Response {
     //     self.client
