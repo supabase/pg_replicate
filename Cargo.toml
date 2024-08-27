@@ -27,7 +27,8 @@ rustyline = { version = "14.0.0", default-features = false }
 secrecy = { version = "0.8.0", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
-sqlx = { version = "0.8.1", default-features = false }
+sqlx = { git = "https://github.com/launchbadge/sqlx", rev = "20ba796b0d0b8547d2a6f00720294e2ad46700d7" }
+# sqlx = { version = "0.8.1", default-features = false }
 thiserror = "1.0"
 tokio = { version = "1.38", default-features = false }
 tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", default-features = false, rev = "02336bebb28507665184c21566e5d1dc8de1dd7d" }
