@@ -16,7 +16,7 @@ enum PipelineError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
-    #[error("sink with id {0} not found")]
+    #[error("pipeline with id {0} not found")]
     NotFound(i64),
 
     #[error("tenant id missing in request")]
