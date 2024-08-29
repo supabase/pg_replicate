@@ -2,6 +2,7 @@ use sqlx::PgPool;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct PublicationConfig {
+    pub name: String,
     pub table_names: Vec<String>,
 }
 

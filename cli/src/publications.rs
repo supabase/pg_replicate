@@ -81,12 +81,13 @@ pub async fn list_publications(
 }
 
 fn get_publication_config(editor: &mut DefaultEditor) -> Result<PublicationConfig, CliError> {
+    let name = get_string(editor, "enter publication name: ")?;
     let table_names = get_string(editor, "enter comma separated table names: ")?;
     let table_names: Vec<String> = table_names
         .split(',')
         .map(|table_name| table_name.trim().to_string())
         .collect();
-    Ok(PublicationConfig { table_names })
+    Ok(PublicationConfig { name, table_names })
 }
 
 pub fn get_publication_id(editor: &mut DefaultEditor) -> Result<i64, CliError> {

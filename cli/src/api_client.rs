@@ -105,6 +105,7 @@ impl Display for BatchConfig {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PublicationConfig {
+    pub name: String,
     pub table_names: Vec<String>,
 }
 

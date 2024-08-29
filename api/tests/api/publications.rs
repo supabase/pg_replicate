@@ -13,12 +13,14 @@ use crate::{
 
 fn new_publication_config() -> PublicationConfig {
     PublicationConfig {
+        name: "new_publication".to_string(),
         table_names: vec!["table1".to_string()],
     }
 }
 
 fn updated_publication_config() -> PublicationConfig {
     PublicationConfig {
+        name: "updated_publication".to_string(),
         table_names: vec!["table1".to_string(), "table2".to_string()],
     }
 }
