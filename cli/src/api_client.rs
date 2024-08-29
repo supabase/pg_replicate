@@ -28,9 +28,6 @@ pub enum SourceConfig {
 
         /// Postgres slot name
         slot_name: String,
-
-        /// Postgres publication name
-        publication: String,
     },
 }
 
@@ -43,11 +40,10 @@ impl Display for SourceConfig {
             username,
             password,
             slot_name,
-            publication,
         } = self;
         write!(
             f,
-            "host: {host}, port: {port}, name: {name}, username: {username}, password: {password:?}, slot_name: {slot_name}, publication: {publication}",
+            "host: {host}, port: {port}, name: {name}, username: {username}, password: {password:?}, slot_name: {slot_name}",
         )
     }
 }

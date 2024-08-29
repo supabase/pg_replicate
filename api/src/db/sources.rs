@@ -22,9 +22,6 @@ pub enum SourceConfig {
 
         /// Postgres slot name
         slot_name: String,
-
-        /// Postgres publication name
-        publication: String,
     },
 }
 
@@ -38,7 +35,6 @@ impl Debug for SourceConfig {
                 username,
                 password: _,
                 slot_name,
-                publication,
             } => f
                 .debug_struct("Postgres")
                 .field("host", host)
@@ -47,7 +43,6 @@ impl Debug for SourceConfig {
                 .field("username", username)
                 .field("password", &"REDACTED")
                 .field("slot_name", slot_name)
-                .field("publication", publication)
                 .finish(),
         }
     }

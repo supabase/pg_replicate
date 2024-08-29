@@ -86,7 +86,6 @@ fn get_source_config(editor: &mut DefaultEditor) -> Result<SourceConfig, CliErro
         Some(password)
     };
     let slot_name = get_string(editor, "enter slot name: ")?;
-    let publication = get_string(editor, "enter publication: ")?;
 
     Ok(SourceConfig::Postgres {
         host,
@@ -95,7 +94,6 @@ fn get_source_config(editor: &mut DefaultEditor) -> Result<SourceConfig, CliErro
         username,
         password,
         slot_name,
-        publication,
     })
 }
 

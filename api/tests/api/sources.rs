@@ -17,7 +17,6 @@ fn new_source_config() -> SourceConfig {
         username: "postgres".to_string(),
         password: Some("postgres".to_string()),
         slot_name: "slot".to_string(),
-        publication: "publication".to_string(),
     }
 }
 
@@ -29,7 +28,6 @@ fn updated_source_config() -> SourceConfig {
         username: "sergtsop".to_string(),
         password: Some("sergtsop".to_string()),
         slot_name: "tols".to_string(),
-        publication: "noitacilbup".to_string(),
     }
 }
 
