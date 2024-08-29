@@ -8,22 +8,25 @@ pub struct PublicationConfig {
 pub struct Publication {
     pub id: i64,
     pub tenant_id: i64,
+    pub source_id: i64,
     pub config: serde_json::Value,
 }
 
 pub async fn create_publication(
     pool: &PgPool,
     tenant_id: i64,
+    source_id: i64,
     config: &PublicationConfig,
 ) -> Result<i64, sqlx::Error> {
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        insert into publications (tenant_id, config)
-        values ($1, $2)
+        insert into publications (tenant_id, source_id, config)
+        values ($1, $2, $3)
         returning id
         "#,
         tenant_id,
+        source_id,
         config
     )
     .fetch_one(pool)
@@ -39,7 +42,7 @@ pub async fn read_publication(
 ) -> Result<Option<Publication>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        select id, tenant_id, config
+        select id, tenant_id, source_id, config
         from publications
         where tenant_id = $1 and id = $2
         "#,
@@ -52,6 +55,7 @@ pub async fn read_publication(
     Ok(record.map(|r| Publication {
         id: r.id,
         tenant_id: r.tenant_id,
+        source_id: r.source_id,
         config: r.config,
     }))
 }
@@ -60,16 +64,18 @@ pub async fn update_publication(
     pool: &PgPool,
     tenant_id: i64,
     publication_id: i64,
+    source_id: i64,
     config: &PublicationConfig,
 ) -> Result<Option<i64>, sqlx::Error> {
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
         update publications
-        set config = $1
-        where tenant_id = $2 and id = $3
+        set source_id = $1, config = $2
+        where tenant_id = $3 and id = $4
         returning id
         "#,
+        source_id,
         config,
         tenant_id,
         publication_id
@@ -106,7 +112,7 @@ pub async fn read_all_publications(
 ) -> Result<Vec<Publication>, sqlx::Error> {
     let mut record = sqlx::query!(
         r#"
-        select id, tenant_id, config
+        select id, tenant_id, source_id, config
         from publications
         where tenant_id = $1
         "#,
@@ -120,6 +126,7 @@ pub async fn read_all_publications(
         .map(|r| Publication {
             id: r.id,
             tenant_id: r.tenant_id,
+            source_id: r.source_id,
             config: r.config,
         })
         .collect())

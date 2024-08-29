@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        update publications\n        set config = $1\n        where tenant_id = $2 and id = $3\n        returning id\n        ",
+  "query": "\n        insert into publications (tenant_id, source_id, config)\n        values ($1, $2, $3)\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,14 +11,14 @@
     ],
     "parameters": {
       "Left": [
-        "Jsonb",
         "Int8",
-        "Int8"
+        "Int8",
+        "Jsonb"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "8077fb955105dcaf7cd28905fb9d7993768cdf4e93c18e05a214d60e9f9af2bc"
+  "hash": "512032b289c4570099e20b23b2785bf71a6cfac2e68b8e36ef9f3ebd1d57c27f"
 }

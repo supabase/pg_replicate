@@ -3,6 +3,7 @@ use reqwest::StatusCode;
 
 use crate::{
     sinks::create_sink,
+    sources::create_source,
     tenants::create_tenant,
     test_app::{
         spawn_app, CreatePublicationRequest, CreatePublicationResponse, PublicationResponse,
@@ -25,9 +26,10 @@ fn updated_publication_config() -> PublicationConfig {
 pub async fn create_publication_with_config(
     app: &TestApp,
     tenant_id: i64,
+    source_id: i64,
     config: PublicationConfig,
 ) -> i64 {
-    let publication = CreatePublicationRequest { config };
+    let publication = CreatePublicationRequest { source_id, config };
     let response = app.create_publication(tenant_id, &publication).await;
     let response: CreatePublicationResponse = response
         .json()
@@ -41,9 +43,11 @@ async fn publication_can_be_created() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
 
     // Act
     let publication = CreatePublicationRequest {
+        source_id,
         config: new_publication_config(),
     };
     let response = app.create_publication(tenant_id, &publication).await;
@@ -62,8 +66,10 @@ async fn an_existing_publication_can_be_read() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
     let publication = CreatePublicationRequest {
+        source_id,
         config: new_publication_config(),
     };
     let response = app.create_publication(tenant_id, &publication).await;
@@ -84,6 +90,7 @@ async fn an_existing_publication_can_be_read() {
         .expect("failed to deserialize response");
     assert_eq!(response.id, sink_id);
     assert_eq!(response.tenant_id, tenant_id);
+    assert_eq!(response.source_id, source_id);
     assert_eq!(response.config, publication.config);
 }
 
@@ -105,8 +112,10 @@ async fn an_existing_publication_can_be_updated() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
 
     let publication = CreatePublicationRequest {
+        source_id,
         config: new_publication_config(),
     };
     let response = app.create_publication(tenant_id, &publication).await;
@@ -117,7 +126,9 @@ async fn an_existing_publication_can_be_updated() {
     let publication_id = response.id;
 
     // Act
+    let updated_source_id = create_source(&app, tenant_id).await;
     let updated_config = UpdatePublicationRequest {
+        source_id: updated_source_id,
         config: updated_publication_config(),
     };
     let response = app
@@ -133,6 +144,7 @@ async fn an_existing_publication_can_be_updated() {
         .expect("failed to deserialize response");
     assert_eq!(response.id, publication_id);
     assert_eq!(response.tenant_id, tenant_id);
+    assert_eq!(response.source_id, updated_source_id);
     assert_eq!(response.config, updated_config.config);
 }
 
@@ -141,9 +153,11 @@ async fn an_non_existing_publication_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
 
     // Act
     let updated_config = UpdatePublicationRequest {
+        source_id,
         config: updated_publication_config(),
     };
     let response = app.update_publication(tenant_id, 42, &updated_config).await;
@@ -157,8 +171,10 @@ async fn an_existing_publication_can_be_deleted() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
 
     let publication = CreatePublicationRequest {
+        source_id,
         config: new_publication_config(),
     };
     let response = app.create_publication(tenant_id, &publication).await;
@@ -195,10 +211,12 @@ async fn all_publications_can_be_read() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
     let publication1_id =
-        create_publication_with_config(&app, tenant_id, new_publication_config()).await;
+        create_publication_with_config(&app, tenant_id, source_id, new_publication_config()).await;
     let publication2_id =
-        create_publication_with_config(&app, tenant_id, updated_publication_config()).await;
+        create_publication_with_config(&app, tenant_id, source_id, updated_publication_config())
+            .await;
 
     // Act
     let response = app.read_all_publications(tenant_id).await;

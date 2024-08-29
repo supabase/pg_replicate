@@ -116,6 +116,7 @@ pub struct UpdatePipelineRequest {
 
 #[derive(Serialize)]
 pub struct CreatePublicationRequest {
+    pub source_id: i64,
     pub config: PublicationConfig,
 }
 
@@ -126,6 +127,7 @@ pub struct CreatePublicationResponse {
 
 #[derive(Serialize)]
 pub struct UpdatePublicationRequest {
+    pub source_id: i64,
     pub config: PublicationConfig,
 }
 
@@ -133,6 +135,7 @@ pub struct UpdatePublicationRequest {
 pub struct PublicationResponse {
     pub id: i64,
     pub tenant_id: i64,
+    pub source_id: i64,
     pub config: PublicationConfig,
 }
 

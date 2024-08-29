@@ -45,6 +45,7 @@ impl ResponseError for PublicationError {
 
 #[derive(Deserialize)]
 struct PostPublicationRequest {
+    pub source_id: i64,
     pub config: PublicationConfig,
 }
 
@@ -57,6 +58,7 @@ struct PostPublicationResponse {
 struct GetPublicationResponse {
     id: i64,
     tenant_id: i64,
+    source_id: i64,
     config: PublicationConfig,
 }
 
@@ -83,8 +85,9 @@ pub async fn create_publication(
 ) -> Result<impl Responder, PublicationError> {
     let publication = publication.0;
     let tenant_id = extract_tenant_id(&req)?;
+    let source_id = publication.source_id;
     let config = publication.config;
-    let id = db::publications::create_publication(&pool, tenant_id, &config).await?;
+    let id = db::publications::create_publication(&pool, tenant_id, source_id, &config).await?;
     let response = PostPublicationResponse { id };
     Ok(Json(response))
 }
@@ -104,6 +107,7 @@ pub async fn read_publication(
             Ok::<GetPublicationResponse, serde_json::Error>(GetPublicationResponse {
                 id: s.id,
                 tenant_id: s.tenant_id,
+                source_id: s.source_id,
                 config,
             })
         })
@@ -121,8 +125,9 @@ pub async fn update_publication(
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let publication_id = publication_id.into_inner();
+    let source_id = publication.source_id;
     let config = &publication.config;
-    db::publications::update_publication(&pool, tenant_id, publication_id, config)
+    db::publications::update_publication(&pool, tenant_id, publication_id, source_id, config)
         .await?
         .ok_or(PublicationError::NotFound(publication_id))?;
     Ok(HttpResponse::Ok().finish())
@@ -154,6 +159,7 @@ pub async fn read_all_publications(
         let sink = GetPublicationResponse {
             id: publication.id,
             tenant_id: publication.tenant_id,
+            source_id: publication.source_id,
             config,
         };
         publications.push(sink);
