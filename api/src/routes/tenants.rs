@@ -27,14 +27,14 @@ enum TenantError {
     DatabaseError(#[from] sqlx::Error),
 
     #[error("tenant with id {0} not found")]
-    NotFound(i64),
+    TenantNotFound(i64),
 }
 
 impl ResponseError for TenantError {
     fn status_code(&self) -> StatusCode {
         match self {
             TenantError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            TenantError::NotFound(_) => StatusCode::NOT_FOUND,
+            TenantError::TenantNotFound(_) => StatusCode::NOT_FOUND,
         }
     }
 }
@@ -69,7 +69,7 @@ pub async fn read_tenant(
             id: t.id,
             name: t.name,
         })
-        .ok_or(TenantError::NotFound(tenant_id))?;
+        .ok_or(TenantError::TenantNotFound(tenant_id))?;
     Ok(Json(response))
 }
 
@@ -82,7 +82,7 @@ pub async fn update_tenant(
     let tenant_id = tenant_id.into_inner();
     db::tenants::update_tenant(&pool, tenant_id, &tenant.0.name)
         .await?
-        .ok_or(TenantError::NotFound(tenant_id))?;
+        .ok_or(TenantError::TenantNotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -94,7 +94,7 @@ pub async fn delete_tenant(
     let tenant_id = tenant_id.into_inner();
     db::tenants::delete_tenant(&pool, tenant_id)
         .await?
-        .ok_or(TenantError::NotFound(tenant_id))?;
+        .ok_or(TenantError::TenantNotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 

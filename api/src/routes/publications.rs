@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::db::{self, publications::PublicationConfig};
+use crate::db::{self, publications::PublicationConfig, sources::source_exists};
 
 #[derive(Debug, Error)]
 enum PublicationError {
@@ -17,7 +17,10 @@ enum PublicationError {
     DatabaseError(#[from] sqlx::Error),
 
     #[error("publication with id {0} not found")]
-    NotFound(i64),
+    PublicationNotFound(i64),
+
+    #[error("source with id {0} not found")]
+    SourceNotFound(i64),
 
     #[error("tenant id missing in request")]
     TenantIdMissing,
@@ -35,10 +38,10 @@ impl ResponseError for PublicationError {
             PublicationError::DatabaseError(_) | PublicationError::InvalidConfig(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            PublicationError::NotFound(_) => StatusCode::NOT_FOUND,
-            PublicationError::TenantIdMissing | PublicationError::TenantIdIllFormed => {
-                StatusCode::BAD_REQUEST
-            }
+            PublicationError::PublicationNotFound(_) => StatusCode::NOT_FOUND,
+            PublicationError::TenantIdMissing
+            | PublicationError::TenantIdIllFormed
+            | PublicationError::SourceNotFound(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -87,8 +90,14 @@ pub async fn create_publication(
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = publication.source_id;
     let config = publication.config;
+
+    if !source_exists(&pool, tenant_id, source_id).await? {
+        return Err(PublicationError::SourceNotFound(source_id));
+    }
+
     let id = db::publications::create_publication(&pool, tenant_id, source_id, &config).await?;
     let response = PostPublicationResponse { id };
+
     Ok(Json(response))
 }
 
@@ -100,6 +109,7 @@ pub async fn read_publication(
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let publication_id = publication_id.into_inner();
+
     let response = db::publications::read_publication(&pool, tenant_id, publication_id)
         .await?
         .map(|s| {
@@ -112,7 +122,8 @@ pub async fn read_publication(
             })
         })
         .transpose()?
-        .ok_or(PublicationError::NotFound(publication_id))?;
+        .ok_or(PublicationError::PublicationNotFound(publication_id))?;
+
     Ok(Json(response))
 }
 
@@ -127,9 +138,15 @@ pub async fn update_publication(
     let publication_id = publication_id.into_inner();
     let source_id = publication.source_id;
     let config = &publication.config;
+
+    if !source_exists(&pool, tenant_id, source_id).await? {
+        return Err(PublicationError::SourceNotFound(source_id));
+    }
+
     db::publications::update_publication(&pool, tenant_id, publication_id, source_id, config)
         .await?
-        .ok_or(PublicationError::NotFound(publication_id))?;
+        .ok_or(PublicationError::PublicationNotFound(publication_id))?;
+
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -141,9 +158,11 @@ pub async fn delete_publication(
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let publication_id = publication_id.into_inner();
+
     db::publications::delete_publication(&pool, tenant_id, publication_id)
         .await?
-        .ok_or(PublicationError::NotFound(tenant_id))?;
+        .ok_or(PublicationError::PublicationNotFound(tenant_id))?;
+
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -154,6 +173,7 @@ pub async fn read_all_publications(
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let mut publications = vec![];
+
     for publication in db::publications::read_all_publications(&pool, tenant_id).await? {
         let config: PublicationConfig = serde_json::from_value(publication.config)?;
         let sink = GetPublicationResponse {
@@ -164,5 +184,6 @@ pub async fn read_all_publications(
         };
         publications.push(sink);
     }
+
     Ok(Json(publications))
 }

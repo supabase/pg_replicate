@@ -132,3 +132,25 @@ pub async fn read_all_publications(
         })
         .collect())
 }
+
+pub async fn publication_exists(
+    pool: &PgPool,
+    tenant_id: i64,
+    publication_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        select exists (select id
+        from publications
+        where tenant_id = $1 and id = $2)
+        "#,
+        tenant_id,
+        publication_id,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record
+        .exists
+        .expect("select exists always returns a non-null value"))
+}

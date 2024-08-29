@@ -17,7 +17,7 @@ enum SourceError {
     DatabaseError(#[from] sqlx::Error),
 
     #[error("source with id {0} not found")]
-    NotFound(i64),
+    SourceNotFound(i64),
 
     #[error("tenant id missing in request")]
     TenantIdMissing,
@@ -35,7 +35,7 @@ impl ResponseError for SourceError {
             SourceError::DatabaseError(_) | SourceError::InvalidConfig(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            SourceError::NotFound(_) => StatusCode::NOT_FOUND,
+            SourceError::SourceNotFound(_) => StatusCode::NOT_FOUND,
             SourceError::TenantIdMissing | SourceError::TenantIdIllFormed => {
                 StatusCode::BAD_REQUEST
             }
@@ -108,7 +108,7 @@ pub async fn read_source(
             })
         })
         .transpose()?
-        .ok_or(SourceError::NotFound(source_id))?;
+        .ok_or(SourceError::SourceNotFound(source_id))?;
     Ok(Json(response))
 }
 
@@ -124,7 +124,7 @@ pub async fn update_source(
     let config = &source.config;
     db::sources::update_source(&pool, tenant_id, source_id, config)
         .await?
-        .ok_or(SourceError::NotFound(source_id))?;
+        .ok_or(SourceError::SourceNotFound(source_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -138,7 +138,7 @@ pub async fn delete_source(
     let source_id = source_id.into_inner();
     db::sources::delete_source(&pool, tenant_id, source_id)
         .await?
-        .ok_or(SourceError::NotFound(tenant_id))?;
+        .ok_or(SourceError::SourceNotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 

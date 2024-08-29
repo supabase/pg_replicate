@@ -68,6 +68,25 @@ async fn publication_can_be_created() {
 }
 
 #[tokio::test]
+async fn publication_with_another_tenants_source_cant_be_created() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let tenant2_id = create_tenant(&app).await;
+
+    // Act
+    let publication = CreatePublicationRequest {
+        source_id: source1_id,
+        config: new_publication_config(),
+    };
+    let response = app.create_publication(tenant2_id, &publication).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn an_existing_publication_can_be_read() {
     // Arrange
     let app = spawn_app().await;
@@ -152,6 +171,38 @@ async fn an_existing_publication_can_be_updated() {
     assert_eq!(response.tenant_id, tenant_id);
     assert_eq!(response.source_id, updated_source_id);
     assert_eq!(response.config, updated_config.config);
+}
+
+#[tokio::test]
+async fn publication_with_another_tenants_source_cant_be_updated() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let tenant2_id = create_tenant(&app).await;
+    let source2_id = create_source(&app, tenant2_id).await;
+
+    // Act
+    let publication = CreatePublicationRequest {
+        source_id: source1_id,
+        config: new_publication_config(),
+    };
+    let response = app.create_publication(tenant1_id, &publication).await;
+    let response: CreatePublicationResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let publication_id = response.id;
+    let updated_config = UpdatePublicationRequest {
+        source_id: source2_id,
+        config: updated_publication_config(),
+    };
+    let response = app
+        .update_publication(tenant1_id, publication_id, &updated_config)
+        .await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

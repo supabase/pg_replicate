@@ -149,3 +149,21 @@ pub async fn read_all_sinks(pool: &PgPool, tenant_id: i64) -> Result<Vec<Sink>, 
         })
         .collect())
 }
+
+pub async fn sink_exists(pool: &PgPool, tenant_id: i64, sink_id: i64) -> Result<bool, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        select exists (select id
+        from sinks
+        where tenant_id = $1 and id = $2)
+        "#,
+        tenant_id,
+        sink_id,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record
+        .exists
+        .expect("select exists always returns a non-null value"))
+}

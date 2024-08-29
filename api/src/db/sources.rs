@@ -164,3 +164,25 @@ pub async fn read_all_sources(pool: &PgPool, tenant_id: i64) -> Result<Vec<Sourc
         })
         .collect())
 }
+
+pub async fn source_exists(
+    pool: &PgPool,
+    tenant_id: i64,
+    source_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        select exists (select id
+        from sources
+        where tenant_id = $1 and id = $2)
+        "#,
+        tenant_id,
+        source_id
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record
+        .exists
+        .expect("select exists always returns a non-null value"))
+}

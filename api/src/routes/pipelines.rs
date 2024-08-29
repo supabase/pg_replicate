@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::db::{self, pipelines::PipelineConfig};
+use crate::db::{
+    self, pipelines::PipelineConfig, publications::publication_exists, sinks::sink_exists,
+    sources::source_exists,
+};
 
 #[derive(Debug, Error)]
 enum PipelineError {
@@ -17,7 +20,16 @@ enum PipelineError {
     DatabaseError(#[from] sqlx::Error),
 
     #[error("pipeline with id {0} not found")]
-    NotFound(i64),
+    PipelineNotFound(i64),
+
+    #[error("source with id {0} not found")]
+    SourceNotFound(i64),
+
+    #[error("sink with id {0} not found")]
+    SinkNotFound(i64),
+
+    #[error("publication with id {0} not found")]
+    PublicationNotFound(i64),
 
     #[error("tenant id missing in request")]
     TenantIdMissing,
@@ -35,10 +47,12 @@ impl ResponseError for PipelineError {
             PipelineError::DatabaseError(_) | PipelineError::InvalidConfig(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            PipelineError::NotFound(_) => StatusCode::NOT_FOUND,
-            PipelineError::TenantIdMissing | PipelineError::TenantIdIllFormed => {
-                StatusCode::BAD_REQUEST
-            }
+            PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
+            PipelineError::TenantIdMissing
+            | PipelineError::TenantIdIllFormed
+            | PipelineError::SourceNotFound(_)
+            | PipelineError::SinkNotFound(_)
+            | PipelineError::PublicationNotFound(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -90,6 +104,19 @@ pub async fn create_pipeline(
     let pipeline = pipeline.0;
     let tenant_id = extract_tenant_id(&req)?;
     let config = pipeline.config;
+
+    if !source_exists(&pool, tenant_id, pipeline.source_id).await? {
+        return Err(PipelineError::SourceNotFound(pipeline.source_id));
+    }
+
+    if !sink_exists(&pool, tenant_id, pipeline.sink_id).await? {
+        return Err(PipelineError::SinkNotFound(pipeline.sink_id));
+    }
+
+    if !publication_exists(&pool, tenant_id, pipeline.publication_id).await? {
+        return Err(PipelineError::PublicationNotFound(pipeline.publication_id));
+    }
+
     let id = db::pipelines::create_pipeline(
         &pool,
         tenant_id,
@@ -99,6 +126,7 @@ pub async fn create_pipeline(
         &config,
     )
     .await?;
+
     let response = PostPipelineResponse { id };
     Ok(Json(response))
 }
@@ -111,6 +139,7 @@ pub async fn read_pipeline(
 ) -> Result<impl Responder, PipelineError> {
     let tenant_id = extract_tenant_id(&req)?;
     let pipeline_id = pipeline_id.into_inner();
+
     let response = db::pipelines::read_pipeline(&pool, tenant_id, pipeline_id)
         .await?
         .map(|s| {
@@ -125,7 +154,8 @@ pub async fn read_pipeline(
             })
         })
         .transpose()?
-        .ok_or(PipelineError::NotFound(pipeline_id))?;
+        .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
+
     Ok(Json(response))
 }
 
@@ -139,6 +169,19 @@ pub async fn update_pipeline(
     let tenant_id = extract_tenant_id(&req)?;
     let pipeline_id = pipeline_id.into_inner();
     let config = &pipeline.config;
+
+    if !source_exists(&pool, tenant_id, pipeline.source_id).await? {
+        return Err(PipelineError::SourceNotFound(pipeline.source_id));
+    }
+
+    if !sink_exists(&pool, tenant_id, pipeline.sink_id).await? {
+        return Err(PipelineError::SinkNotFound(pipeline.sink_id));
+    }
+
+    if !publication_exists(&pool, tenant_id, pipeline.publication_id).await? {
+        return Err(PipelineError::PublicationNotFound(pipeline.publication_id));
+    }
+
     db::pipelines::update_pipeline(
         &pool,
         tenant_id,
@@ -149,7 +192,8 @@ pub async fn update_pipeline(
         config,
     )
     .await?
-    .ok_or(PipelineError::NotFound(pipeline_id))?;
+    .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
+
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -163,7 +207,7 @@ pub async fn delete_pipeline(
     let pipeline_id = pipeline_id.into_inner();
     db::pipelines::delete_pipeline(&pool, tenant_id, pipeline_id)
         .await?
-        .ok_or(PipelineError::NotFound(tenant_id))?;
+        .ok_or(PipelineError::PipelineNotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 

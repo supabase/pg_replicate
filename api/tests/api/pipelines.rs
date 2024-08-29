@@ -80,6 +80,77 @@ async fn pipeline_can_be_created() {
 }
 
 #[tokio::test]
+async fn pipeline_with_another_tenants_source_cant_be_created() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let tenant2_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let source2_id = create_source(&app, tenant2_id).await;
+    let sink1_id = create_sink(&app, tenant1_id).await;
+    let publication1_id = create_publication(&app, tenant1_id, source1_id).await;
+
+    // Act
+    let pipeline = CreatePipelineRequest {
+        source_id: source2_id,
+        sink_id: sink1_id,
+        publication_id: publication1_id,
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant1_id, &pipeline).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn pipeline_with_another_tenants_sink_cant_be_created() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let tenant2_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let sink2_id = create_sink(&app, tenant2_id).await;
+    let publication1_id = create_publication(&app, tenant1_id, source1_id).await;
+
+    // Act
+    let pipeline = CreatePipelineRequest {
+        source_id: source1_id,
+        sink_id: sink2_id,
+        publication_id: publication1_id,
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant1_id, &pipeline).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn pipeline_with_another_tenants_publication_cant_be_created() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let tenant2_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let source2_id = create_source(&app, tenant2_id).await;
+    let sink1_id = create_sink(&app, tenant1_id).await;
+    let publication2_id = create_publication(&app, tenant2_id, source2_id).await;
+
+    // Act
+    let pipeline = CreatePipelineRequest {
+        source_id: source1_id,
+        sink_id: sink1_id,
+        publication_id: publication2_id,
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant1_id, &pipeline).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn an_existing_pipeline_can_be_read() {
     // Arrange
     let app = spawn_app().await;
@@ -178,6 +249,124 @@ async fn an_existing_pipeline_can_be_updated() {
     assert_eq!(response.source_id, source_id);
     assert_eq!(response.sink_id, sink_id);
     assert_eq!(response.config, updated_config.config);
+}
+
+#[tokio::test]
+async fn pipeline_with_another_tenants_source_cant_be_updated() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let tenant2_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let sink1_id = create_sink(&app, tenant1_id).await;
+    let publication1_id = create_publication(&app, tenant1_id, source1_id).await;
+
+    let pipeline = CreatePipelineRequest {
+        source_id: source1_id,
+        sink_id: sink1_id,
+        publication_id: publication1_id,
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant1_id, &pipeline).await;
+    let response: CreatePipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let pipeline_id = response.id;
+
+    // Act
+    let source2_id = create_source(&app, tenant2_id).await;
+    let updated_config = UpdatePipelineRequest {
+        source_id: source2_id,
+        sink_id: sink1_id,
+        publication_id: publication1_id,
+        config: updated_pipeline_config(),
+    };
+    let response = app
+        .update_pipeline(tenant1_id, pipeline_id, &updated_config)
+        .await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn pipeline_with_another_tenants_sink_cant_be_updated() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let tenant2_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let sink1_id = create_sink(&app, tenant1_id).await;
+    let publication1_id = create_publication(&app, tenant1_id, source1_id).await;
+
+    let pipeline = CreatePipelineRequest {
+        source_id: source1_id,
+        sink_id: sink1_id,
+        publication_id: publication1_id,
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant1_id, &pipeline).await;
+    let response: CreatePipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let pipeline_id = response.id;
+
+    // Act
+    let sink2_id = create_sink(&app, tenant2_id).await;
+    let updated_config = UpdatePipelineRequest {
+        source_id: source1_id,
+        sink_id: sink2_id,
+        publication_id: publication1_id,
+        config: updated_pipeline_config(),
+    };
+    let response = app
+        .update_pipeline(tenant1_id, pipeline_id, &updated_config)
+        .await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn pipeline_with_another_tenants_publication_cant_be_updated() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant1_id = create_tenant(&app).await;
+    let tenant2_id = create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant1_id).await;
+    let source2_id = create_source(&app, tenant2_id).await;
+    let sink1_id = create_sink(&app, tenant1_id).await;
+    let publication1_id = create_publication(&app, tenant1_id, source1_id).await;
+
+    let pipeline = CreatePipelineRequest {
+        source_id: source1_id,
+        sink_id: sink1_id,
+        publication_id: publication1_id,
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant1_id, &pipeline).await;
+    let response: CreatePipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let pipeline_id = response.id;
+
+    // Act
+    let publication2_id = create_publication(&app, tenant2_id, source2_id).await;
+    let updated_config = UpdatePipelineRequest {
+        source_id: source1_id,
+        sink_id: sink1_id,
+        publication_id: publication2_id,
+        config: updated_pipeline_config(),
+    };
+    let response = app
+        .update_pipeline(tenant1_id, pipeline_id, &updated_config)
+        .await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

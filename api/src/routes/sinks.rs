@@ -17,7 +17,7 @@ enum SinkError {
     DatabaseError(#[from] sqlx::Error),
 
     #[error("sink with id {0} not found")]
-    NotFound(i64),
+    SinkNotFound(i64),
 
     #[error("tenant id missing in request")]
     TenantIdMissing,
@@ -35,7 +35,7 @@ impl ResponseError for SinkError {
             SinkError::DatabaseError(_) | SinkError::InvalidConfig(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            SinkError::NotFound(_) => StatusCode::NOT_FOUND,
+            SinkError::SinkNotFound(_) => StatusCode::NOT_FOUND,
             SinkError::TenantIdMissing | SinkError::TenantIdIllFormed => StatusCode::BAD_REQUEST,
         }
     }
@@ -104,7 +104,7 @@ pub async fn read_sink(
             })
         })
         .transpose()?
-        .ok_or(SinkError::NotFound(sink_id))?;
+        .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(Json(response))
 }
 
@@ -120,7 +120,7 @@ pub async fn update_sink(
     let config = &sink.config;
     db::sinks::update_sink(&pool, tenant_id, sink_id, config)
         .await?
-        .ok_or(SinkError::NotFound(sink_id))?;
+        .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -134,7 +134,7 @@ pub async fn delete_sink(
     let sink_id = sink_id.into_inner();
     db::sinks::delete_sink(&pool, tenant_id, sink_id)
         .await?
-        .ok_or(SinkError::NotFound(tenant_id))?;
+        .ok_or(SinkError::SinkNotFound(tenant_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
