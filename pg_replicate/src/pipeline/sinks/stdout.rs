@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::Infallible,
+};
 
 use async_trait::async_trait;
 use tokio_postgres::types::PgLsn;
@@ -14,9 +17,12 @@ use super::{Sink, SinkError};
 
 pub struct StdoutSink;
 
+impl SinkError for Infallible {}
+
 #[async_trait]
 impl Sink for StdoutSink {
-    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError> {
+    type Error = Infallible;
+    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         Ok(PipelineResumptionState {
             copied_tables: HashSet::new(),
             last_lsn: PgLsn::from(0),
@@ -26,7 +32,7 @@ impl Sink for StdoutSink {
     async fn write_table_schemas(
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
-    ) -> Result<(), SinkError> {
+    ) -> Result<(), Self::Error> {
         info!("{table_schemas:?}");
         Ok(())
     }
@@ -35,22 +41,22 @@ impl Sink for StdoutSink {
         &mut self,
         row: TableRow,
         _table_id: TableId,
-    ) -> Result<(), SinkError> {
+    ) -> Result<(), Self::Error> {
         info!("{row:?}");
         Ok(())
     }
 
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, SinkError> {
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, Self::Error> {
         info!("{event:?}");
         Ok(PgLsn::from(0))
     }
 
-    async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {
+    async fn table_copied(&mut self, table_id: TableId) -> Result<(), Self::Error> {
         info!("table {table_id} copied");
         Ok(())
     }
 
-    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
+    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), Self::Error> {
         info!("table {table_id} truncated");
         Ok(())
     }

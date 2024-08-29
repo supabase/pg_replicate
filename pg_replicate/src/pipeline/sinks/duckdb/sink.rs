@@ -13,8 +13,8 @@ use crate::{
 };
 
 use super::{
-    executor::{DuckDbExecutor, DuckDbResponse},
-    DuckDbRequest, Sink, SinkError,
+    executor::{DuckDbExecutor, DuckDbExecutorError, DuckDbResponse},
+    DuckDbRequest, Sink,
 };
 pub struct DuckDbSink {
     req_sender: Sender<DuckDbRequest>,
@@ -84,19 +84,24 @@ impl DuckDbSink {
         })
     }
 
-    pub async fn execute(&mut self, req: DuckDbRequest) -> Result<DuckDbResponse, SinkError> {
+    pub async fn execute(
+        &mut self,
+        req: DuckDbRequest,
+    ) -> Result<DuckDbResponse, DuckDbExecutorError> {
         self.req_sender.send(req).await?;
         if let Some(res) = self.res_receiver.recv().await {
             Ok(res)
         } else {
-            Err(SinkError::NoResponseReceived)
+            Err(DuckDbExecutorError::NoResponseReceived)
         }
     }
 }
 
 #[async_trait]
 impl Sink for DuckDbSink {
-    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, SinkError> {
+    type Error = DuckDbExecutorError;
+
+    async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         let req = DuckDbRequest::GetResumptionState;
         match self.execute(req).await? {
             DuckDbResponse::ResumptionState(res) => {
@@ -110,7 +115,7 @@ impl Sink for DuckDbSink {
     async fn write_table_schemas(
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
-    ) -> Result<(), SinkError> {
+    ) -> Result<(), Self::Error> {
         let req = DuckDbRequest::CreateTables(table_schemas);
         match self.execute(req).await? {
             DuckDbResponse::CreateTablesResponse(res) => {
@@ -122,7 +127,11 @@ impl Sink for DuckDbSink {
         Ok(())
     }
 
-    async fn write_table_row(&mut self, row: TableRow, table_id: TableId) -> Result<(), SinkError> {
+    async fn write_table_row(
+        &mut self,
+        row: TableRow,
+        table_id: TableId,
+    ) -> Result<(), Self::Error> {
         let req = DuckDbRequest::InsertRow(row, table_id);
         match self.execute(req).await? {
             DuckDbResponse::InsertRowResponse(res) => {
@@ -133,7 +142,7 @@ impl Sink for DuckDbSink {
         Ok(())
     }
 
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, SinkError> {
+    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, Self::Error> {
         let req = DuckDbRequest::HandleCdcEvent(event);
         let last_lsn = match self.execute(req).await? {
             DuckDbResponse::HandleCdcEventResponse(res) => res?,
@@ -142,7 +151,7 @@ impl Sink for DuckDbSink {
         Ok(last_lsn)
     }
 
-    async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError> {
+    async fn table_copied(&mut self, table_id: TableId) -> Result<(), Self::Error> {
         let req = DuckDbRequest::TableCopied(table_id);
         match self.execute(req).await? {
             DuckDbResponse::TableCopiedResponse(res) => {
@@ -153,7 +162,7 @@ impl Sink for DuckDbSink {
         Ok(())
     }
 
-    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError> {
+    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), Self::Error> {
         let req = DuckDbRequest::TruncateTable(table_id);
         match self.execute(req).await? {
             DuckDbResponse::TruncateTableResponse(res) => {

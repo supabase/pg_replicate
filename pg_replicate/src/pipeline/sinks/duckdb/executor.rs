@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{error::SendError, Receiver, Sender};
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::error;
 
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::PipelineResumptionState,
+    pipeline::{sinks::SinkError, PipelineResumptionState},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
@@ -46,7 +46,15 @@ pub enum DuckDbExecutorError {
 
     #[error("commit message without begin message")]
     CommitWithoutBegin,
+
+    #[error("no response received")]
+    NoResponseReceived,
+
+    #[error("failed to send duckdb request")]
+    SendError(#[from] SendError<DuckDbRequest>),
 }
+
+impl SinkError for DuckDbExecutorError {}
 
 pub(super) struct DuckDbExecutor {
     pub(super) client: DuckDbClient,
