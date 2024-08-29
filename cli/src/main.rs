@@ -9,6 +9,7 @@ use thiserror::Error;
 mod api_client;
 mod commands;
 mod pipelines;
+mod publications;
 mod sinks;
 mod sources;
 mod tenants;

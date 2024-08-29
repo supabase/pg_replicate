@@ -4,6 +4,10 @@ use thiserror::Error;
 use crate::{
     api_client::ApiClient,
     pipelines::{create_pipeline, delete_pipeline, list_pipelines, show_pipeline, update_pipeline},
+    publications::{
+        create_publication, delete_publication, list_publications, show_publication,
+        update_publication,
+    },
     sinks::{create_sink, delete_sink, list_sinks, show_sink, update_sink},
     sources::{create_source, delete_source, list_sources, show_source, update_source},
     tenants::{create_tenant, delete_tenant, list_tenants, show_tenant, update_tenant},
@@ -49,6 +53,7 @@ pub enum SubCommand {
     Sources,
     Sinks,
     Pipelines,
+    Publications,
 }
 
 impl TryFrom<&str> for SubCommand {
@@ -59,8 +64,11 @@ impl TryFrom<&str> for SubCommand {
             "t" | "te" | "ten" | "tena" | "tenan" | "tenant" | "tenants" => SubCommand::Tenants,
             "so" | "sou" | "sour" | "sourc" | "source" | "sources" => SubCommand::Sources,
             "si" | "sin" | "sink" | "sinks" => SubCommand::Sinks,
-            "p" | "pi" | "pip" | "pipe" | "pipel" | "pipeli" | "pipelin" | "pipeline"
-            | "pipelines" => SubCommand::Pipelines,
+            "pi" | "pip" | "pipe" | "pipel" | "pipeli" | "pipelin" | "pipeline" | "pipelines" => {
+                SubCommand::Pipelines
+            }
+            "pu" | "pub" | "publ" | "public" | "publica" | "publicat" | "publicati"
+            | "publicatio" | "publication" | "publications" => SubCommand::Publications,
             subcommand => {
                 return Err(SubCommandParseError::InvalidSubCommand(
                     subcommand.to_string(),
@@ -109,6 +117,16 @@ pub async fn execute_commands(
                 println!("error creating pipeline: {e:?}");
             }
         },
+        (Command::Add, SubCommand::Publications) => {
+            match create_publication(api_client, editor).await {
+                Ok(publication) => {
+                    println!("publication created: {publication}");
+                }
+                Err(e) => {
+                    println!("error creating publication: {e:?}");
+                }
+            }
+        }
         (Command::Update, SubCommand::Tenants) => match update_tenant(api_client, editor).await {
             Ok(()) => println!("tenant updated"),
             Err(e) => {
@@ -134,6 +152,14 @@ pub async fn execute_commands(
                 println!("error updating pipeline: {e:?}");
             }
         },
+        (Command::Update, SubCommand::Publications) => {
+            match update_publication(api_client, editor).await {
+                Ok(()) => println!("publication updated"),
+                Err(e) => {
+                    println!("error updating publication: {e:?}");
+                }
+            }
+        }
         (Command::Delete, SubCommand::Tenants) => match delete_tenant(api_client, editor).await {
             Ok(()) => println!("tenant deleted"),
             Err(e) => {
@@ -159,6 +185,14 @@ pub async fn execute_commands(
                 println!("error deleting pipeline: {e:?}");
             }
         },
+        (Command::Delete, SubCommand::Publications) => {
+            match delete_publication(api_client, editor).await {
+                Ok(()) => println!("publication deleted"),
+                Err(e) => {
+                    println!("error deleting publication: {e:?}");
+                }
+            }
+        }
         (Command::Show, SubCommand::Tenants) => match show_tenant(api_client, editor).await {
             Ok(tenant) => {
                 println!("tenant: {tenant}")
@@ -191,6 +225,16 @@ pub async fn execute_commands(
                 println!("error reading pipeline: {e:?}");
             }
         },
+        (Command::Show, SubCommand::Publications) => {
+            match show_publication(api_client, editor).await {
+                Ok(publication) => {
+                    println!("publication: {publication}")
+                }
+                Err(e) => {
+                    println!("error reading publication: {e:?}");
+                }
+            }
+        }
         (Command::List, SubCommand::Tenants) => match list_tenants(api_client).await {
             Ok(tenants) => {
                 println!("tenants: ");
@@ -235,5 +279,18 @@ pub async fn execute_commands(
                 println!("error reading pipelines: {e:?}");
             }
         },
+        (Command::List, SubCommand::Publications) => {
+            match list_publications(api_client, editor).await {
+                Ok(publications) => {
+                    println!("publications: ");
+                    for publication in publications {
+                        println!("  {publication}")
+                    }
+                }
+                Err(e) => {
+                    println!("error reading publications: {e:?}");
+                }
+            }
+        }
     }
 }

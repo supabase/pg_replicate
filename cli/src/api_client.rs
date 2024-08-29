@@ -107,6 +107,17 @@ impl Display for BatchConfig {
     }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct PublicationConfig {
+    pub table_names: Vec<String>,
+}
+
+impl Display for PublicationConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "table_names: {:?}", self.table_names)
+    }
+}
+
 #[derive(Serialize)]
 pub struct CreateTenantRequest {
     pub name: String,
@@ -272,6 +283,47 @@ pub struct UpdatePipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
     pub config: PipelineConfig,
+}
+
+#[derive(Serialize)]
+pub struct CreatePublicationRequest {
+    pub source_id: i64,
+    pub config: PublicationConfig,
+}
+
+#[derive(Deserialize)]
+pub struct CreatePublicationResponse {
+    pub id: i64,
+}
+
+impl Display for CreatePublicationResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id: {}", self.id)
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PublicationResponse {
+    pub id: i64,
+    pub tenant_id: i64,
+    pub source_id: i64,
+    pub config: PublicationConfig,
+}
+
+impl Display for PublicationResponse {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "tenant_id: {}, id: {}, source_id: {}, config: {}",
+            self.tenant_id, self.id, self.source_id, self.config
+        )
+    }
+}
+
+#[derive(Serialize)]
+pub struct UpdatePublicationRequest {
+    pub source_id: i64,
+    pub config: PublicationConfig,
 }
 
 #[derive(Debug, Error)]
@@ -553,6 +605,90 @@ impl ApiClient {
         Ok(self
             .client
             .get(&format!("{}/v1/pipelines", &self.address))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
+
+    pub async fn create_publication(
+        &self,
+        tenant_id: i64,
+        publication: &CreatePublicationRequest,
+    ) -> Result<CreatePublicationResponse, ApiClientError> {
+        Ok(self
+            .client
+            .post(&format!("{}/v1/publications", &self.address))
+            .header("tenant_id", tenant_id)
+            .json(publication)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
+
+    pub async fn read_publication(
+        &self,
+        tenant_id: i64,
+        publication_id: i64,
+    ) -> Result<PublicationResponse, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!(
+                "{}/v1/publications/{publication_id}",
+                &self.address
+            ))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
+
+    pub async fn update_publication(
+        &self,
+        tenant_id: i64,
+        publication_id: i64,
+        publication: &UpdatePublicationRequest,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .post(&format!(
+                "{}/v1/publications/{publication_id}",
+                &self.address
+            ))
+            .header("tenant_id", tenant_id)
+            .json(publication)
+            .send()
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_publication(
+        &self,
+        tenant_id: i64,
+        publication_id: i64,
+    ) -> Result<(), ApiClientError> {
+        self.client
+            .delete(&format!(
+                "{}/v1/publications/{publication_id}",
+                &self.address
+            ))
+            .header("tenant_id", tenant_id)
+            .send()
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn read_all_publications(
+        &self,
+        tenant_id: i64,
+    ) -> Result<Vec<PublicationResponse>, ApiClientError> {
+        Ok(self
+            .client
+            .get(&format!("{}/v1/publications", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?
