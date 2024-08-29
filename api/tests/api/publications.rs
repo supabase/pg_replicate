@@ -25,6 +25,10 @@ fn updated_publication_config() -> PublicationConfig {
     }
 }
 
+pub async fn create_publication(app: &TestApp, tenant_id: i64, source_id: i64) -> i64 {
+    create_publication_with_config(app, tenant_id, source_id, new_publication_config()).await
+}
+
 pub async fn create_publication_with_config(
     app: &TestApp,
     tenant_id: i64,

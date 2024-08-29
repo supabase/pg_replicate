@@ -242,6 +242,7 @@ impl Display for SinkResponse {
 pub struct CreatePipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
+    pub publication_id: i64,
     pub config: PipelineConfig,
 }
 
@@ -262,6 +263,7 @@ pub struct PipelineResponse {
     pub tenant_id: i64,
     pub source_id: i64,
     pub sink_id: i64,
+    pub publication_id: i64,
     pub config: PipelineConfig,
 }
 
@@ -269,8 +271,8 @@ impl Display for PipelineResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "tenant_id: {}, id: {}, source_id: {}, sink_id: {}, config: {}",
-            self.tenant_id, self.id, self.source_id, self.sink_id, self.config
+            "tenant_id: {}, id: {}, source_id: {}, sink_id: {}, publication_id: {}, config: {}",
+            self.tenant_id, self.id, self.source_id, self.sink_id, self.publication_id, self.config
         )
     }
 }
@@ -279,6 +281,7 @@ impl Display for PipelineResponse {
 pub struct UpdatePipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
+    pub publication_id: i64,
     pub config: PipelineConfig,
 }
 

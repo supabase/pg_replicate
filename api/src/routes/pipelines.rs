@@ -47,6 +47,7 @@ impl ResponseError for PipelineError {
 struct PostPipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
+    pub publication_id: i64,
     pub config: PipelineConfig,
 }
 
@@ -61,6 +62,7 @@ struct GetPipelineResponse {
     tenant_id: i64,
     source_id: i64,
     sink_id: i64,
+    publication_id: i64,
     config: PipelineConfig,
 }
 
@@ -93,6 +95,7 @@ pub async fn create_pipeline(
         tenant_id,
         pipeline.source_id,
         pipeline.sink_id,
+        pipeline.publication_id,
         &config,
     )
     .await?;
@@ -117,6 +120,7 @@ pub async fn read_pipeline(
                 tenant_id: s.tenant_id,
                 source_id: s.source_id,
                 sink_id: s.sink_id,
+                publication_id: s.publication_id,
                 config,
             })
         })
@@ -141,6 +145,7 @@ pub async fn update_pipeline(
         pipeline_id,
         pipeline.source_id,
         pipeline.sink_id,
+        pipeline.publication_id,
         config,
     )
     .await?
@@ -176,6 +181,7 @@ pub async fn read_all_pipelines(
             tenant_id: pipeline.tenant_id,
             source_id: pipeline.source_id,
             sink_id: pipeline.sink_id,
+            publication_id: pipeline.publication_id,
             config,
         };
         pipelines.push(sink);

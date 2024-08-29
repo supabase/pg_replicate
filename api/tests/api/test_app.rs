@@ -90,6 +90,7 @@ pub struct SinkResponse {
 pub struct CreatePipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
+    pub publication_id: i64,
     pub config: PipelineConfig,
 }
 
@@ -104,6 +105,7 @@ pub struct PipelineResponse {
     pub tenant_id: i64,
     pub source_id: i64,
     pub sink_id: i64,
+    pub publication_id: i64,
     pub config: PipelineConfig,
 }
 
@@ -111,6 +113,7 @@ pub struct PipelineResponse {
 pub struct UpdatePipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
+    pub publication_id: i64,
     pub config: PipelineConfig,
 }
 

@@ -6,6 +6,7 @@ use crate::{
         PipelineResponse, UpdatePipelineRequest,
     },
     get_id, get_u64, get_usize,
+    publications::get_publication_id,
     sinks::get_sink_id,
     sources::get_source_id,
     tenants::get_tenant_id,
@@ -19,6 +20,7 @@ pub async fn create_pipeline(
     let tenant_id = get_tenant_id(editor)?;
     let source_id = get_source_id(editor)?;
     let sink_id = get_sink_id(editor)?;
+    let publication_id = get_publication_id(editor)?;
     let config = get_pipeline_config(editor)?;
     let pipeline = api_client
         .create_pipeline(
@@ -26,6 +28,7 @@ pub async fn create_pipeline(
             &CreatePipelineRequest {
                 source_id,
                 sink_id,
+                publication_id,
                 config,
             },
         )
@@ -53,12 +56,14 @@ pub async fn update_pipeline(
     let tenant_id = get_tenant_id(editor)?;
     let source_id = get_source_id(editor)?;
     let sink_id = get_sink_id(editor)?;
+    let publication_id = get_publication_id(editor)?;
     let pipeline_id = get_pipeline_id(editor)?;
     let config = get_pipeline_config(editor)?;
 
     let pipeline = UpdatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config,
     };
     api_client

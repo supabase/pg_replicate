@@ -2,6 +2,7 @@ use api::db::pipelines::{BatchConfig, PipelineConfig};
 use reqwest::StatusCode;
 
 use crate::{
+    publications::create_publication,
     sinks::create_sink,
     sources::create_source,
     tenants::create_tenant,
@@ -34,11 +35,13 @@ pub async fn create_pipeline_with_config(
     tenant_id: i64,
     source_id: i64,
     sink_id: i64,
+    publication_id: i64,
     config: PipelineConfig,
 ) -> i64 {
     let pipeline = CreatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config,
     };
     let response = app.create_pipeline(tenant_id, &pipeline).await;
@@ -56,11 +59,13 @@ async fn pipeline_can_be_created() {
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
+    let publication_id = create_publication(&app, tenant_id, source_id).await;
 
     // Act
     let pipeline = CreatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config: new_pipeline_config(),
     };
     let response = app.create_pipeline(tenant_id, &pipeline).await;
@@ -81,9 +86,12 @@ async fn an_existing_pipeline_can_be_read() {
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
+    let publication_id = create_publication(&app, tenant_id, source_id).await;
+
     let pipeline = CreatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config: new_pipeline_config(),
     };
     let response = app.create_pipeline(tenant_id, &pipeline).await;
@@ -129,10 +137,12 @@ async fn an_existing_pipeline_can_be_updated() {
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
+    let publication_id = create_publication(&app, tenant_id, source_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config: new_pipeline_config(),
     };
     let response = app.create_pipeline(tenant_id, &pipeline).await;
@@ -145,9 +155,11 @@ async fn an_existing_pipeline_can_be_updated() {
     // Act
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
+    let publication_id = create_publication(&app, tenant_id, source_id).await;
     let updated_config = UpdatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config: updated_pipeline_config(),
     };
     let response = app
@@ -175,11 +187,13 @@ async fn an_non_existing_pipeline_cant_be_updated() {
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
+    let publication_id = create_publication(&app, tenant_id, source_id).await;
 
     // Act
     let updated_config = UpdatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config: updated_pipeline_config(),
     };
     let response = app.update_pipeline(tenant_id, 42, &updated_config).await;
@@ -195,10 +209,12 @@ async fn an_existing_pipeline_can_be_deleted() {
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
+    let publication_id = create_publication(&app, tenant_id, source_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id,
         sink_id,
+        publication_id,
         config: new_pipeline_config(),
     };
     let response = app.create_pipeline(tenant_id, &pipeline).await;
@@ -235,16 +251,28 @@ async fn all_pipelines_can_be_read() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = create_tenant(&app).await;
-    let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
-    let pipeline1_id =
-        create_pipeline_with_config(&app, tenant_id, source_id, sink_id, new_pipeline_config())
-            .await;
+    let source1_id = create_source(&app, tenant_id).await;
+    let source2_id = create_source(&app, tenant_id).await;
+    let sink1_id = create_sink(&app, tenant_id).await;
+    let sink2_id = create_sink(&app, tenant_id).await;
+    let publication1_id = create_publication(&app, tenant_id, source1_id).await;
+    let publication2_id = create_publication(&app, tenant_id, source2_id).await;
+
+    let pipeline1_id = create_pipeline_with_config(
+        &app,
+        tenant_id,
+        source1_id,
+        sink1_id,
+        publication1_id,
+        new_pipeline_config(),
+    )
+    .await;
     let pipeline2_id = create_pipeline_with_config(
         &app,
         tenant_id,
-        source_id,
-        sink_id,
+        source2_id,
+        sink2_id,
+        publication2_id,
         updated_pipeline_config(),
     )
     .await;
@@ -262,14 +290,16 @@ async fn all_pipelines_can_be_read() {
         if pipeline.id == pipeline1_id {
             let config = new_pipeline_config();
             assert_eq!(pipeline.tenant_id, tenant_id);
-            assert_eq!(pipeline.source_id, source_id);
-            assert_eq!(pipeline.sink_id, sink_id);
+            assert_eq!(pipeline.source_id, source1_id);
+            assert_eq!(pipeline.sink_id, sink1_id);
+            assert_eq!(pipeline.publication_id, publication1_id);
             assert_eq!(pipeline.config, config);
         } else if pipeline.id == pipeline2_id {
             let config = updated_pipeline_config();
             assert_eq!(pipeline.tenant_id, tenant_id);
-            assert_eq!(pipeline.source_id, source_id);
-            assert_eq!(pipeline.sink_id, sink_id);
+            assert_eq!(pipeline.source_id, source2_id);
+            assert_eq!(pipeline.sink_id, sink2_id);
+            assert_eq!(pipeline.publication_id, publication2_id);
             assert_eq!(pipeline.config, config);
         }
     }
