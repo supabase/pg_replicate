@@ -316,6 +316,14 @@ pub struct UpdatePublicationRequest {
 pub enum ApiClientError {
     #[error("reqwest error: {0}")]
     Reqwest(#[from] reqwest::Error),
+
+    #[error("api error: {0}")]
+    ApiError(String),
+}
+
+#[derive(Deserialize)]
+pub struct ErrorMessage {
+    pub error: String,
 }
 
 impl ApiClient {
@@ -328,24 +336,34 @@ impl ApiClient {
         &self,
         tenant: &CreateTenantRequest,
     ) -> Result<CreateTenantResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .post(&format!("{}/v1/tenants", &self.address))
             .json(tenant)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_tenant(&self, tenant_id: i64) -> Result<TenantResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/tenants/{tenant_id}", &self.address))
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn update_tenant(
@@ -353,30 +371,49 @@ impl ApiClient {
         tenant_id: i64,
         tenant: &UpdateTenantRequest,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .post(&format!("{}/v1/tenants/{tenant_id}", &self.address))
             .json(tenant)
             .send()
             .await?;
-        Ok(())
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn delete_tenant(&self, tenant_id: i64) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .delete(&format!("{}/v1/tenants/{tenant_id}", &self.address))
             .send()
             .await?;
-        Ok(())
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_all_tenants(&self) -> Result<Vec<TenantResponse>, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/tenants", &self.address))
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn create_source(
@@ -384,15 +421,20 @@ impl ApiClient {
         tenant_id: i64,
         source: &CreateSourceRequest,
     ) -> Result<CreateSourceResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .post(&format!("{}/v1/sources", &self.address))
             .header("tenant_id", tenant_id)
             .json(source)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_source(
@@ -400,14 +442,19 @@ impl ApiClient {
         tenant_id: i64,
         source_id: i64,
     ) -> Result<SourceResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn update_source(
@@ -416,13 +463,20 @@ impl ApiClient {
         source_id: i64,
         source: &UpdateSourceRequest,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .post(&format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(source)
             .send()
             .await?;
-        Ok(())
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn delete_source(
@@ -430,26 +484,38 @@ impl ApiClient {
         tenant_id: i64,
         source_id: i64,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .delete(&format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
-        Ok(())
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_all_sources(
         &self,
         tenant_id: i64,
     ) -> Result<Vec<SourceResponse>, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/sources", &self.address))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn create_sink(
@@ -457,15 +523,20 @@ impl ApiClient {
         tenant_id: i64,
         sink: &CreateSinkRequest,
     ) -> Result<CreateSinkResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .post(&format!("{}/v1/sinks", &self.address))
             .header("tenant_id", tenant_id)
             .json(sink)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_sink(
@@ -473,14 +544,19 @@ impl ApiClient {
         tenant_id: i64,
         sink_id: i64,
     ) -> Result<SinkResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn update_sink(
@@ -489,38 +565,55 @@ impl ApiClient {
         sink_id: i64,
         sink: &UpdateSinkRequest,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .post(&format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(sink)
             .send()
             .await?;
 
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn delete_sink(&self, tenant_id: i64, sink_id: i64) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .delete(&format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
 
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_all_sinks(
         &self,
         tenant_id: i64,
     ) -> Result<Vec<SinkResponse>, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/sinks", &self.address))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn create_pipeline(
@@ -528,15 +621,20 @@ impl ApiClient {
         tenant_id: i64,
         pipeline: &CreatePipelineRequest,
     ) -> Result<CreatePipelineResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .post(&format!("{}/v1/pipelines", &self.address))
             .header("tenant_id", tenant_id)
             .json(pipeline)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_pipeline(
@@ -544,14 +642,19 @@ impl ApiClient {
         tenant_id: i64,
         pipeline_id: i64,
     ) -> Result<PipelineResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn update_pipeline(
@@ -560,14 +663,20 @@ impl ApiClient {
         pipeline_id: i64,
         pipeline: &UpdatePipelineRequest,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .post(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(pipeline)
             .send()
             .await?;
 
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn delete_pipeline(
@@ -575,27 +684,38 @@ impl ApiClient {
         tenant_id: i64,
         pipeline_id: i64,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .delete(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
 
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_all_pipelines(
         &self,
         tenant_id: i64,
     ) -> Result<Vec<PipelineResponse>, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/pipelines", &self.address))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn create_publication(
@@ -603,15 +723,20 @@ impl ApiClient {
         tenant_id: i64,
         publication: &CreatePublicationRequest,
     ) -> Result<CreatePublicationResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .post(&format!("{}/v1/publications", &self.address))
             .header("tenant_id", tenant_id)
             .json(publication)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_publication(
@@ -619,7 +744,7 @@ impl ApiClient {
         tenant_id: i64,
         publication_id: i64,
     ) -> Result<PublicationResponse, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!(
                 "{}/v1/publications/{publication_id}",
@@ -627,9 +752,14 @@ impl ApiClient {
             ))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn update_publication(
@@ -638,7 +768,8 @@ impl ApiClient {
         publication_id: i64,
         publication: &UpdatePublicationRequest,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .post(&format!(
                 "{}/v1/publications/{publication_id}",
                 &self.address
@@ -648,7 +779,12 @@ impl ApiClient {
             .send()
             .await?;
 
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn delete_publication(
@@ -656,7 +792,8 @@ impl ApiClient {
         tenant_id: i64,
         publication_id: i64,
     ) -> Result<(), ApiClientError> {
-        self.client
+        let response = self
+            .client
             .delete(&format!(
                 "{}/v1/publications/{publication_id}",
                 &self.address
@@ -665,20 +802,30 @@ impl ApiClient {
             .send()
             .await?;
 
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 
     pub async fn read_all_publications(
         &self,
         tenant_id: i64,
     ) -> Result<Vec<PublicationResponse>, ApiClientError> {
-        Ok(self
+        let response = self
             .client
             .get(&format!("{}/v1/publications", &self.address))
             .header("tenant_id", tenant_id)
             .send()
-            .await?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            let message: ErrorMessage = response.json().await?;
+            Err(ApiClientError::ApiError(message.error))
+        }
     }
 }
