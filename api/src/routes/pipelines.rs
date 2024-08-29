@@ -1,6 +1,6 @@
 use actix_web::{
     delete, get,
-    http::StatusCode,
+    http::{header::ContentType, StatusCode},
     post,
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
@@ -13,6 +13,8 @@ use crate::db::{
     self, pipelines::PipelineConfig, publications::publication_exists, sinks::sink_exists,
     sources::source_exists,
 };
+
+use super::ErrorMessage;
 
 #[derive(Debug, Error)]
 enum PipelineError {
@@ -41,6 +43,17 @@ enum PipelineError {
     InvalidConfig(#[from] serde_json::Error),
 }
 
+impl PipelineError {
+    fn to_message(&self) -> String {
+        match self {
+            // Do not expose internal database details in error messages
+            PipelineError::DatabaseError(_) => "internal server error".to_string(),
+            // Every other message is ok, as they do not divulge sensitive information
+            e => e.to_string(),
+        }
+    }
+}
+
 impl ResponseError for PipelineError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -54,6 +67,17 @@ impl ResponseError for PipelineError {
             | PipelineError::SinkNotFound(_)
             | PipelineError::PublicationNotFound(_) => StatusCode::BAD_REQUEST,
         }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        let error_message = ErrorMessage {
+            error: self.to_message(),
+        };
+        let body =
+            serde_json::to_string(&error_message).expect("failed to serialize error message");
+        HttpResponse::build(self.status_code())
+            .insert_header(ContentType::json())
+            .body(body)
     }
 }
 

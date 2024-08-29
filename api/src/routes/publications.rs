@@ -1,6 +1,6 @@
 use actix_web::{
     delete, get,
-    http::StatusCode,
+    http::{header::ContentType, StatusCode},
     post,
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
@@ -10,6 +10,8 @@ use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::db::{self, publications::PublicationConfig, sources::source_exists};
+
+use super::ErrorMessage;
 
 #[derive(Debug, Error)]
 enum PublicationError {
@@ -32,6 +34,17 @@ enum PublicationError {
     InvalidConfig(#[from] serde_json::Error),
 }
 
+impl PublicationError {
+    fn to_message(&self) -> String {
+        match self {
+            // Do not expose internal database details in error messages
+            PublicationError::DatabaseError(_) => "internal server error".to_string(),
+            // Every other message is ok, as they do not divulge sensitive information
+            e => e.to_string(),
+        }
+    }
+}
+
 impl ResponseError for PublicationError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -43,6 +56,17 @@ impl ResponseError for PublicationError {
             | PublicationError::TenantIdIllFormed
             | PublicationError::SourceNotFound(_) => StatusCode::BAD_REQUEST,
         }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        let error_message = ErrorMessage {
+            error: self.to_message(),
+        };
+        let body =
+            serde_json::to_string(&error_message).expect("failed to serialize error message");
+        HttpResponse::build(self.status_code())
+            .insert_header(ContentType::json())
+            .body(body)
     }
 }
 

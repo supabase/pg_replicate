@@ -1,6 +1,6 @@
 use actix_web::{
     delete, get,
-    http::StatusCode,
+    http::{header::ContentType, StatusCode},
     post,
     web::{Data, Json, Path},
     HttpResponse, Responder, ResponseError,
@@ -10,6 +10,8 @@ use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::db;
+
+use super::ErrorMessage;
 
 #[derive(Deserialize)]
 struct PostTenantRequest {
@@ -30,12 +32,34 @@ enum TenantError {
     TenantNotFound(i64),
 }
 
+impl TenantError {
+    fn to_message(&self) -> String {
+        match self {
+            // Do not expose internal database details in error messages
+            TenantError::DatabaseError(_) => "internal server error".to_string(),
+            // Every other message is ok, as they do not divulge sensitive information
+            e => e.to_string(),
+        }
+    }
+}
+
 impl ResponseError for TenantError {
     fn status_code(&self) -> StatusCode {
         match self {
             TenantError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             TenantError::TenantNotFound(_) => StatusCode::NOT_FOUND,
         }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        let error_message = ErrorMessage {
+            error: self.to_message(),
+        };
+        let body =
+            serde_json::to_string(&error_message).expect("failed to serialize error message");
+        HttpResponse::build(self.status_code())
+            .insert_header(ContentType::json())
+            .body(body)
     }
 }
 

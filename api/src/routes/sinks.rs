@@ -1,6 +1,6 @@
 use actix_web::{
     delete, get,
-    http::StatusCode,
+    http::{header::ContentType, StatusCode},
     post,
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
@@ -10,6 +10,8 @@ use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::db::{self, sinks::SinkConfig};
+
+use super::ErrorMessage;
 
 #[derive(Debug, Error)]
 enum SinkError {
@@ -29,6 +31,17 @@ enum SinkError {
     InvalidConfig(#[from] serde_json::Error),
 }
 
+impl SinkError {
+    fn to_message(&self) -> String {
+        match self {
+            // Do not expose internal database details in error messages
+            SinkError::DatabaseError(_) => "internal server error".to_string(),
+            // Every other message is ok, as they do not divulge sensitive information
+            e => e.to_string(),
+        }
+    }
+}
+
 impl ResponseError for SinkError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -38,6 +51,17 @@ impl ResponseError for SinkError {
             SinkError::SinkNotFound(_) => StatusCode::NOT_FOUND,
             SinkError::TenantIdMissing | SinkError::TenantIdIllFormed => StatusCode::BAD_REQUEST,
         }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        let error_message = ErrorMessage {
+            error: self.to_message(),
+        };
+        let body =
+            serde_json::to_string(&error_message).expect("failed to serialize error message");
+        HttpResponse::build(self.status_code())
+            .insert_header(ContentType::json())
+            .body(body)
     }
 }
 
