@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        insert into tenants (name, supabase_project_ref, prefix)\n        values ($1, $2, $3)\n        returning id\n        ",
+  "query": "\n        insert into tenants (name)\n        values ($1)\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,8 +11,6 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Text",
         "Text"
       ]
     },
@@ -20,5 +18,5 @@
       false
     ]
   },
-  "hash": "694995f18fa70eeb40b98687ac26dd9de747ba4c3b23b3136c56b1674267b4ca"
+  "hash": "cb09ee423af9b2ed6b8c464c628fbe87df196aa9b9070d2efeecd7c42aa1d491"
 }

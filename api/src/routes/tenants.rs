@@ -9,12 +9,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::{db, utils::generate_random_alpha_str};
+use crate::db;
 
 #[derive(Deserialize)]
 struct PostTenantRequest {
     name: String,
-    supabase_project_ref: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -44,8 +43,6 @@ impl ResponseError for TenantError {
 struct GetTenantResponse {
     id: i64,
     name: String,
-    supabase_project_ref: Option<String>,
-    prefix: String,
 }
 
 #[post("/tenants")]
@@ -55,16 +52,7 @@ pub async fn create_tenant(
 ) -> Result<impl Responder, TenantError> {
     let tenant = tenant.0;
     let name = tenant.name;
-    let spr = tenant.supabase_project_ref;
-    let id = match spr {
-        Some(spr) => {
-            db::tenants::create_tenant(&pool, &name, Some(spr.as_str()), spr.as_str()).await?
-        }
-        None => {
-            let prefix = generate_random_alpha_str(20);
-            db::tenants::create_tenant(&pool, &name, None, &prefix).await?
-        }
-    };
+    let id = db::tenants::create_tenant(&pool, &name).await?;
     let response = PostTenantResponse { id };
     Ok(Json(response))
 }
@@ -80,8 +68,6 @@ pub async fn read_tenant(
         .map(|t| GetTenantResponse {
             id: t.id,
             name: t.name,
-            supabase_project_ref: t.supabase_project_ref,
-            prefix: t.prefix,
         })
         .ok_or(TenantError::NotFound(tenant_id))?;
     Ok(Json(response))
@@ -120,8 +106,6 @@ pub async fn read_all_tenants(pool: Data<PgPool>) -> Result<impl Responder, Tena
         .map(|t| GetTenantResponse {
             id: t.id,
             name: t.name,
-            supabase_project_ref: t.supabase_project_ref,
-            prefix: t.prefix,
         })
         .collect();
     Ok(Json(response))

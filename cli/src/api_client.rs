@@ -118,7 +118,6 @@ impl Display for PublicationConfig {
 #[derive(Serialize)]
 pub struct CreateTenantRequest {
     pub name: String,
-    pub supabase_project_ref: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -141,24 +140,11 @@ impl Display for CreateTenantResponse {
 pub struct TenantResponse {
     pub id: i64,
     pub name: String,
-    pub supabase_project_ref: Option<String>,
-    pub prefix: String,
 }
 
 impl Display for TenantResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "id: {}, name: {}, prefix: {}, hosted_on_supabase: {}",
-            self.id,
-            self.name,
-            self.prefix,
-            if self.supabase_project_ref.is_some() {
-                "true"
-            } else {
-                "false"
-            }
-        )
+        write!(f, "id: {}, name: {}", self.id, self.name,)
     }
 }
 

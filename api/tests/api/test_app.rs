@@ -21,7 +21,6 @@ pub struct TestApp {
 #[derive(Serialize)]
 pub struct CreateTenantRequest {
     pub name: String,
-    pub supabase_project_ref: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -38,8 +37,6 @@ pub struct CreateTenantResponse {
 pub struct TenantResponse {
     pub id: i64,
     pub name: String,
-    pub supabase_project_ref: Option<String>,
-    pub prefix: String,
 }
 
 #[derive(Serialize)]

@@ -12,13 +12,9 @@ pub async fn create_tenant(
     editor: &mut DefaultEditor,
 ) -> Result<CreateTenantResponse, CliError> {
     let name = get_tenant_name(editor)?;
-    let supabase_project_ref = get_project_ref(editor)?;
 
     let tenant = api_client
-        .create_tenant(&CreateTenantRequest {
-            name,
-            supabase_project_ref,
-        })
+        .create_tenant(&CreateTenantRequest { name })
         .await?;
 
     Ok(tenant)
@@ -67,19 +63,6 @@ pub async fn list_tenants(api_client: &ApiClient) -> Result<Vec<TenantResponse>,
 
 fn get_tenant_name(editor: &mut DefaultEditor) -> Result<String, CliError> {
     get_string(editor, "enter tenant name: ")
-}
-
-fn get_project_ref(editor: &mut DefaultEditor) -> Result<Option<String>, CliError> {
-    let project_ref = editor.readline(
-        "enter supabase project ref (leave empty is project is not hosted on supabase): ",
-    )?;
-    let project_ref = project_ref.trim().to_lowercase();
-    let supabase_project_ref = if project_ref.is_empty() {
-        None
-    } else {
-        Some(project_ref)
-    };
-    Ok(supabase_project_ref)
 }
 
 pub fn get_tenant_id(editor: &mut DefaultEditor) -> Result<i64, CliError> {
