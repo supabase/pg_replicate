@@ -77,7 +77,7 @@ fn get_source_config(editor: &mut DefaultEditor) -> Result<SourceConfig, CliErro
     let host = get_string(editor, "enter host: ")?;
     let port = get_string(editor, "enter port: ")?;
     let port: u16 = port.parse()?;
-    let name = get_string(editor, "enter name: ")?;
+    let name = get_string(editor, "enter database name: ")?;
     let username = get_string(editor, "enter username: ")?;
     let password = get_string(editor, "enter password: ")?;
     let password = if password.is_empty() {

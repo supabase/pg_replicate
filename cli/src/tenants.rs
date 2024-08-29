@@ -71,7 +71,7 @@ fn get_tenant_name(editor: &mut DefaultEditor) -> Result<String, CliError> {
 
 fn get_project_ref(editor: &mut DefaultEditor) -> Result<Option<String>, CliError> {
     let project_ref = editor.readline(
-        "enter supabase project ref (leave emptry is project is not hosted on supabase): ",
+        "enter supabase project ref (leave empty is project is not hosted on supabase): ",
     )?;
     let project_ref = project_ref.trim().to_lowercase();
     let supabase_project_ref = if project_ref.is_empty() {

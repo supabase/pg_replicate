@@ -98,26 +98,31 @@ fn print_help() {
     println!("  add source - add a new source");
     println!("  add sink - add a new sink");
     println!("  add pipeline - add an new pipeline");
+    println!("  add publication - add an new publication");
     println!();
     println!("  update tenant - update an existing tenant");
     println!("  update source - update an existing source");
     println!("  update sink - update an existing sink");
     println!("  update pipeline - update a existing pipeline");
+    println!("  update publication - update a existing publication");
     println!();
     println!("  delete tenant - delete an existing tenant");
     println!("  delete source - delete an existing source");
     println!("  delete sink - delete an existing sink");
-    println!("  delete pipeline - delete a new pipeline");
+    println!("  delete pipeline - delete an existing pipeline");
+    println!("  delete publication - delete an existing publication");
     println!();
     println!("  show tenant - show an existing tenant");
     println!("  show source - show an existing source");
     println!("  show sink - show an existing sink");
-    println!("  show pipeline - show a existing pipeline");
+    println!("  show pipeline - show an existing pipeline");
+    println!("  show publication - show an existing publication");
     println!();
     println!("  list tenants - list all existing tenants");
     println!("  list sources - list all existing sources");
     println!("  list sinks - list all existing sinks");
     println!("  list pipelines - list all existing pipelines");
+    println!("  list publications - list all existing publications");
     println!();
 }
 
