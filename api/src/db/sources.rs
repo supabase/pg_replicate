@@ -1,4 +1,7 @@
-use sqlx::PgPool;
+use sqlx::{
+    postgres::{PgConnectOptions, PgSslMode},
+    PgPool,
+};
 use std::fmt::{Debug, Formatter};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -23,6 +26,34 @@ pub enum SourceConfig {
         /// Postgres slot name
         slot_name: String,
     },
+}
+
+impl SourceConfig {
+    pub fn connect_options(&self) -> PgConnectOptions {
+        match self {
+            SourceConfig::Postgres {
+                host,
+                port,
+                name,
+                username,
+                password,
+                slot_name: _,
+            } => {
+                let ssl_mode = PgSslMode::Prefer;
+                let options = PgConnectOptions::new_without_pgpass()
+                    .host(&host)
+                    .port(*port)
+                    .database(name)
+                    .username(&username)
+                    .ssl_mode(ssl_mode);
+                if let Some(password) = &password {
+                    options.password(password)
+                } else {
+                    options
+                }
+            }
+        }
+    }
 }
 
 impl Debug for SourceConfig {

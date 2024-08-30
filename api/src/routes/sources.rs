@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
+use super::ErrorMessage;
 use crate::db::{self, sources::SourceConfig};
 
-use super::ErrorMessage;
+pub mod tables;
 
 #[derive(Debug, Error)]
 enum SourceError {

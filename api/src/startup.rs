@@ -16,7 +16,10 @@ use crate::{
             update_publication,
         },
         sinks::{create_sink, delete_sink, read_all_sinks, read_sink, update_sink},
-        sources::{create_source, delete_source, read_all_sources, read_source, update_source},
+        sources::{
+            create_source, delete_source, read_all_sources, read_source, tables::read_table_names,
+            update_source,
+        },
         tenants::{create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant},
     },
 };
@@ -91,7 +94,9 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(read_publication)
                     .service(update_publication)
                     .service(delete_publication)
-                    .service(read_all_publications),
+                    .service(read_all_publications)
+                    //tables
+                    .service(read_table_names),
             )
             .app_data(connection_pool.clone())
     })
