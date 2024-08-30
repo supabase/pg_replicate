@@ -2,10 +2,7 @@ use std::net::TcpListener;
 
 use api::{
     configuration::get_configuration,
-    db::{
-        pipelines::PipelineConfig, publications::PublicationConfig, sinks::SinkConfig,
-        sources::SourceConfig,
-    },
+    db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
     startup::{get_connection_pool, run},
 };
 use serde::{Deserialize, Serialize};
@@ -87,7 +84,7 @@ pub struct SinkResponse {
 pub struct CreatePipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
-    pub publication_id: i64,
+    pub publication_name: String,
     pub config: PipelineConfig,
 }
 
@@ -102,7 +99,7 @@ pub struct PipelineResponse {
     pub tenant_id: i64,
     pub source_id: i64,
     pub sink_id: i64,
-    pub publication_id: i64,
+    pub publication_name: String,
     pub config: PipelineConfig,
 }
 
@@ -110,36 +107,8 @@ pub struct PipelineResponse {
 pub struct UpdatePipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
-    pub publication_id: i64,
+    pub publication_name: String,
     pub config: PipelineConfig,
-}
-
-#[derive(Serialize)]
-pub struct CreatePublicationRequest {
-    pub source_id: i64,
-    pub name: String,
-    pub config: PublicationConfig,
-}
-
-#[derive(Deserialize)]
-pub struct CreatePublicationResponse {
-    pub id: i64,
-}
-
-#[derive(Serialize)]
-pub struct UpdatePublicationRequest {
-    pub source_id: i64,
-    pub name: String,
-    pub config: PublicationConfig,
-}
-
-#[derive(Deserialize)]
-pub struct PublicationResponse {
-    pub id: i64,
-    pub tenant_id: i64,
-    pub source_id: i64,
-    pub name: String,
-    pub config: PublicationConfig,
 }
 
 impl TestApp {
@@ -347,75 +316,6 @@ impl TestApp {
     pub async fn read_all_pipelines(&self, tenant_id: i64) -> reqwest::Response {
         self.api_client
             .get(&format!("{}/v1/pipelines", &self.address))
-            .header("tenant_id", tenant_id)
-            .send()
-            .await
-            .expect("failed to execute request")
-    }
-
-    pub async fn create_publication(
-        &self,
-        tenant_id: i64,
-        publication: &CreatePublicationRequest,
-    ) -> reqwest::Response {
-        self.api_client
-            .post(&format!("{}/v1/publications", &self.address))
-            .header("tenant_id", tenant_id)
-            .json(publication)
-            .send()
-            .await
-            .expect("Failed to execute request.")
-    }
-
-    pub async fn read_publication(&self, tenant_id: i64, publication_id: i64) -> reqwest::Response {
-        self.api_client
-            .get(&format!(
-                "{}/v1/publications/{publication_id}",
-                &self.address
-            ))
-            .header("tenant_id", tenant_id)
-            .send()
-            .await
-            .expect("failed to execute request")
-    }
-
-    pub async fn update_publication(
-        &self,
-        tenant_id: i64,
-        publication_id: i64,
-        publication: &UpdatePublicationRequest,
-    ) -> reqwest::Response {
-        self.api_client
-            .post(&format!(
-                "{}/v1/publications/{publication_id}",
-                &self.address
-            ))
-            .header("tenant_id", tenant_id)
-            .json(publication)
-            .send()
-            .await
-            .expect("failed to execute request")
-    }
-
-    pub async fn delete_publication(
-        &self,
-        tenant_id: i64,
-        publication_id: i64,
-    ) -> reqwest::Response {
-        self.api_client
-            .delete(&format!(
-                "{}/v1/publications/{publication_id}",
-                &self.address
-            ))
-            .header("tenant_id", tenant_id)
-            .send()
-            .await
-            .expect("Failed to execute request.")
-    }
-
-    pub async fn read_all_publications(&self, tenant_id: i64) -> reqwest::Response {
-        self.api_client
-            .get(&format!("{}/v1/publications", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await

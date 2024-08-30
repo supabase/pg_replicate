@@ -9,10 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::db::{
-    self, pipelines::PipelineConfig, publications::publication_exists, sinks::sink_exists,
-    sources::source_exists,
-};
+use crate::db::{self, pipelines::PipelineConfig, sinks::sink_exists, sources::source_exists};
 
 use super::ErrorMessage;
 
@@ -29,9 +26,6 @@ enum PipelineError {
 
     #[error("sink with id {0} not found")]
     SinkNotFound(i64),
-
-    #[error("publication with id {0} not found")]
-    PublicationNotFound(i64),
 
     #[error("tenant id missing in request")]
     TenantIdMissing,
@@ -64,8 +58,7 @@ impl ResponseError for PipelineError {
             PipelineError::TenantIdMissing
             | PipelineError::TenantIdIllFormed
             | PipelineError::SourceNotFound(_)
-            | PipelineError::SinkNotFound(_)
-            | PipelineError::PublicationNotFound(_) => StatusCode::BAD_REQUEST,
+            | PipelineError::SinkNotFound(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -85,7 +78,7 @@ impl ResponseError for PipelineError {
 struct PostPipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
-    pub publication_id: i64,
+    pub publication_name: String,
     pub config: PipelineConfig,
 }
 
@@ -100,7 +93,7 @@ struct GetPipelineResponse {
     tenant_id: i64,
     source_id: i64,
     sink_id: i64,
-    publication_id: i64,
+    publication_name: String,
     config: PipelineConfig,
 }
 
@@ -137,16 +130,12 @@ pub async fn create_pipeline(
         return Err(PipelineError::SinkNotFound(pipeline.sink_id));
     }
 
-    if !publication_exists(&pool, tenant_id, pipeline.publication_id).await? {
-        return Err(PipelineError::PublicationNotFound(pipeline.publication_id));
-    }
-
     let id = db::pipelines::create_pipeline(
         &pool,
         tenant_id,
         pipeline.source_id,
         pipeline.sink_id,
-        pipeline.publication_id,
+        pipeline.publication_name,
         &config,
     )
     .await?;
@@ -173,7 +162,7 @@ pub async fn read_pipeline(
                 tenant_id: s.tenant_id,
                 source_id: s.source_id,
                 sink_id: s.sink_id,
-                publication_id: s.publication_id,
+                publication_name: s.publication_name,
                 config,
             })
         })
@@ -190,29 +179,29 @@ pub async fn update_pipeline(
     pipeline_id: Path<i64>,
     pipeline: Json<PostPipelineRequest>,
 ) -> Result<impl Responder, PipelineError> {
+    let pipeline = pipeline.0;
     let tenant_id = extract_tenant_id(&req)?;
     let pipeline_id = pipeline_id.into_inner();
     let config = &pipeline.config;
+    let source_id = pipeline.source_id;
+    let sink_id = pipeline.sink_id;
+    let publication_name = pipeline.publication_name;
 
-    if !source_exists(&pool, tenant_id, pipeline.source_id).await? {
-        return Err(PipelineError::SourceNotFound(pipeline.source_id));
+    if !source_exists(&pool, tenant_id, source_id).await? {
+        return Err(PipelineError::SourceNotFound(source_id));
     }
 
-    if !sink_exists(&pool, tenant_id, pipeline.sink_id).await? {
-        return Err(PipelineError::SinkNotFound(pipeline.sink_id));
-    }
-
-    if !publication_exists(&pool, tenant_id, pipeline.publication_id).await? {
-        return Err(PipelineError::PublicationNotFound(pipeline.publication_id));
+    if !sink_exists(&pool, tenant_id, sink_id).await? {
+        return Err(PipelineError::SinkNotFound(sink_id));
     }
 
     db::pipelines::update_pipeline(
         &pool,
         tenant_id,
         pipeline_id,
-        pipeline.source_id,
-        pipeline.sink_id,
-        pipeline.publication_id,
+        source_id,
+        sink_id,
+        publication_name,
         config,
     )
     .await?
@@ -249,7 +238,7 @@ pub async fn read_all_pipelines(
             tenant_id: pipeline.tenant_id,
             source_id: pipeline.source_id,
             sink_id: pipeline.sink_id,
-            publication_id: pipeline.publication_id,
+            publication_name: pipeline.publication_name,
             config,
         };
         pipelines.push(sink);

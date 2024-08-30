@@ -12,6 +12,7 @@ use thiserror::Error;
 use super::ErrorMessage;
 use crate::db::{self, sources::SourceConfig};
 
+pub mod publications;
 pub mod tables;
 
 #[derive(Debug, Error)]

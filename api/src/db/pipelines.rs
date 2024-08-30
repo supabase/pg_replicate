@@ -19,7 +19,7 @@ pub struct Pipeline {
     pub tenant_id: i64,
     pub source_id: i64,
     pub sink_id: i64,
-    pub publication_id: i64,
+    pub publication_name: String,
     pub config: serde_json::Value,
 }
 
@@ -28,20 +28,20 @@ pub async fn create_pipeline(
     tenant_id: i64,
     source_id: i64,
     sink_id: i64,
-    publication_id: i64,
+    publication_name: String,
     config: &PipelineConfig,
 ) -> Result<i64, sqlx::Error> {
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        insert into pipelines (tenant_id, source_id, sink_id, publication_id, config)
+        insert into pipelines (tenant_id, source_id, sink_id, publication_name, config)
         values ($1, $2, $3, $4, $5)
         returning id
         "#,
         tenant_id,
         source_id,
         sink_id,
-        publication_id,
+        publication_name,
         config
     )
     .fetch_one(pool)
@@ -57,7 +57,7 @@ pub async fn read_pipeline(
 ) -> Result<Option<Pipeline>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        select id, tenant_id, source_id, sink_id, publication_id, config
+        select id, tenant_id, source_id, sink_id, publication_name, config
         from pipelines
         where tenant_id = $1 and id = $2
         "#,
@@ -72,7 +72,7 @@ pub async fn read_pipeline(
         tenant_id: r.tenant_id,
         source_id: r.source_id,
         sink_id: r.sink_id,
-        publication_id: r.publication_id,
+        publication_name: r.publication_name,
         config: r.config,
     }))
 }
@@ -83,20 +83,20 @@ pub async fn update_pipeline(
     pipeline_id: i64,
     source_id: i64,
     sink_id: i64,
-    publication_id: i64,
+    publication_name: String,
     config: &PipelineConfig,
 ) -> Result<Option<i64>, sqlx::Error> {
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
         update pipelines
-        set source_id = $1, sink_id = $2, publication_id = $3, config = $4
+        set source_id = $1, sink_id = $2, publication_name = $3, config = $4
         where tenant_id = $5 and id = $6
         returning id
         "#,
         source_id,
         sink_id,
-        publication_id,
+        publication_name,
         config,
         tenant_id,
         pipeline_id
@@ -133,7 +133,7 @@ pub async fn read_all_pipelines(
 ) -> Result<Vec<Pipeline>, sqlx::Error> {
     let mut record = sqlx::query!(
         r#"
-        select id, tenant_id, source_id, sink_id, publication_id, config
+        select id, tenant_id, source_id, sink_id, publication_name, config
         from pipelines
         where tenant_id = $1
         "#,
@@ -149,7 +149,7 @@ pub async fn read_all_pipelines(
             tenant_id: r.tenant_id,
             source_id: r.source_id,
             sink_id: r.sink_id,
-            publication_id: r.publication_id,
+            publication_name: r.publication_name,
             config: r.config,
         })
         .collect())

@@ -11,10 +11,6 @@ use crate::{
         pipelines::{
             create_pipeline, delete_pipeline, read_all_pipelines, read_pipeline, update_pipeline,
         },
-        publications::{
-            create_publication, delete_publication, read_all_publications, read_publication,
-            update_publication,
-        },
         sinks::{create_sink, delete_sink, read_all_sinks, read_sink, update_sink},
         sources::{
             create_source, delete_source, read_all_sources, read_source, tables::read_table_names,
@@ -89,12 +85,6 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(update_pipeline)
                     .service(delete_pipeline)
                     .service(read_all_pipelines)
-                    //publications
-                    .service(create_publication)
-                    .service(read_publication)
-                    .service(update_publication)
-                    .service(delete_publication)
-                    .service(read_all_publications)
                     //tables
                     .service(read_table_names),
             )
