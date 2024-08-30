@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgConnectOptions, Connection, Executor, PgConnection, Row};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Table {
     pub schema: String,
     pub name: String,

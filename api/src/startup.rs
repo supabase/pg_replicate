@@ -13,7 +13,12 @@ use crate::{
         },
         sinks::{create_sink, delete_sink, read_all_sinks, read_sink, update_sink},
         sources::{
-            create_source, delete_source, read_all_sources, read_source, tables::read_table_names,
+            create_source, delete_source,
+            publications::{
+                create_publication, delete_publication, read_all_publications, read_publication,
+            },
+            read_all_sources, read_source,
+            tables::read_table_names,
             update_source,
         },
         tenants::{create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant},
@@ -86,7 +91,12 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(delete_pipeline)
                     .service(read_all_pipelines)
                     //tables
-                    .service(read_table_names),
+                    .service(read_table_names)
+                    //publications
+                    .service(create_publication)
+                    .service(read_publication)
+                    .service(delete_publication)
+                    .service(read_all_publications),
             )
             .app_data(connection_pool.clone())
     })

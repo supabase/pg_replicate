@@ -79,7 +79,7 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, TableError> {
     Ok(tenant_id)
 }
 
-#[get("/sources/{source_id}/table_names")]
+#[get("/sources/{source_id}/tables")]
 pub async fn read_table_names(
     req: HttpRequest,
     pool: Data<PgPool>,

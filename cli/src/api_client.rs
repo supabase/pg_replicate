@@ -103,17 +103,6 @@ impl Display for BatchConfig {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct PublicationConfig {
-    pub table_names: Vec<String>,
-}
-
-impl Display for PublicationConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "table_names: {:?}", self.table_names)
-    }
-}
-
 #[derive(Serialize)]
 pub struct CreateTenantRequest {
     pub name: String,
@@ -273,50 +262,6 @@ pub struct UpdatePipelineRequest {
     pub sink_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
-}
-
-#[derive(Serialize)]
-pub struct CreatePublicationRequest {
-    pub source_id: i64,
-    pub name: String,
-    pub config: PublicationConfig,
-}
-
-#[derive(Deserialize)]
-pub struct CreatePublicationResponse {
-    pub id: i64,
-}
-
-impl Display for CreatePublicationResponse {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "id: {}", self.id)
-    }
-}
-
-#[derive(Deserialize)]
-pub struct PublicationResponse {
-    pub id: i64,
-    pub tenant_id: i64,
-    pub source_id: i64,
-    pub name: String,
-    pub config: PublicationConfig,
-}
-
-impl Display for PublicationResponse {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "tenant_id: {}, id: {}, source_id: {}, name: {}, config: {}",
-            self.tenant_id, self.id, self.source_id, self.name, self.config
-        )
-    }
-}
-
-#[derive(Serialize)]
-pub struct UpdatePublicationRequest {
-    pub source_id: i64,
-    pub name: String,
-    pub config: PublicationConfig,
 }
 
 #[derive(Debug, Error)]
