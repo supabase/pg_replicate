@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
 use crate::{
@@ -18,6 +19,11 @@ pub mod duckdb;
 pub mod stdout;
 
 pub trait SinkError: std::error::Error + Send + Sync + 'static {}
+
+#[derive(Debug, Error)]
+#[error("unreachable")]
+pub enum InfallibleSinkError {}
+impl SinkError for InfallibleSinkError {}
 
 #[async_trait]
 pub trait Sink {

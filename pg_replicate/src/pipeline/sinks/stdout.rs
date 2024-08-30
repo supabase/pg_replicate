@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    convert::Infallible,
-};
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use tokio_postgres::types::PgLsn;
@@ -13,15 +10,13 @@ use crate::{
     table::{TableId, TableSchema},
 };
 
-use super::{Sink, SinkError};
+use super::{Sink, SinkError, InfallibleSinkError};
 
 pub struct StdoutSink;
 
-impl SinkError for Infallible {}
-
 #[async_trait]
 impl Sink for StdoutSink {
-    type Error = Infallible;
+    type Error = InfallibleSinkError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         Ok(PipelineResumptionState {
             copied_tables: HashSet::new(),

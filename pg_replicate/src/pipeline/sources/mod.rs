@@ -16,6 +16,11 @@ pub mod postgres;
 pub trait SourceError: std::error::Error + Send + Sync + 'static {}
 
 #[derive(Debug, Error)]
+#[error("unreachable")]
+pub enum InfallibleSourceError {}
+impl SourceError for InfallibleSourceError {}
+
+#[derive(Debug, Error)]
 pub enum CommonSourceError {
     #[error("source error: {0}")]
     Postgres(#[from] PostgresSourceError),
