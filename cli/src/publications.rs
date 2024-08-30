@@ -18,8 +18,17 @@ pub async fn create_publication(
     let tenant_id = get_tenant_id(editor)?;
     let source_id = get_source_id(editor)?;
     let config = get_publication_config(editor)?;
+    let name = get_string(editor, "enter publication name: ")?;
+
     let publication = api_client
-        .create_publication(tenant_id, &CreatePublicationRequest { source_id, config })
+        .create_publication(
+            tenant_id,
+            &CreatePublicationRequest {
+                source_id,
+                name,
+                config,
+            },
+        )
         .await?;
 
     Ok(publication)
@@ -47,8 +56,13 @@ pub async fn update_publication(
     let source_id = get_source_id(editor)?;
     let publication_id = get_publication_id(editor)?;
     let config = get_publication_config(editor)?;
+    let name = get_string(editor, "enter publication name: ")?;
 
-    let publication = UpdatePublicationRequest { source_id, config };
+    let publication = UpdatePublicationRequest {
+        source_id,
+        name,
+        config,
+    };
     api_client
         .update_publication(tenant_id, publication_id, &publication)
         .await?;
@@ -81,13 +95,12 @@ pub async fn list_publications(
 }
 
 fn get_publication_config(editor: &mut DefaultEditor) -> Result<PublicationConfig, CliError> {
-    let name = get_string(editor, "enter publication name: ")?;
     let table_names = get_string(editor, "enter comma separated table names: ")?;
     let table_names: Vec<String> = table_names
         .split(',')
         .map(|table_name| table_name.trim().to_string())
         .collect();
-    Ok(PublicationConfig { name, table_names })
+    Ok(PublicationConfig { table_names })
 }
 
 pub fn get_publication_id(editor: &mut DefaultEditor) -> Result<i64, CliError> {

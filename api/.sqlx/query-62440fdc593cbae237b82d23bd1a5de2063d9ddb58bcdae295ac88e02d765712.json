@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select id, tenant_id, source_id, config\n        from publications\n        where tenant_id = $1\n        ",
+  "query": "\n        select id, tenant_id, source_id, name, config\n        from publications\n        where tenant_id = $1 and id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -20,12 +20,18 @@
       },
       {
         "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
         "name": "config",
         "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8"
       ]
     },
@@ -33,8 +39,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "2e45a8db40adcc2731acb62d1d2c237597fc90d2d3c273ac6e54484d7d8fd225"
+  "hash": "62440fdc593cbae237b82d23bd1a5de2063d9ddb58bcdae295ac88e02d765712"
 }

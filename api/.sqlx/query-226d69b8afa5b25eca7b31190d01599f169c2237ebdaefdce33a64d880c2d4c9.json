@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        update publications\n        set source_id = $1, config = $2\n        where tenant_id = $3 and id = $4\n        returning id\n        ",
+  "query": "\n        update publications\n        set source_id = $1, name = $2, config = $3\n        where tenant_id = $4 and id = $5\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,7 @@
     "parameters": {
       "Left": [
         "Int8",
+        "Text",
         "Jsonb",
         "Int8",
         "Int8"
@@ -21,5 +22,5 @@
       false
     ]
   },
-  "hash": "8d3aecc97652cfaa725de04395734fb1ead572468ceaf1155864dbb62b2dd704"
+  "hash": "226d69b8afa5b25eca7b31190d01599f169c2237ebdaefdce33a64d880c2d4c9"
 }

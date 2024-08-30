@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        insert into publications (tenant_id, source_id, config)\n        values ($1, $2, $3)\n        returning id\n        ",
+  "query": "\n        insert into publications (tenant_id, source_id, name, config)\n        values ($1, $2, $3, $4)\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -13,6 +13,7 @@
       "Left": [
         "Int8",
         "Int8",
+        "Text",
         "Jsonb"
       ]
     },
@@ -20,5 +21,5 @@
       false
     ]
   },
-  "hash": "512032b289c4570099e20b23b2785bf71a6cfac2e68b8e36ef9f3ebd1d57c27f"
+  "hash": "396da13e6037f477f1d0bc5758fa59ed8611ca9b1ee22265395b6c85b675216c"
 }

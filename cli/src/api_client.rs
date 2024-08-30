@@ -105,7 +105,6 @@ impl Display for BatchConfig {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PublicationConfig {
-    pub name: String,
     pub table_names: Vec<String>,
 }
 
@@ -274,6 +273,7 @@ pub struct UpdatePipelineRequest {
 #[derive(Serialize)]
 pub struct CreatePublicationRequest {
     pub source_id: i64,
+    pub name: String,
     pub config: PublicationConfig,
 }
 
@@ -293,6 +293,7 @@ pub struct PublicationResponse {
     pub id: i64,
     pub tenant_id: i64,
     pub source_id: i64,
+    pub name: String,
     pub config: PublicationConfig,
 }
 
@@ -300,8 +301,8 @@ impl Display for PublicationResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "tenant_id: {}, id: {}, source_id: {}, config: {}",
-            self.tenant_id, self.id, self.source_id, self.config
+            "tenant_id: {}, id: {}, source_id: {}, name: {}, config: {}",
+            self.tenant_id, self.id, self.source_id, self.name, self.config
         )
     }
 }
@@ -309,6 +310,7 @@ impl Display for PublicationResponse {
 #[derive(Serialize)]
 pub struct UpdatePublicationRequest {
     pub source_id: i64,
+    pub name: String,
     pub config: PublicationConfig,
 }
 

@@ -73,6 +73,7 @@ impl ResponseError for PublicationError {
 #[derive(Deserialize)]
 struct PostPublicationRequest {
     pub source_id: i64,
+    pub name: String,
     pub config: PublicationConfig,
 }
 
@@ -86,6 +87,7 @@ struct GetPublicationResponse {
     id: i64,
     tenant_id: i64,
     source_id: i64,
+    name: String,
     config: PublicationConfig,
 }
 
@@ -113,13 +115,15 @@ pub async fn create_publication(
     let publication = publication.0;
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = publication.source_id;
+    let name = publication.name;
     let config = publication.config;
 
     if !source_exists(&pool, tenant_id, source_id).await? {
         return Err(PublicationError::SourceNotFound(source_id));
     }
 
-    let id = db::publications::create_publication(&pool, tenant_id, source_id, &config).await?;
+    let id =
+        db::publications::create_publication(&pool, tenant_id, source_id, name, &config).await?;
     let response = PostPublicationResponse { id };
 
     Ok(Json(response))
@@ -142,6 +146,7 @@ pub async fn read_publication(
                 id: s.id,
                 tenant_id: s.tenant_id,
                 source_id: s.source_id,
+                name: s.name,
                 config,
             })
         })
@@ -158,16 +163,18 @@ pub async fn update_publication(
     publication_id: Path<i64>,
     publication: Json<PostPublicationRequest>,
 ) -> Result<impl Responder, PublicationError> {
+    let publication = publication.0;
     let tenant_id = extract_tenant_id(&req)?;
     let publication_id = publication_id.into_inner();
     let source_id = publication.source_id;
+    let name = publication.name;
     let config = &publication.config;
 
     if !source_exists(&pool, tenant_id, source_id).await? {
         return Err(PublicationError::SourceNotFound(source_id));
     }
 
-    db::publications::update_publication(&pool, tenant_id, publication_id, source_id, config)
+    db::publications::update_publication(&pool, tenant_id, publication_id, source_id, name, config)
         .await?
         .ok_or(PublicationError::PublicationNotFound(publication_id))?;
 
@@ -204,6 +211,7 @@ pub async fn read_all_publications(
             id: publication.id,
             tenant_id: publication.tenant_id,
             source_id: publication.source_id,
+            name: publication.name,
             config,
         };
         publications.push(sink);
