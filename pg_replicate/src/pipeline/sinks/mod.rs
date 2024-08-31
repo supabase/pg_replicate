@@ -16,7 +16,10 @@ use crate::{
     table::{TableId, TableSchema},
 };
 
-use super::{sources::SourceError, PipelineResumptionState};
+use super::{
+    sources::{postgres::TableCopyStreamError, SourceError},
+    PipelineResumptionState,
+};
 
 #[cfg(feature = "duckdb")]
 use self::duckdb::{DuckDbExecutorError, DuckDbRequest};
@@ -58,8 +61,15 @@ pub trait Sink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError>;
-    async fn write_table_row(&mut self, row: Result<TableRow, SourceError>, table_id: TableId) -> Result<(), SinkError>;
-    async fn write_cdc_event(&mut self, event: Result<CdcEvent, SourceError>) -> Result<PgLsn, SinkError>;
+    async fn write_table_row(
+        &mut self,
+        row: Result<TableRow, SourceError>,
+        table_id: TableId,
+    ) -> Result<(), SinkError>;
+    async fn write_cdc_event(
+        &mut self,
+        event: Result<CdcEvent, SourceError>,
+    ) -> Result<PgLsn, SinkError>;
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError>;
     async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError>;
 }
@@ -73,7 +83,7 @@ pub trait BatchSink {
     ) -> Result<(), SinkError>;
     async fn write_table_rows(
         &mut self,
-        rows: Vec<TableRow>,
+        rows: Vec<Result<TableRow, TableCopyStreamError>>,
         table_id: TableId,
     ) -> Result<(), SinkError>;
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, SinkError>;
