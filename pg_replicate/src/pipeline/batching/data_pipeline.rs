@@ -3,7 +3,7 @@ use std::{collections::HashSet, time::Instant};
 use futures::StreamExt;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
     conversions::cdc_event::{CdcEvent, CdcEventConversionError},
@@ -84,13 +84,8 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
             while let Some(batch) = batch_timeout_stream.next().await {
                 info!("got {} table copy events in a batch", batch.len());
-                //TODO: Avoid a vec copy
-                let mut rows = Vec::with_capacity(batch.len());
-                for row in batch {
-                    rows.push(row.map_err(CommonSourceError::TableCopyStream)?);
-                }
                 self.sink
-                    .write_table_rows(rows, table_schema.table_id)
+                    .write_table_rows(batch, table_schema.table_id)
                     .await
                     .map_err(PipelineError::Sink)?;
             }
