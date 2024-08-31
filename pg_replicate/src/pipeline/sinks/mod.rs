@@ -16,7 +16,7 @@ use crate::{
     table::{TableId, TableSchema},
 };
 
-use super::PipelineResumptionState;
+use super::{sources::SourceError, PipelineResumptionState};
 
 #[cfg(feature = "duckdb")]
 use self::duckdb::{DuckDbExecutorError, DuckDbRequest};
@@ -58,8 +58,8 @@ pub trait Sink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), SinkError>;
-    async fn write_table_row(&mut self, row: TableRow, table_id: TableId) -> Result<(), SinkError>;
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, SinkError>;
+    async fn write_table_row(&mut self, row: Result<TableRow, SourceError>, table_id: TableId) -> Result<(), SinkError>;
+    async fn write_cdc_event(&mut self, event: Result<CdcEvent, SourceError>) -> Result<PgLsn, SinkError>;
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), SinkError>;
     async fn truncate_table(&mut self, table_id: TableId) -> Result<(), SinkError>;
 }

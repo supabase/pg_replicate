@@ -56,7 +56,7 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
             pin!(table_rows);
 
             while let Some(row) = table_rows.next().await {
-                let row = row.map_err(SourceError::TableCopyStream)?;
+                let row = row.map_err(SourceError::TableCopyStream);
                 self.sink
                     .write_table_row(row, table_schema.table_id)
                     .await?;
@@ -77,8 +77,8 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
         pin!(cdc_events);
 
         while let Some(cdc_event) = cdc_events.next().await {
-            let cdc_event = cdc_event.map_err(SourceError::CdcStream)?;
-            let send_status_update = if let CdcEvent::KeepAliveRequested { reply } = cdc_event {
+            let cdc_event = cdc_event.map_err(SourceError::CdcStream);
+            let send_status_update = if let Ok(CdcEvent::KeepAliveRequested { reply }) = cdc_event {
                 reply
             } else {
                 false
