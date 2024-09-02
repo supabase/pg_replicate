@@ -16,6 +16,7 @@ use crate::{
             create_source, delete_source,
             publications::{
                 create_publication, delete_publication, read_all_publications, read_publication,
+                update_publication,
             },
             read_all_sources, read_source,
             tables::read_table_names,
@@ -95,6 +96,7 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     //publications
                     .service(create_publication)
                     .service(read_publication)
+                    .service(update_publication)
                     .service(delete_publication)
                     .service(read_all_publications),
             )

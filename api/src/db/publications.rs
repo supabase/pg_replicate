@@ -83,6 +83,34 @@ pub async fn create_publication(
     Ok(())
 }
 
+pub async fn update_publication(
+    publication: &Publication,
+    options: &PgConnectOptions,
+) -> Result<(), sqlx::Error> {
+    let mut query = String::new();
+    let quoted_publication_name = quote_identifier(&publication.name);
+    query.push_str("alter publication ");
+    query.push_str(&quoted_publication_name);
+    query.push_str(" set table only ");
+
+    for (i, table) in publication.tables.iter().enumerate() {
+        let quoted_schema = quote_identifier(&table.schema);
+        let quoted_name = quote_identifier(&table.name);
+        query.push_str(&quoted_schema);
+        query.push('.');
+        query.push_str(&quoted_name);
+
+        if i < publication.tables.len() - 1 {
+            query.push(',')
+        }
+    }
+
+    let mut connection = PgConnection::connect_with(options).await?;
+    connection.execute(query.as_str()).await?;
+
+    Ok(())
+}
+
 pub async fn drop_publication(
     publication_name: &str,
     options: &PgConnectOptions,

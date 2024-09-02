@@ -95,8 +95,8 @@ struct CreatePublicationRequest {
 }
 
 #[derive(Deserialize)]
-struct DeletePublicationRequest {
-    name: String,
+struct UpdatePublicationRequest {
+    tables: Vec<Table>,
 }
 
 #[post("/sources/{source_id}/publications")]
@@ -125,6 +125,36 @@ pub async fn create_publication(
         tables: publication.tables,
     };
     db::publications::create_publication(&publication, &options).await?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[post("/sources/{source_id}/publications/{publication_name}")]
+pub async fn update_publication(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    source_id_and_pub_name: Path<(i64, String)>,
+    publication: Json<UpdatePublicationRequest>,
+) -> Result<impl Responder, PublicationError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let (source_id, publication_name) = source_id_and_pub_name.into_inner();
+
+    let config = db::sources::read_source(&pool, tenant_id, source_id)
+        .await?
+        .map(|s| {
+            let config: SourceConfig = serde_json::from_value(s.config)?;
+            Ok::<SourceConfig, serde_json::Error>(config)
+        })
+        .transpose()?
+        .ok_or(PublicationError::SourceNotFound(source_id))?;
+
+    let options = config.connect_options();
+    let publication = publication.0;
+    let publication = Publication {
+        name: publication_name,
+        tables: publication.tables,
+    };
+    db::publications::update_publication(&publication, &options).await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -179,15 +209,14 @@ pub async fn read_all_publications(
     Ok(Json(publications))
 }
 
-#[delete("/sources/{source_id}/publications")]
+#[delete("/sources/{source_id}/publications/{publication_name}")]
 pub async fn delete_publication(
     req: HttpRequest,
     pool: Data<PgPool>,
-    source_id: Path<i64>,
-    publication: Json<DeletePublicationRequest>,
+    source_id_and_pub_name: Path<(i64, String)>,
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
-    let source_id = source_id.into_inner();
+    let (source_id, publication_name) = source_id_and_pub_name.into_inner();
 
     let config = db::sources::read_source(&pool, tenant_id, source_id)
         .await?
@@ -199,8 +228,7 @@ pub async fn delete_publication(
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
     let options = config.connect_options();
-    let publication = publication.0;
-    db::publications::drop_publication(&publication.name, &options).await?;
+    db::publications::drop_publication(&publication_name, &options).await?;
 
     Ok(HttpResponse::Ok().finish())
 }
