@@ -41,10 +41,10 @@ impl SourceConfig {
             } => {
                 let ssl_mode = PgSslMode::Prefer;
                 let options = PgConnectOptions::new_without_pgpass()
-                    .host(&host)
+                    .host(host)
                     .port(*port)
                     .database(name)
-                    .username(&username)
+                    .username(username)
                     .ssl_mode(ssl_mode);
                 if let Some(password) = &password {
                     options.password(password)
