@@ -39,33 +39,39 @@ async fn worker_loop(pool: PgPool, poll_duration: Duration) -> Result<(), anyhow
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Secrets {
-    postgres_password: String,
-    bigquery_service_account_key: String,
+    pub postgres_password: String,
+    pub bigquery_service_account_key: String,
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum Request {
     CreateOrUpdateSecrets {
-        project_ref: String,
+        tenant_id: i64,
+        replicator_id: i64,
         secrets: Secrets,
     },
     CreateOrUpdateConfig {
-        project_ref: String,
+        tenant_id: i64,
+        replicator_id: i64,
         config: replicator_config::Config,
     },
     CreateOrUpdateReplicator {
-        project_ref: String,
+        tenant_id: i64,
+        replicator_id: i64,
         replicator_image: String,
     },
     DeleteSecrets {
-        project_ref: String,
+        tenant_id: i64,
+        replicator_id: i64,
     },
     DeleteConfig {
-        project_ref: String,
+        tenant_id: i64,
+        replicator_id: i64,
     },
     DeleteReplicator {
-        project_ref: String,
+        tenant_id: i64,
+        replicator_id: i64,
     },
 }
 
@@ -82,57 +88,76 @@ pub async fn try_execute_task(
 
     match request {
         Request::CreateOrUpdateSecrets {
-            project_ref,
+            tenant_id,
+            replicator_id,
             secrets,
         } => {
-            info!("creating secrets for project ref: {}", project_ref);
+            info!("creating secrets for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
             let Secrets {
                 postgres_password,
                 bigquery_service_account_key,
             } = secrets;
+            let prefix = format!("{tenant_id}_{replicator_id}");
             k8s_client
-                .create_or_update_postgres_secret(&project_ref, &postgres_password)
+                .create_or_update_postgres_secret(&prefix, &postgres_password)
                 .await?;
             k8s_client
-                .create_or_update_bq_secret(&project_ref, &bigquery_service_account_key)
+                .create_or_update_bq_secret(&prefix, &bigquery_service_account_key)
                 .await?;
         }
         Request::CreateOrUpdateConfig {
-            project_ref,
+            tenant_id,
+            replicator_id,
             config,
         } => {
-            info!("creating config map for project ref: {}", project_ref);
+            info!("creating config map for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
             let base_config = "";
             let prod_config = serde_json::to_string(&config)?;
+            let prefix = format!("{tenant_id}_{replicator_id}");
             k8s_client
-                .create_or_update_config_map(&project_ref, base_config, &prod_config)
+                .create_or_update_config_map(&prefix, base_config, &prod_config)
                 .await?;
         }
         Request::CreateOrUpdateReplicator {
-            project_ref,
+            tenant_id,
+            replicator_id,
             replicator_image,
         } => {
             info!(
-                "creating or updating stateful set for project ref: {}",
-                project_ref
+                "creating or updating stateful set for tenant_id: {tenant_id}, replicator_id: {replicator_id}"
             );
 
+            let prefix = format!("{tenant_id}_{replicator_id}");
             k8s_client
-                .create_or_update_stateful_set(&project_ref, &replicator_image)
+                .create_or_update_stateful_set(&prefix, &replicator_image)
                 .await?;
         }
-        Request::DeleteSecrets { project_ref } => {
-            info!("deleting secrets for project ref: {}", project_ref);
-            k8s_client.delete_postgres_secret(&project_ref).await?;
-            k8s_client.delete_bq_secret(&project_ref).await?;
+        Request::DeleteSecrets {
+            tenant_id,
+            replicator_id,
+        } => {
+            info!("deleting secrets for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
+            let prefix = format!("{tenant_id}_{replicator_id}");
+            k8s_client.delete_postgres_secret(&prefix).await?;
+            k8s_client.delete_bq_secret(&prefix).await?;
         }
-        Request::DeleteConfig { project_ref } => {
-            info!("deleting config map for project ref: {}", project_ref);
-            k8s_client.delete_config_map(&project_ref).await?;
+        Request::DeleteConfig {
+            tenant_id,
+            replicator_id,
+        } => {
+            info!("deleting config map for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
+            let prefix = format!("{tenant_id}_{replicator_id}");
+            k8s_client.delete_config_map(&prefix).await?;
         }
-        Request::DeleteReplicator { project_ref } => {
-            info!("deleting stateful set for project ref: {}", project_ref);
-            k8s_client.delete_stateful_set(&project_ref).await?;
+        Request::DeleteReplicator {
+            tenant_id,
+            replicator_id,
+        } => {
+            info!(
+                "deleting stateful set for tenant_id: {tenant_id}, replicator_id: {replicator_id}"
+            );
+            let prefix = format!("{tenant_id}_{replicator_id}");
+            k8s_client.delete_stateful_set(&prefix).await?;
         }
     }
 

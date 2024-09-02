@@ -9,7 +9,17 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::db::{self, pipelines::PipelineConfig, sinks::sink_exists, sources::source_exists};
+use crate::{
+    db::{
+        self,
+        pipelines::PipelineConfig,
+        sinks::{sink_exists, SinkConfig},
+        sources::{source_exists, SourceConfig},
+    },
+    queue::enqueue_task,
+    replicator_config,
+    worker::{Request, Secrets},
+};
 
 use super::ErrorMessage;
 
@@ -26,6 +36,9 @@ enum PipelineError {
 
     #[error("sink with id {0} not found")]
     SinkNotFound(i64),
+
+    #[error("replicator with pipeline id {0} not found")]
+    ReplicatorNotFound(i64),
 
     #[error("tenant id missing in request")]
     TenantIdMissing,
@@ -51,9 +64,9 @@ impl PipelineError {
 impl ResponseError for PipelineError {
     fn status_code(&self) -> StatusCode {
         match self {
-            PipelineError::DatabaseError(_) | PipelineError::InvalidConfig(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            PipelineError::DatabaseError(_)
+            | PipelineError::InvalidConfig(_)
+            | PipelineError::ReplicatorNotFound(_) => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantIdMissing
             | PipelineError::TenantIdIllFormed
@@ -93,6 +106,7 @@ struct GetPipelineResponse {
     tenant_id: i64,
     source_id: i64,
     sink_id: i64,
+    replicator_id: i64,
     publication_name: String,
     config: PipelineConfig,
 }
@@ -162,6 +176,7 @@ pub async fn read_pipeline(
                 tenant_id: s.tenant_id,
                 source_id: s.source_id,
                 sink_id: s.sink_id,
+                replicator_id: s.replicator_id,
                 publication_name: s.publication_name,
                 config,
             })
@@ -238,10 +253,116 @@ pub async fn read_all_pipelines(
             tenant_id: pipeline.tenant_id,
             source_id: pipeline.source_id,
             sink_id: pipeline.sink_id,
+            replicator_id: pipeline.replicator_id,
             publication_name: pipeline.publication_name,
             config,
         };
         pipelines.push(sink);
     }
     Ok(Json(pipelines))
+}
+
+#[get("/pipelines/{pipeline_id}/start")]
+pub async fn start_pipeline(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    pipeline_id: Path<i64>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let pipeline_id = pipeline_id.into_inner();
+
+    let pipeline = db::pipelines::read_pipeline(&pool, tenant_id, pipeline_id)
+        .await?
+        .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
+    let pipeline_config: PipelineConfig = serde_json::from_value(pipeline.config)?;
+    let batch_config = pipeline_config.config;
+
+    let replicator = db::replicators::read_replicator_by_pipeline_id(&pool, tenant_id, pipeline_id)
+        .await?
+        .ok_or(PipelineError::ReplicatorNotFound(pipeline_id))?;
+
+    let source_id = pipeline.source_id;
+    let source = db::sources::read_source(&pool, tenant_id, source_id)
+        .await?
+        .ok_or(PipelineError::SourceNotFound(source_id))?;
+    let source_config: SourceConfig = serde_json::from_value(source.config)?;
+    let SourceConfig::Postgres {
+        host,
+        port,
+        name,
+        username,
+        password: postgres_password,
+        slot_name,
+    } = source_config;
+
+    let sink_id = pipeline.sink_id;
+    let sink = db::sinks::read_sink(&pool, tenant_id, sink_id)
+        .await?
+        .ok_or(PipelineError::SinkNotFound(sink_id))?;
+    let sink_config: SinkConfig = serde_json::from_value(sink.config)?;
+    let SinkConfig::BigQuery {
+        project_id,
+        dataset_id,
+        service_account_key: bigquery_service_account_key,
+    } = sink_config;
+
+    let secrets = Secrets {
+        postgres_password: postgres_password.unwrap_or_default(),
+        bigquery_service_account_key,
+    };
+
+    let req = Request::CreateOrUpdateSecrets {
+        tenant_id,
+        replicator_id: replicator.id,
+        secrets,
+    };
+
+    let task_data = serde_json::to_value(req)?;
+    enqueue_task(&pool, "create_or_update_secrets", task_data).await?;
+
+    let source_config = replicator_config::SourceConfig::Postgres {
+        host,
+        port,
+        name,
+        username,
+        slot_name,
+        publication: pipeline.publication_name,
+    };
+
+    let sink_config = replicator_config::SinkConfig::BigQuery {
+        project_id,
+        dataset_id,
+    };
+
+    let batch_config = replicator_config::BatchConfig {
+        max_size: batch_config.max_size,
+        max_fill_secs: batch_config.max_fill_secs,
+    };
+
+    let replicator_config = replicator_config::Config {
+        source: source_config,
+        sink: sink_config,
+        batch: batch_config,
+    };
+
+    let req = Request::CreateOrUpdateConfig {
+        tenant_id,
+        replicator_id: replicator.id,
+        config: replicator_config,
+    };
+
+    let task_data = serde_json::to_value(req)?;
+    enqueue_task(&pool, "create_or_update_config", task_data).await?;
+
+    let req = Request::CreateOrUpdateReplicator {
+        tenant_id,
+        replicator_id: replicator.id,
+        replicator_image: "ramsup/replicator:main.96457e346eed76c0dce648dbfd5a6f645220ea9a"
+            .to_string(), //TODO: remove hardcode image
+    };
+
+    let task_data = serde_json::to_value(req)?;
+    enqueue_task(&pool, "create_or_update_replicator", task_data).await?;
+
+    Ok(HttpResponse::Ok().finish())
 }

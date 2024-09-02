@@ -4,6 +4,7 @@ create table
         tenant_id bigint references public.tenants(id) not null,
         source_id bigint references public.sources(id) not null,
         sink_id bigint references public.sinks(id) not null,
+        replicator_id bigint references public.replicators(id) not null,
         publication_name text not null,
         config jsonb not null
     );

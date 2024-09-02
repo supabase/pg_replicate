@@ -99,6 +99,7 @@ pub struct PipelineResponse {
     pub tenant_id: i64,
     pub source_id: i64,
     pub sink_id: i64,
+    pub replicator_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
 }

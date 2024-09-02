@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select r.id, r.tenant_id, status as \"status: ReplicatorStatus\"\n        from replicators r\n        join pipelines p on r.id = p.replicator_id\n        where r.tenant_id = $1 and p.tenant_id = $1 and p.id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "tenant_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "status: ReplicatorStatus",
+        "type_info": {
+          "Custom": {
+            "name": "replicator_status",
+            "kind": {
+              "Enum": [
+                "stopped",
+                "starting",
+                "started",
+                "stopping"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4f38f0fd1e56661000bde2c712331fff08af722f932f5ccd4a9083b99bcaf8d8"
+}

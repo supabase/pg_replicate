@@ -154,6 +154,7 @@ async fn an_existing_pipeline_can_be_read() {
     assert_eq!(response.tenant_id, tenant_id);
     assert_eq!(response.source_id, source_id);
     assert_eq!(response.sink_id, sink_id);
+    assert!(response.replicator_id != 0);
     assert_eq!(response.config, pipeline.config);
 }
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select id, tenant_id, source_id, sink_id, publication_name, config\n        from pipelines\n        where tenant_id = $1 and id = $2\n        ",
+  "query": "\n        select id, tenant_id, source_id, sink_id, replicator_id, publication_name, config\n        from pipelines\n        where tenant_id = $1 and id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -25,11 +25,16 @@
       },
       {
         "ordinal": 4,
+        "name": "replicator_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
         "name": "publication_name",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "config",
         "type_info": "Jsonb"
       }
@@ -46,8 +51,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "46b6c43ee097d96fdfb7fb3cdec1272d8edc1414e7cb44f56d5965c93fcaba9d"
+  "hash": "78d67ff45ac9a7bfa3f1754e90671020bd26a5f21a9a27b6eb580ea730a0e3dd"
 }

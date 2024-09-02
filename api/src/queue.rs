@@ -4,7 +4,7 @@ pub async fn enqueue_task(
     pool: &PgPool,
     task_name: &str,
     task_data: serde_json::Value,
-) -> Result<i64, anyhow::Error> {
+) -> Result<i64, sqlx::Error> {
     let task = sqlx::query!(
         r#"
         insert into queue.task_queue (name, data)
