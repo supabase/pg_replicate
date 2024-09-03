@@ -263,7 +263,7 @@ pub async fn read_all_pipelines(
     Ok(Json(pipelines))
 }
 
-#[get("/pipelines/{pipeline_id}/start")]
+#[post("/pipelines/{pipeline_id}/start")]
 pub async fn start_pipeline(
     req: HttpRequest,
     pool: Data<PgPool>,
