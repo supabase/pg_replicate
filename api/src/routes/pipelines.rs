@@ -12,9 +12,10 @@ use thiserror::Error;
 use crate::{
     db::{
         self,
-        pipelines::PipelineConfig,
-        sinks::{sink_exists, SinkConfig},
-        sources::{source_exists, SourceConfig},
+        pipelines::{Pipeline, PipelineConfig},
+        replicators::Replicator,
+        sinks::{sink_exists, Sink, SinkConfig},
+        sources::{source_exists, Source, SourceConfig},
     },
     queue::enqueue_task,
     replicator_config,
@@ -271,21 +272,49 @@ pub async fn start_pipeline(
     let tenant_id = extract_tenant_id(&req)?;
     let pipeline_id = pipeline_id.into_inner();
 
-    let pipeline = db::pipelines::read_pipeline(&pool, tenant_id, pipeline_id)
+    let (pipeline, replicator, source, sink) = read_data(&pool, tenant_id, pipeline_id).await?;
+
+    let (secrets, config) = create_configs(source.config, sink.config, pipeline)?;
+
+    enqueue_create_or_update_secrets_task(&pool, tenant_id, replicator.id, secrets).await?;
+
+    enqueue_create_or_update_config_task(&pool, tenant_id, replicator.id, config).await?;
+
+    enqueue_create_or_update_replicator_task(&pool, tenant_id, replicator.id).await?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+async fn read_data(
+    pool: &PgPool,
+    tenant_id: i64,
+    pipeline_id: i64,
+) -> Result<(Pipeline, Replicator, Source, Sink), PipelineError> {
+    let pipeline = db::pipelines::read_pipeline(pool, tenant_id, pipeline_id)
         .await?
         .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
-    let pipeline_config: PipelineConfig = serde_json::from_value(pipeline.config)?;
-    let batch_config = pipeline_config.config;
-
-    let replicator = db::replicators::read_replicator_by_pipeline_id(&pool, tenant_id, pipeline_id)
+    let replicator = db::replicators::read_replicator_by_pipeline_id(pool, tenant_id, pipeline_id)
         .await?
         .ok_or(PipelineError::ReplicatorNotFound(pipeline_id))?;
-
     let source_id = pipeline.source_id;
-    let source = db::sources::read_source(&pool, tenant_id, source_id)
+    let source = db::sources::read_source(pool, tenant_id, source_id)
         .await?
         .ok_or(PipelineError::SourceNotFound(source_id))?;
-    let source_config: SourceConfig = serde_json::from_value(source.config)?;
+    let sink_id = pipeline.sink_id;
+    let sink = db::sinks::read_sink(pool, tenant_id, sink_id)
+        .await?
+        .ok_or(PipelineError::SinkNotFound(sink_id))?;
+    Ok((pipeline, replicator, source, sink))
+}
+
+fn create_configs(
+    source_config: serde_json::Value,
+    sink_config: serde_json::Value,
+    pipeline: Pipeline,
+) -> Result<(Secrets, replicator_config::Config), PipelineError> {
+    let source_config: SourceConfig = serde_json::from_value(source_config)?;
+    let sink_config: SinkConfig = serde_json::from_value(sink_config)?;
+
     let SourceConfig::Postgres {
         host,
         port,
@@ -295,11 +324,6 @@ pub async fn start_pipeline(
         slot_name,
     } = source_config;
 
-    let sink_id = pipeline.sink_id;
-    let sink = db::sinks::read_sink(&pool, tenant_id, sink_id)
-        .await?
-        .ok_or(PipelineError::SinkNotFound(sink_id))?;
-    let sink_config: SinkConfig = serde_json::from_value(sink.config)?;
     let SinkConfig::BigQuery {
         project_id,
         dataset_id,
@@ -311,22 +335,14 @@ pub async fn start_pipeline(
         bigquery_service_account_key,
     };
 
-    let req = Request::CreateOrUpdateSecrets {
-        tenant_id,
-        replicator_id: replicator.id,
-        secrets,
-    };
-
-    let task_data = serde_json::to_value(req)?;
-    enqueue_task(&pool, "create_or_update_secrets", task_data).await?;
-
+    let publication = pipeline.publication_name;
     let source_config = replicator_config::SourceConfig::Postgres {
         host,
         port,
         name,
         username,
         slot_name,
-        publication: pipeline.publication_name,
+        publication,
     };
 
     let sink_config = replicator_config::SinkConfig::BigQuery {
@@ -334,35 +350,70 @@ pub async fn start_pipeline(
         dataset_id,
     };
 
+    let pipeline_config: PipelineConfig = serde_json::from_value(pipeline.config)?;
+    let batch_config = pipeline_config.config;
     let batch_config = replicator_config::BatchConfig {
         max_size: batch_config.max_size,
         max_fill_secs: batch_config.max_fill_secs,
     };
 
-    let replicator_config = replicator_config::Config {
+    let config = replicator_config::Config {
         source: source_config,
         sink: sink_config,
         batch: batch_config,
     };
 
-    let req = Request::CreateOrUpdateConfig {
+    Ok((secrets, config))
+}
+
+async fn enqueue_create_or_update_secrets_task(
+    pool: &PgPool,
+    tenant_id: i64,
+    replicator_id: i64,
+    secrets: Secrets,
+) -> Result<(), PipelineError> {
+    let req = Request::CreateOrUpdateSecrets {
         tenant_id,
-        replicator_id: replicator.id,
-        config: replicator_config,
+        replicator_id,
+        secrets,
     };
 
     let task_data = serde_json::to_value(req)?;
-    enqueue_task(&pool, "create_or_update_config", task_data).await?;
+    enqueue_task(pool, "create_or_update_secrets", task_data).await?;
+    Ok(())
+}
 
+async fn enqueue_create_or_update_config_task(
+    pool: &PgPool,
+    tenant_id: i64,
+    replicator_id: i64,
+    config: replicator_config::Config,
+) -> Result<(), PipelineError> {
+    let req = Request::CreateOrUpdateConfig {
+        tenant_id,
+        replicator_id,
+        config,
+    };
+
+    let task_data = serde_json::to_value(req)?;
+    enqueue_task(pool, "create_or_update_config", task_data).await?;
+    Ok(())
+}
+
+async fn enqueue_create_or_update_replicator_task(
+    pool: &PgPool,
+    tenant_id: i64,
+    replicator_id: i64,
+) -> Result<(), PipelineError> {
     let req = Request::CreateOrUpdateReplicator {
         tenant_id,
-        replicator_id: replicator.id,
+        replicator_id,
         replicator_image: "ramsup/replicator:main.96457e346eed76c0dce648dbfd5a6f645220ea9a"
             .to_string(), //TODO: remove hardcode image
     };
 
     let task_data = serde_json::to_value(req)?;
-    enqueue_task(&pool, "create_or_update_replicator", task_data).await?;
+    enqueue_task(pool, "create_or_update_replicator", task_data).await?;
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(())
 }
