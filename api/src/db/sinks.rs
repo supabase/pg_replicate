@@ -155,7 +155,7 @@ pub async fn sink_exists(pool: &PgPool, tenant_id: i64, sink_id: i64) -> Result<
         r#"
         select exists (select id
         from sinks
-        where tenant_id = $1 and id = $2)
+        where tenant_id = $1 and id = $2) as "exists!"
         "#,
         tenant_id,
         sink_id,
@@ -163,7 +163,5 @@ pub async fn sink_exists(pool: &PgPool, tenant_id: i64, sink_id: i64) -> Result<
     .fetch_one(pool)
     .await?;
 
-    Ok(record
-        .exists
-        .expect("select exists always returns a non-null value"))
+    Ok(record.exists)
 }

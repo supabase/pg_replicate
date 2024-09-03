@@ -205,7 +205,7 @@ pub async fn source_exists(
         r#"
         select exists (select id
         from sources
-        where tenant_id = $1 and id = $2)
+        where tenant_id = $1 and id = $2) as "exists!"
         "#,
         tenant_id,
         source_id
@@ -213,7 +213,5 @@ pub async fn source_exists(
     .fetch_one(pool)
     .await?;
 
-    Ok(record
-        .exists
-        .expect("select exists always returns a non-null value"))
+    Ok(record.exists)
 }
