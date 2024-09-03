@@ -1,5 +1,6 @@
 mod database;
 mod health_check;
+mod images;
 mod pipelines;
 mod sinks;
 mod sources;

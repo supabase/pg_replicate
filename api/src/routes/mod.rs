@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 pub mod health_check;
+pub mod images;
 pub mod pipelines;
 pub mod sinks;
 pub mod sources;

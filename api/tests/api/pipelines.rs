@@ -2,6 +2,7 @@ use api::db::pipelines::{BatchConfig, PipelineConfig};
 use reqwest::StatusCode;
 
 use crate::{
+    images::create_default_image,
     sinks::create_sink,
     sources::create_source,
     tenants::create_tenant,
@@ -36,6 +37,7 @@ pub async fn create_pipeline_with_config(
     sink_id: i64,
     config: PipelineConfig,
 ) -> i64 {
+    create_default_image(app).await;
     let pipeline = CreatePipelineRequest {
         source_id,
         sink_id,
@@ -54,6 +56,7 @@ pub async fn create_pipeline_with_config(
 async fn pipeline_can_be_created() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
@@ -80,6 +83,7 @@ async fn pipeline_can_be_created() {
 async fn pipeline_with_another_tenants_source_cant_be_created() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant1_id = create_tenant(&app).await;
     let tenant2_id = create_tenant(&app).await;
     let source2_id = create_source(&app, tenant2_id).await;
@@ -102,6 +106,7 @@ async fn pipeline_with_another_tenants_source_cant_be_created() {
 async fn pipeline_with_another_tenants_sink_cant_be_created() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant1_id = create_tenant(&app).await;
     let tenant2_id = create_tenant(&app).await;
     let source1_id = create_source(&app, tenant1_id).await;
@@ -124,6 +129,7 @@ async fn pipeline_with_another_tenants_sink_cant_be_created() {
 async fn an_existing_pipeline_can_be_read() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
@@ -175,6 +181,7 @@ async fn an_non_existing_pipeline_cant_be_read() {
 async fn an_existing_pipeline_can_be_updated() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
@@ -224,6 +231,7 @@ async fn an_existing_pipeline_can_be_updated() {
 async fn pipeline_with_another_tenants_source_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant1_id = create_tenant(&app).await;
     let tenant2_id = create_tenant(&app).await;
     let source1_id = create_source(&app, tenant1_id).await;
@@ -262,6 +270,7 @@ async fn pipeline_with_another_tenants_source_cant_be_updated() {
 async fn pipeline_with_another_tenants_sink_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant1_id = create_tenant(&app).await;
     let tenant2_id = create_tenant(&app).await;
     let source1_id = create_source(&app, tenant1_id).await;
@@ -321,6 +330,7 @@ async fn an_non_existing_pipeline_cant_be_updated() {
 async fn an_existing_pipeline_can_be_deleted() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant_id = create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
@@ -364,6 +374,7 @@ async fn an_non_existing_pipeline_cant_be_deleted() {
 async fn all_pipelines_can_be_read() {
     // Arrange
     let app = spawn_app().await;
+    create_default_image(&app).await;
     let tenant_id = create_tenant(&app).await;
     let source1_id = create_source(&app, tenant_id).await;
     let source2_id = create_source(&app, tenant_id).await;

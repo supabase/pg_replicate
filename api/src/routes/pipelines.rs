@@ -293,8 +293,7 @@ pub async fn start_pipeline(
 
     enqueue_create_or_update_secrets_task(&pool, tenant_id, replicator.id, secrets).await?;
     enqueue_create_or_update_config_task(&pool, tenant_id, replicator.id, config).await?;
-    enqueue_create_or_update_replicator_task(&pool, tenant_id, replicator.id, image.image_name)
-        .await?;
+    enqueue_create_or_update_replicator_task(&pool, tenant_id, replicator.id, image.name).await?;
 
     Ok(HttpResponse::Ok().finish())
 }

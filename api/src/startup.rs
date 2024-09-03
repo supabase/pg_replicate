@@ -8,6 +8,7 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     routes::{
         health_check::health_check,
+        images::{create_image, delete_image, read_all_images, read_image, update_image},
         pipelines::{
             create_pipeline, delete_pipeline, read_all_pipelines, read_pipeline, start_pipeline,
             stop_pipeline, update_pipeline,
@@ -101,7 +102,13 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(read_publication)
                     .service(update_publication)
                     .service(delete_publication)
-                    .service(read_all_publications),
+                    .service(read_all_publications)
+                    //images
+                    .service(create_image)
+                    .service(read_image)
+                    .service(update_image)
+                    .service(delete_image)
+                    .service(read_all_images),
             )
             .app_data(connection_pool.clone())
     })

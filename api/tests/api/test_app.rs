@@ -112,6 +112,30 @@ pub struct UpdatePipelineRequest {
     pub config: PipelineConfig,
 }
 
+#[derive(Serialize)]
+pub struct CreateImageRequest {
+    pub name: String,
+    pub is_default: bool,
+}
+
+#[derive(Deserialize)]
+pub struct CreateImageResponse {
+    pub id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct ImageResponse {
+    pub id: i64,
+    pub name: String,
+    pub is_default: bool,
+}
+
+#[derive(Serialize)]
+pub struct UpdateImageRequest {
+    pub name: String,
+    pub is_default: bool,
+}
+
 impl TestApp {
     pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.api_client
@@ -318,6 +342,52 @@ impl TestApp {
         self.api_client
             .get(&format!("{}/v1/pipelines", &self.address))
             .header("tenant_id", tenant_id)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn create_image(&self, image: &CreateImageRequest) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/images", &self.address))
+            .json(image)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn read_image(&self, image_id: i64) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/images/{image_id}", &self.address))
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn update_image(
+        &self,
+        image_id: i64,
+        image: &UpdateImageRequest,
+    ) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/v1/images/{image_id}", &self.address))
+            .json(image)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn delete_image(&self, image_id: i64) -> reqwest::Response {
+        self.api_client
+            .delete(&format!("{}/v1/images/{image_id}", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn read_all_images(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/images", &self.address))
             .send()
             .await
             .expect("failed to execute request")
