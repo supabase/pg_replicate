@@ -31,12 +31,13 @@ pub async fn create_pipeline(
     tenant_id: i64,
     source_id: i64,
     sink_id: i64,
+    image_id: i64,
     publication_name: String,
     config: &PipelineConfig,
 ) -> Result<i64, sqlx::Error> {
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let mut txn = pool.begin().await?;
-    let replicator_id = create_replicator_txn(&mut txn, tenant_id).await?;
+    let replicator_id = create_replicator_txn(&mut txn, tenant_id, image_id).await?;
     let record = sqlx::query!(
         r#"
         insert into pipelines (tenant_id, source_id, sink_id, replicator_id, publication_name, config)

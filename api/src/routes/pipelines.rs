@@ -12,6 +12,7 @@ use thiserror::Error;
 use crate::{
     db::{
         self,
+        images::Image,
         pipelines::{Pipeline, PipelineConfig},
         replicators::Replicator,
         sinks::{sink_exists, Sink, SinkConfig},
@@ -41,6 +42,12 @@ enum PipelineError {
     #[error("replicator with pipeline id {0} not found")]
     ReplicatorNotFound(i64),
 
+    #[error("image with replicator id {0} not found")]
+    ImageNotFound(i64),
+
+    #[error("no default image found")]
+    NoDefaultImageFound,
+
     #[error("tenant id missing in request")]
     TenantIdMissing,
 
@@ -67,7 +74,9 @@ impl ResponseError for PipelineError {
         match self {
             PipelineError::DatabaseError(_)
             | PipelineError::InvalidConfig(_)
-            | PipelineError::ReplicatorNotFound(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | PipelineError::ReplicatorNotFound(_)
+            | PipelineError::ImageNotFound(_)
+            | PipelineError::NoDefaultImageFound => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantIdMissing
             | PipelineError::TenantIdIllFormed
@@ -145,11 +154,16 @@ pub async fn create_pipeline(
         return Err(PipelineError::SinkNotFound(pipeline.sink_id));
     }
 
+    let image = db::images::read_default_image(&pool)
+        .await?
+        .ok_or(PipelineError::NoDefaultImageFound)?;
+
     let id = db::pipelines::create_pipeline(
         &pool,
         tenant_id,
         pipeline.source_id,
         pipeline.sink_id,
+        image.id,
         pipeline.publication_name,
         &config,
     )
@@ -272,13 +286,15 @@ pub async fn start_pipeline(
     let tenant_id = extract_tenant_id(&req)?;
     let pipeline_id = pipeline_id.into_inner();
 
-    let (pipeline, replicator, source, sink) = read_data(&pool, tenant_id, pipeline_id).await?;
+    let (pipeline, replicator, image, source, sink) =
+        read_data(&pool, tenant_id, pipeline_id).await?;
 
     let (secrets, config) = create_configs(source.config, sink.config, pipeline)?;
 
     enqueue_create_or_update_secrets_task(&pool, tenant_id, replicator.id, secrets).await?;
     enqueue_create_or_update_config_task(&pool, tenant_id, replicator.id, config).await?;
-    enqueue_create_or_update_replicator_task(&pool, tenant_id, replicator.id).await?;
+    enqueue_create_or_update_replicator_task(&pool, tenant_id, replicator.id, image.image_name)
+        .await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -307,13 +323,16 @@ async fn read_data(
     pool: &PgPool,
     tenant_id: i64,
     pipeline_id: i64,
-) -> Result<(Pipeline, Replicator, Source, Sink), PipelineError> {
+) -> Result<(Pipeline, Replicator, Image, Source, Sink), PipelineError> {
     let pipeline = db::pipelines::read_pipeline(pool, tenant_id, pipeline_id)
         .await?
         .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
     let replicator = db::replicators::read_replicator_by_pipeline_id(pool, tenant_id, pipeline_id)
         .await?
         .ok_or(PipelineError::ReplicatorNotFound(pipeline_id))?;
+    let image = db::images::read_image_by_replicator_id(pool, replicator.id)
+        .await?
+        .ok_or(PipelineError::ImageNotFound(replicator.id))?;
     let source_id = pipeline.source_id;
     let source = db::sources::read_source(pool, tenant_id, source_id)
         .await?
@@ -322,7 +341,8 @@ async fn read_data(
     let sink = db::sinks::read_sink(pool, tenant_id, sink_id)
         .await?
         .ok_or(PipelineError::SinkNotFound(sink_id))?;
-    Ok((pipeline, replicator, source, sink))
+
+    Ok((pipeline, replicator, image, source, sink))
 }
 
 fn create_configs(
@@ -422,12 +442,12 @@ async fn enqueue_create_or_update_replicator_task(
     pool: &PgPool,
     tenant_id: i64,
     replicator_id: i64,
+    replicator_image: String,
 ) -> Result<(), PipelineError> {
     let req = Request::CreateOrUpdateReplicator {
         tenant_id,
         replicator_id,
-        replicator_image: "ramsup/replicator:main.96457e346eed76c0dce648dbfd5a6f645220ea9a"
-            .to_string(), //TODO: remove hardcode image
+        replicator_image,
     };
 
     let task_data = serde_json::to_value(req)?;

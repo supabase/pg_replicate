@@ -4,5 +4,6 @@ create table
     public.replicators (
         id bigint generated always as identity primary key,
         tenant_id bigint references public.tenants(id) not null,
+        image_id bigint references public.images(id) not null,
         status replicator_status not null
     );

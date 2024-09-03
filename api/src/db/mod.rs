@@ -5,3 +5,4 @@ pub mod sinks;
 pub mod sources;
 pub mod tables;
 pub mod tenants;
+pub mod images;
