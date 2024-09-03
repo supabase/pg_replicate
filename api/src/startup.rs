@@ -10,7 +10,7 @@ use crate::{
         health_check::health_check,
         pipelines::{
             create_pipeline, delete_pipeline, read_all_pipelines, read_pipeline, start_pipeline,
-            update_pipeline,
+            stop_pipeline, update_pipeline,
         },
         sinks::{create_sink, delete_sink, read_all_sinks, read_sink, update_sink},
         sources::{
@@ -93,6 +93,7 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(delete_pipeline)
                     .service(read_all_pipelines)
                     .service(start_pipeline)
+                    .service(stop_pipeline)
                     //tables
                     .service(read_table_names)
                     //publications

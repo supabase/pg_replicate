@@ -277,10 +277,28 @@ pub async fn start_pipeline(
     let (secrets, config) = create_configs(source.config, sink.config, pipeline)?;
 
     enqueue_create_or_update_secrets_task(&pool, tenant_id, replicator.id, secrets).await?;
-
     enqueue_create_or_update_config_task(&pool, tenant_id, replicator.id, config).await?;
-
     enqueue_create_or_update_replicator_task(&pool, tenant_id, replicator.id).await?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[post("/pipelines/{pipeline_id}/stop")]
+pub async fn stop_pipeline(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    pipeline_id: Path<i64>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let pipeline_id = pipeline_id.into_inner();
+
+    let replicator = db::replicators::read_replicator_by_pipeline_id(&pool, tenant_id, pipeline_id)
+        .await?
+        .ok_or(PipelineError::ReplicatorNotFound(pipeline_id))?;
+
+    enqueue_delete_secrets_task(&pool, tenant_id, replicator.id).await?;
+    enqueue_delete_config_task(&pool, tenant_id, replicator.id).await?;
+    enqueue_delete_replicator_task(&pool, tenant_id, replicator.id).await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -415,5 +433,50 @@ async fn enqueue_create_or_update_replicator_task(
     let task_data = serde_json::to_value(req)?;
     enqueue_task(pool, "create_or_update_replicator", task_data).await?;
 
+    Ok(())
+}
+
+async fn enqueue_delete_secrets_task(
+    pool: &PgPool,
+    tenant_id: i64,
+    replicator_id: i64,
+) -> Result<(), PipelineError> {
+    let req = Request::DeleteSecrets {
+        tenant_id,
+        replicator_id,
+    };
+
+    let task_data = serde_json::to_value(req)?;
+    enqueue_task(pool, "delete_secrets", task_data).await?;
+    Ok(())
+}
+
+async fn enqueue_delete_config_task(
+    pool: &PgPool,
+    tenant_id: i64,
+    replicator_id: i64,
+) -> Result<(), PipelineError> {
+    let req = Request::DeleteConfig {
+        tenant_id,
+        replicator_id,
+    };
+
+    let task_data = serde_json::to_value(req)?;
+    enqueue_task(pool, "delete_config", task_data).await?;
+    Ok(())
+}
+
+async fn enqueue_delete_replicator_task(
+    pool: &PgPool,
+    tenant_id: i64,
+    replicator_id: i64,
+) -> Result<(), PipelineError> {
+    let req = Request::DeleteReplicator {
+        tenant_id,
+        replicator_id,
+    };
+
+    let task_data = serde_json::to_value(req)?;
+    enqueue_task(pool, "delete_replicator", task_data).await?;
     Ok(())
 }
