@@ -75,6 +75,10 @@ pub enum Request {
     },
 }
 
+fn create_prefix(tenant_id: i64, replicator_id: i64) -> String {
+    format!("{tenant_id}-{replicator_id}")
+}
+
 pub async fn try_execute_task(
     pool: &PgPool,
     k8s_client: &K8sClient,
@@ -97,7 +101,7 @@ pub async fn try_execute_task(
                 postgres_password,
                 bigquery_service_account_key,
             } = secrets;
-            let prefix = format!("{tenant_id}_{replicator_id}");
+            let prefix = create_prefix(tenant_id, replicator_id);
             k8s_client
                 .create_or_update_postgres_secret(&prefix, &postgres_password)
                 .await?;
@@ -113,7 +117,7 @@ pub async fn try_execute_task(
             info!("creating config map for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
             let base_config = "";
             let prod_config = serde_json::to_string(&config)?;
-            let prefix = format!("{tenant_id}_{replicator_id}");
+            let prefix = create_prefix(tenant_id, replicator_id);
             k8s_client
                 .create_or_update_config_map(&prefix, base_config, &prod_config)
                 .await?;
@@ -127,7 +131,7 @@ pub async fn try_execute_task(
                 "creating or updating stateful set for tenant_id: {tenant_id}, replicator_id: {replicator_id}"
             );
 
-            let prefix = format!("{tenant_id}_{replicator_id}");
+            let prefix = create_prefix(tenant_id, replicator_id);
             k8s_client
                 .create_or_update_stateful_set(&prefix, &replicator_image)
                 .await?;
@@ -137,7 +141,7 @@ pub async fn try_execute_task(
             replicator_id,
         } => {
             info!("deleting secrets for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
-            let prefix = format!("{tenant_id}_{replicator_id}");
+            let prefix = create_prefix(tenant_id, replicator_id);
             k8s_client.delete_postgres_secret(&prefix).await?;
             k8s_client.delete_bq_secret(&prefix).await?;
         }
@@ -146,7 +150,7 @@ pub async fn try_execute_task(
             replicator_id,
         } => {
             info!("deleting config map for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
-            let prefix = format!("{tenant_id}_{replicator_id}");
+            let prefix = create_prefix(tenant_id, replicator_id);
             k8s_client.delete_config_map(&prefix).await?;
         }
         Request::DeleteReplicator {
@@ -156,7 +160,7 @@ pub async fn try_execute_task(
             info!(
                 "deleting stateful set for tenant_id: {tenant_id}, replicator_id: {replicator_id}"
             );
-            let prefix = format!("{tenant_id}_{replicator_id}");
+            let prefix = create_prefix(tenant_id, replicator_id);
             k8s_client.delete_stateful_set(&prefix).await?;
         }
     }
