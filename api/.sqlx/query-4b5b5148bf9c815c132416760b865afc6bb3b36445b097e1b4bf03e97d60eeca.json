@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        insert into replicators (tenant_id, status)\n        values ($1, $2::replicator_status)\n        returning id\n        ",
+  "query": "\n        insert into replicators (tenant_id, image_id, status)\n        values ($1, $2, $3::replicator_status)\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8",
         {
           "Custom": {
@@ -31,5 +32,5 @@
       false
     ]
   },
-  "hash": "c3a6dc4b4f1e478d6b9a142328b0de91c8ad174fa2bb7b0c217e843aa6f1cde2"
+  "hash": "4b5b5148bf9c815c132416760b865afc6bb3b36445b097e1b4bf03e97d60eeca"
 }
