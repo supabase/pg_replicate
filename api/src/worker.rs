@@ -12,16 +12,22 @@ use crate::{
     startup::get_connection_pool,
 };
 
-pub async fn run_worker_until_stopped(configuration: Settings) -> Result<(), anyhow::Error> {
+pub async fn run_worker_until_stopped<C: K8sClient>(
+    configuration: Settings,
+    k8s_client: C,
+) -> Result<(), anyhow::Error> {
     let connection_pool = get_connection_pool(&configuration.database);
     let poll_duration = Duration::from_secs(configuration.worker.poll_interval_secs);
-    worker_loop(connection_pool, poll_duration).await
+    worker_loop(connection_pool, poll_duration, &k8s_client).await
 }
 
-async fn worker_loop(pool: PgPool, poll_duration: Duration) -> Result<(), anyhow::Error> {
-    let k8s_client = K8sClient::new().await?;
+async fn worker_loop<C: K8sClient>(
+    pool: PgPool,
+    poll_duration: Duration,
+    k8s_client: &C,
+) -> Result<(), anyhow::Error> {
     loop {
-        match try_execute_task(&pool, &k8s_client).await {
+        match try_execute_task(&pool, k8s_client).await {
             Ok(ExecutionOutcome::EmptyQueue) => {
                 debug!("no task in queue");
                 tokio::time::sleep(poll_duration).await;
@@ -79,9 +85,9 @@ fn create_prefix(tenant_id: i64, replicator_id: i64) -> String {
     format!("{tenant_id}-{replicator_id}")
 }
 
-pub async fn try_execute_task(
+pub async fn try_execute_task<C: K8sClient>(
     pool: &PgPool,
-    k8s_client: &K8sClient,
+    k8s_client: &C,
 ) -> Result<ExecutionOutcome, anyhow::Error> {
     let task = dequeue_task(pool).await?;
     let Some((transaction, task)) = task else {

@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display};
 
 use api::{
     configuration::get_configuration,
+    k8s_client::HttpK8sClient,
     startup::Application,
     telemetry::{get_subscriber, init_subscriber},
     worker::run_worker_until_stopped,
@@ -17,7 +18,9 @@ pub async fn main() -> anyhow::Result<()> {
     info!("{configuration}");
     let application = Application::build(configuration.clone()).await?;
     let application_task = tokio::spawn(application.run_until_stopped());
-    let worker_task = tokio::spawn(run_worker_until_stopped(configuration));
+
+    let k8s_client = HttpK8sClient::new().await?;
+    let worker_task = tokio::spawn(run_worker_until_stopped(configuration, k8s_client));
 
     tokio::select! {
         o = application_task => report_exit("API", o),

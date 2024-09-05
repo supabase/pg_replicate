@@ -13,6 +13,7 @@ name = "api"
 [dependencies]
 actix-web = { workspace = true, features = ["macros", "http2"] }
 anyhow = { workspace = true, features = ["std"] }
+async-trait = { workspace = true }
 bytes = { workspace = true }
 config = { workspace = true, features = ["yaml"] }
 k8s-openapi = { workspace = true, features = ["latest"] }

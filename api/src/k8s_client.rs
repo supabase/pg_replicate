@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use k8s_openapi::api::{
     apps::v1::StatefulSet,
     core::v1::{ConfigMap, Pod, Secret},
@@ -20,7 +21,45 @@ pub enum K8sError {
     Kube(#[from] kube::Error),
 }
 
-pub struct K8sClient {
+#[async_trait]
+pub trait K8sClient {
+    async fn create_or_update_postgres_secret(
+        &self,
+        prefix: &str,
+        postgres_password: &str,
+    ) -> Result<(), K8sError>;
+
+    async fn create_or_update_bq_secret(
+        &self,
+        prefix: &str,
+        bq_service_account_key: &str,
+    ) -> Result<(), K8sError>;
+
+    async fn delete_postgres_secret(&self, prefix: &str) -> Result<(), K8sError>;
+
+    async fn delete_bq_secret(&self, prefix: &str) -> Result<(), K8sError>;
+
+    async fn create_or_update_config_map(
+        &self,
+        prefix: &str,
+        base_config: &str,
+        prod_config: &str,
+    ) -> Result<(), K8sError>;
+
+    async fn delete_config_map(&self, prefix: &str) -> Result<(), K8sError>;
+
+    async fn create_or_update_stateful_set(
+        &self,
+        prefix: &str,
+        replicator_image: &str,
+    ) -> Result<(), K8sError>;
+
+    async fn delete_stateful_set(&self, prefix: &str) -> Result<(), K8sError>;
+
+    async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError>;
+}
+
+pub struct HttpK8sClient {
     secrets_api: Api<Secret>,
     config_maps_api: Api<ConfigMap>,
     stateful_sets_api: Api<StatefulSet>,
@@ -33,8 +72,8 @@ const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
 const STATEFUL_SET_NAME_SUFFIX: &str = "replicator";
 const CONTAINER_NAME_SUFFIX: &str = "replicator";
 
-impl K8sClient {
-    pub async fn new() -> Result<K8sClient, K8sError> {
+impl HttpK8sClient {
+    pub async fn new() -> Result<HttpK8sClient, K8sError> {
         let client = Client::try_default().await?;
 
         let secrets_api: Api<Secret> = Api::default_namespaced(client.clone());
@@ -42,15 +81,18 @@ impl K8sClient {
         let stateful_sets_api: Api<StatefulSet> = Api::default_namespaced(client.clone());
         let pods_api: Api<Pod> = Api::default_namespaced(client);
 
-        Ok(K8sClient {
+        Ok(HttpK8sClient {
             secrets_api,
             config_maps_api,
             stateful_sets_api,
             pods_api,
         })
     }
+}
 
-    pub async fn create_or_update_postgres_secret(
+#[async_trait]
+impl K8sClient for HttpK8sClient {
+    async fn create_or_update_postgres_secret(
         &self,
         prefix: &str,
         postgres_password: &str,
@@ -80,7 +122,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_bq_secret(
+    async fn create_or_update_bq_secret(
         &self,
         prefix: &str,
         bq_service_account_key: &str,
@@ -110,7 +152,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn delete_postgres_secret(&self, prefix: &str) -> Result<(), K8sError> {
+    async fn delete_postgres_secret(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting postgres secret");
         let secret_name = format!("{prefix}-{POSTGRES_SECRET_NAME_SUFFIX}");
         let dp = DeleteParams::default();
@@ -129,7 +171,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn delete_bq_secret(&self, prefix: &str) -> Result<(), K8sError> {
+    async fn delete_bq_secret(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting bq secret");
         let secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
         let dp = DeleteParams::default();
@@ -148,7 +190,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_config_map(
+    async fn create_or_update_config_map(
         &self,
         prefix: &str,
         base_config: &str,
@@ -178,7 +220,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn delete_config_map(&self, prefix: &str) -> Result<(), K8sError> {
+    async fn delete_config_map(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting config map");
         let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
         let dp = DeleteParams::default();
@@ -197,7 +239,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_stateful_set(
+    async fn create_or_update_stateful_set(
         &self,
         prefix: &str,
         replicator_image: &str,
@@ -291,7 +333,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn delete_stateful_set(&self, prefix: &str) -> Result<(), K8sError> {
+    async fn delete_stateful_set(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting stateful set");
         let stateful_set_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}");
         let dp = DeleteParams::default();
@@ -311,7 +353,7 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError> {
+    async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting pod");
         let pod_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}-0");
         let dp = DeleteParams::default();
