@@ -8,7 +8,7 @@ pub struct Tenant {
 pub async fn create_tenant(pool: &PgPool, tenant_name: &str) -> Result<i64, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        insert into tenants (name)
+        insert into app.tenants (name)
         values ($1)
         returning id
         "#,
@@ -24,7 +24,7 @@ pub async fn read_tenant(pool: &PgPool, tenant_id: i64) -> Result<Option<Tenant>
     let record = sqlx::query!(
         r#"
         select id, name
-        from tenants
+        from app.tenants
         where id = $1
         "#,
         tenant_id
@@ -45,7 +45,7 @@ pub async fn update_tenant(
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        update tenants
+        update app.tenants
         set name = $1
         where id = $2
         returning id
@@ -62,7 +62,7 @@ pub async fn update_tenant(
 pub async fn delete_tenant(pool: &PgPool, tenant_id: i64) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        delete from tenants
+        delete from app.tenants
         where id = $1
         returning id
         "#,
@@ -78,7 +78,7 @@ pub async fn read_all_tenants(pool: &PgPool) -> Result<Vec<Tenant>, sqlx::Error>
     let mut record = sqlx::query!(
         r#"
         select id, name
-        from tenants
+        from app.tenants
         "#,
     )
     .fetch_all(pool)

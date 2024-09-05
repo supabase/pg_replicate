@@ -20,7 +20,7 @@ pub async fn create_image_txn(
 ) -> Result<i64, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        insert into images (name, is_default)
+        insert into app.images (name, is_default)
         values ($1, $2)
         returning id
         "#,
@@ -37,7 +37,7 @@ pub async fn read_default_image(pool: &PgPool) -> Result<Option<Image>, sqlx::Er
     let record = sqlx::query!(
         r#"
         select id, name, is_default
-        from images
+        from app.images
         where is_default = true
         "#,
     )
@@ -55,7 +55,7 @@ pub async fn read_image(pool: &PgPool, image_id: i64) -> Result<Option<Image>, s
     let record = sqlx::query!(
         r#"
         select id, name, is_default
-        from images
+        from app.images
         where id = $1
         "#,
         image_id,
@@ -78,7 +78,7 @@ pub async fn update_image(
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        update images
+        update app.images
         set name = $1, is_default = $2
         where id = $3
         returning id
@@ -96,7 +96,7 @@ pub async fn update_image(
 pub async fn delete_image(pool: &PgPool, image_id: i64) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        delete from images
+        delete from app.images
         where id = $1
         returning id
         "#,
@@ -112,7 +112,7 @@ pub async fn read_all_images(pool: &PgPool) -> Result<Vec<Image>, sqlx::Error> {
     let mut record = sqlx::query!(
         r#"
         select id, name, is_default
-        from images
+        from app.images
         "#,
     )
     .fetch_all(pool)
@@ -135,8 +135,8 @@ pub async fn read_image_by_replicator_id(
     let record = sqlx::query!(
         r#"
         select i.id, i.name, i.is_default
-        from images i
-        join replicators r on i.id = r.image_id
+        from app.images i
+        join app.replicators r on i.id = r.image_id
         where r.id = $1
         "#,
         replicator_id,

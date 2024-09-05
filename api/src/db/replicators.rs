@@ -1,7 +1,7 @@
 use sqlx::{PgPool, Postgres, Transaction};
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, sqlx::Type)]
-#[sqlx(type_name = "replicator_status", rename_all = "lowercase")]
+#[sqlx(type_name = "app.replicator_status", rename_all = "lowercase")]
 pub enum ReplicatorStatus {
     Stopped,
     Starting,
@@ -34,8 +34,8 @@ pub async fn create_replicator_txn(
 ) -> Result<i64, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        insert into replicators (tenant_id, image_id, status)
-        values ($1, $2, $3::replicator_status)
+        insert into app.replicators (tenant_id, image_id, status)
+        values ($1, $2, $3::app.replicator_status)
         returning id
         "#,
         tenant_id,
@@ -56,8 +56,8 @@ pub async fn read_replicator_by_pipeline_id(
     let record = sqlx::query!(
         r#"
         select r.id, r.tenant_id, r.image_id, r.status as "status: ReplicatorStatus"
-        from replicators r
-        join pipelines p on r.id = p.replicator_id
+        from app.replicators r
+        join app.pipelines p on r.id = p.replicator_id
         where r.tenant_id = $1 and p.tenant_id = $1 and p.id = $2
         "#,
         tenant_id,

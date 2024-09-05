@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into app.replicators (tenant_id, image_id, status)\n        values ($1, $2, $3::app.replicator_status)\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        {
+          "Custom": {
+            "name": "app.replicator_status",
+            "kind": {
+              "Enum": [
+                "stopped",
+                "starting",
+                "started",
+                "stopping"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5172f7c874293a3ed68321ecd65f797d88f0ab90de6a54403147269732d9cb38"
+}

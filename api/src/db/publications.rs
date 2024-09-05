@@ -2,7 +2,6 @@ use std::{borrow::Cow, collections::HashMap};
 
 use serde::Serialize;
 use sqlx::{postgres::PgConnectOptions, Connection, Executor, PgConnection, Row};
-use tracing::error;
 
 use super::tables::Table;
 
@@ -147,8 +146,6 @@ pub async fn read_publication(
 
     let quoted_publication_name = quote_literal(publication_name);
     query.push_str(&quoted_publication_name);
-
-    error!("QUERY: {query}");
 
     let mut connection = PgConnection::connect_with(options).await?;
 

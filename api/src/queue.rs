@@ -7,7 +7,7 @@ pub async fn enqueue_task(
 ) -> Result<i64, sqlx::Error> {
     let task = sqlx::query!(
         r#"
-        insert into queue.task_queue (name, data)
+        insert into app.task_queue (name, data)
         values($1, $2) returning id
         "#,
         task_name,
@@ -34,7 +34,7 @@ pub async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTransaction, Task)>
     let res = sqlx::query!(
         r#"
         select id, name, data
-        from queue.task_queue
+        from app.task_queue
         order by id
         limit 1
         for update
@@ -60,7 +60,7 @@ pub async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTransaction, Task)>
 pub async fn delete_task(mut txn: PgTransaction, id: i64) -> Result<(), anyhow::Error> {
     sqlx::query!(
         r#"
-        delete from queue.task_queue
+        delete from app.task_queue
         where id = $1
         "#,
         id

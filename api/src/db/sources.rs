@@ -93,7 +93,7 @@ pub async fn create_source(
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        insert into sources (tenant_id, config)
+        insert into app.sources (tenant_id, config)
         values ($1, $2)
         returning id
         "#,
@@ -114,7 +114,7 @@ pub async fn read_source(
     let record = sqlx::query!(
         r#"
         select id, tenant_id, config
-        from sources
+        from app.sources
         where tenant_id = $1 and id = $2
         "#,
         tenant_id,
@@ -139,7 +139,7 @@ pub async fn update_source(
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        update sources
+        update app.sources
         set config = $1
         where tenant_id = $2 and id = $3
         returning id
@@ -161,7 +161,7 @@ pub async fn delete_source(
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        delete from sources
+        delete from app.sources
         where tenant_id = $1 and id = $2
         returning id
         "#,
@@ -178,7 +178,7 @@ pub async fn read_all_sources(pool: &PgPool, tenant_id: i64) -> Result<Vec<Sourc
     let mut record = sqlx::query!(
         r#"
         select id, tenant_id, config
-        from sources
+        from app.sources
         where tenant_id = $1
         "#,
         tenant_id,
@@ -204,7 +204,7 @@ pub async fn source_exists(
     let record = sqlx::query!(
         r#"
         select exists (select id
-        from sources
+        from app.sources
         where tenant_id = $1 and id = $2) as "exists!"
         "#,
         tenant_id,

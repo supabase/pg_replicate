@@ -1,7 +1,7 @@
-create schema queue;
+create schema app;
 
 create table
-    queue.task_queue (
+    app.task_queue (
         id bigint generated always as identity primary key,
         name text not null,
         data JSONB not null

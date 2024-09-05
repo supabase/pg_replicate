@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        delete from app.task_queue\n        where id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1dfea8fc82d14ba41c808bf112e02d2fa2d0ce0dc75c7c8f1de1aacca92f0d4f"
+}

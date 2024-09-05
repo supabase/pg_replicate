@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update app.pipelines\n        set source_id = $1, sink_id = $2, publication_name = $3, config = $4\n        where tenant_id = $5 and id = $6\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "60d06611d50de0a2daf09f9cba150b6684a62b0061c3173848a89e56ccdce774"
+}

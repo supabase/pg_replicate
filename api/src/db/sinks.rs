@@ -47,7 +47,7 @@ pub async fn create_sink(
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        insert into sinks (tenant_id, config)
+        insert into app.sinks (tenant_id, config)
         values ($1, $2)
         returning id
         "#,
@@ -68,7 +68,7 @@ pub async fn read_sink(
     let record = sqlx::query!(
         r#"
         select id, tenant_id, config
-        from sinks
+        from app.sinks
         where tenant_id = $1 and id = $2
         "#,
         tenant_id,
@@ -93,7 +93,7 @@ pub async fn update_sink(
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        update sinks
+        update app.sinks
         set config = $1
         where tenant_id = $2 and id = $3
         returning id
@@ -115,7 +115,7 @@ pub async fn delete_sink(
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        delete from sinks
+        delete from app.sinks
         where tenant_id = $1 and id = $2
         returning id
         "#,
@@ -132,7 +132,7 @@ pub async fn read_all_sinks(pool: &PgPool, tenant_id: i64) -> Result<Vec<Sink>, 
     let mut record = sqlx::query!(
         r#"
         select id, tenant_id, config
-        from sinks
+        from app.sinks
         where tenant_id = $1
         "#,
         tenant_id,
@@ -154,7 +154,7 @@ pub async fn sink_exists(pool: &PgPool, tenant_id: i64, sink_id: i64) -> Result<
     let record = sqlx::query!(
         r#"
         select exists (select id
-        from sinks
+        from app.sinks
         where tenant_id = $1 and id = $2) as "exists!"
         "#,
         tenant_id,
