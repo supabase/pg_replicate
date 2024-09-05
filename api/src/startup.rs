@@ -1,4 +1,4 @@
-use std::net::TcpListener;
+use std::{net::TcpListener, sync::Arc};
 
 use actix_web::{dev::Server, web, App, HttpServer};
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -6,6 +6,7 @@ use tracing_actix_web::TracingLogger;
 
 use crate::{
     configuration::{DatabaseSettings, Settings},
+    k8s_client::HttpK8sClient,
     routes::{
         health_check::health_check,
         images::{create_image, delete_image, read_all_images, read_image, update_image},
@@ -43,7 +44,8 @@ impl Application {
         );
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool).await?;
+        let k8s_client = HttpK8sClient::new().await?;
+        let server = run(listener, connection_pool, Some(k8s_client)).await?;
 
         Ok(Self { port, server })
     }
@@ -61,10 +63,18 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new().connect_lazy_with(configuration.with_db())
 }
 
-pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Server, anyhow::Error> {
+// HttpK8sClient is wrapped in an option because creating it
+// in tests involves setting a default CryptoProvider and it
+// interferes with parallel tasks because only one can be set.
+pub async fn run(
+    listener: TcpListener,
+    connection_pool: PgPool,
+    http_k8s_client: Option<HttpK8sClient>,
+) -> Result<Server, anyhow::Error> {
     let connection_pool = web::Data::new(connection_pool);
+    let k8s_client = http_k8s_client.map(|client| web::Data::new(Arc::new(client)));
     let server = HttpServer::new(move || {
-        App::new()
+        let app = App::new()
             .wrap(TracingLogger::default())
             .service(health_check)
             .service(
@@ -110,7 +120,12 @@ pub async fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Serve
                     .service(delete_image)
                     .service(read_all_images),
             )
-            .app_data(connection_pool.clone())
+            .app_data(connection_pool.clone());
+        if let Some(k8s_client) = k8s_client.clone() {
+            app.app_data(k8s_client.clone())
+        } else {
+            app
+        }
     })
     .listen(listener)?
     .run();

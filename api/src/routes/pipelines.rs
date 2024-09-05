@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix_web::{
     delete, get,
     http::{header::ContentType, StatusCode},
@@ -18,9 +20,9 @@ use crate::{
         sinks::{sink_exists, Sink, SinkConfig},
         sources::{source_exists, Source, SourceConfig},
     },
-    queue::enqueue_task,
+    k8s_client::{HttpK8sClient, K8sClient, K8sError},
     replicator_config,
-    worker::{Request, Secrets},
+    worker::Secrets,
 };
 
 use super::ErrorMessage;
@@ -56,6 +58,9 @@ enum PipelineError {
 
     #[error("invalid sink config")]
     InvalidConfig(#[from] serde_json::Error),
+
+    #[error("k8s error: {0}")]
+    K8sError(#[from] K8sError),
 }
 
 impl PipelineError {
@@ -76,7 +81,8 @@ impl ResponseError for PipelineError {
             | PipelineError::InvalidConfig(_)
             | PipelineError::ReplicatorNotFound(_)
             | PipelineError::ImageNotFound(_)
-            | PipelineError::NoDefaultImageFound => StatusCode::INTERNAL_SERVER_ERROR,
+            | PipelineError::NoDefaultImageFound
+            | PipelineError::K8sError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantIdMissing
             | PipelineError::TenantIdIllFormed
@@ -281,6 +287,7 @@ pub async fn read_all_pipelines(
 pub async fn start_pipeline(
     req: HttpRequest,
     pool: Data<PgPool>,
+    k8s_client: Data<Arc<HttpK8sClient>>,
     pipeline_id: Path<i64>,
 ) -> Result<impl Responder, PipelineError> {
     let tenant_id = extract_tenant_id(&req)?;
@@ -290,10 +297,11 @@ pub async fn start_pipeline(
         read_data(&pool, tenant_id, pipeline_id).await?;
 
     let (secrets, config) = create_configs(source.config, sink.config, pipeline)?;
+    let prefix = create_prefix(tenant_id, replicator.id);
 
-    enqueue_create_or_update_secrets_task(&pool, tenant_id, replicator.id, secrets).await?;
-    enqueue_create_or_update_config_task(&pool, tenant_id, replicator.id, config).await?;
-    enqueue_create_or_update_replicator_task(&pool, tenant_id, replicator.id, image.name).await?;
+    create_or_update_secrets(&k8s_client, &prefix, secrets).await?;
+    create_or_update_config(&k8s_client, &prefix, config).await?;
+    create_or_update_replicator(&k8s_client, &prefix, image.name).await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -302,6 +310,7 @@ pub async fn start_pipeline(
 pub async fn stop_pipeline(
     req: HttpRequest,
     pool: Data<PgPool>,
+    k8s_client: Data<Arc<HttpK8sClient>>,
     pipeline_id: Path<i64>,
 ) -> Result<impl Responder, PipelineError> {
     let tenant_id = extract_tenant_id(&req)?;
@@ -311,9 +320,10 @@ pub async fn stop_pipeline(
         .await?
         .ok_or(PipelineError::ReplicatorNotFound(pipeline_id))?;
 
-    enqueue_delete_secrets_task(&pool, tenant_id, replicator.id).await?;
-    enqueue_delete_config_task(&pool, tenant_id, replicator.id).await?;
-    enqueue_delete_replicator_task(&pool, tenant_id, replicator.id).await?;
+    let prefix = create_prefix(tenant_id, replicator.id);
+    delete_secrets(&k8s_client, &prefix).await?;
+    delete_config(&k8s_client, &prefix).await?;
+    delete_replicator(&k8s_client, &prefix).await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -403,99 +413,67 @@ fn create_configs(
     Ok((secrets, config))
 }
 
-async fn enqueue_create_or_update_secrets_task(
-    pool: &PgPool,
-    tenant_id: i64,
-    replicator_id: i64,
+fn create_prefix(tenant_id: i64, replicator_id: i64) -> String {
+    format!("{tenant_id}-{replicator_id}")
+}
+
+async fn create_or_update_secrets(
+    k8s_client: &Arc<HttpK8sClient>,
+    prefix: &str,
     secrets: Secrets,
 ) -> Result<(), PipelineError> {
-    let req = Request::CreateOrUpdateSecrets {
-        tenant_id,
-        replicator_id,
-        secrets,
-    };
-
-    let task_data = serde_json::to_value(req)?;
-    enqueue_task(pool, "create_or_update_secrets", task_data).await?;
+    k8s_client
+        .create_or_update_postgres_secret(prefix, &secrets.postgres_password)
+        .await?;
+    k8s_client
+        .create_or_update_bq_secret(prefix, &secrets.bigquery_service_account_key)
+        .await?;
     Ok(())
 }
 
-async fn enqueue_create_or_update_config_task(
-    pool: &PgPool,
-    tenant_id: i64,
-    replicator_id: i64,
+async fn create_or_update_config(
+    k8s_client: &Arc<HttpK8sClient>,
+    prefix: &str,
     config: replicator_config::Config,
 ) -> Result<(), PipelineError> {
-    let req = Request::CreateOrUpdateConfig {
-        tenant_id,
-        replicator_id,
-        config,
-    };
-
-    let task_data = serde_json::to_value(req)?;
-    enqueue_task(pool, "create_or_update_config", task_data).await?;
+    let base_config = "";
+    let prod_config = serde_json::to_string(&config)?;
+    k8s_client
+        .create_or_update_config_map(prefix, base_config, &prod_config)
+        .await?;
     Ok(())
 }
 
-async fn enqueue_create_or_update_replicator_task(
-    pool: &PgPool,
-    tenant_id: i64,
-    replicator_id: i64,
+async fn create_or_update_replicator(
+    k8s_client: &Arc<HttpK8sClient>,
+    prefix: &str,
     replicator_image: String,
 ) -> Result<(), PipelineError> {
-    let req = Request::CreateOrUpdateReplicator {
-        tenant_id,
-        replicator_id,
-        replicator_image,
-    };
-
-    let task_data = serde_json::to_value(req)?;
-    enqueue_task(pool, "create_or_update_replicator", task_data).await?;
+    k8s_client
+        .create_or_update_stateful_set(prefix, &replicator_image)
+        .await?;
 
     Ok(())
 }
 
-async fn enqueue_delete_secrets_task(
-    pool: &PgPool,
-    tenant_id: i64,
-    replicator_id: i64,
+async fn delete_secrets(
+    k8s_client: &Arc<HttpK8sClient>,
+    prefix: &str,
 ) -> Result<(), PipelineError> {
-    let req = Request::DeleteSecrets {
-        tenant_id,
-        replicator_id,
-    };
-
-    let task_data = serde_json::to_value(req)?;
-    enqueue_task(pool, "delete_secrets", task_data).await?;
+    k8s_client.delete_postgres_secret(prefix).await?;
+    k8s_client.delete_bq_secret(prefix).await?;
     Ok(())
 }
 
-async fn enqueue_delete_config_task(
-    pool: &PgPool,
-    tenant_id: i64,
-    replicator_id: i64,
-) -> Result<(), PipelineError> {
-    let req = Request::DeleteConfig {
-        tenant_id,
-        replicator_id,
-    };
-
-    let task_data = serde_json::to_value(req)?;
-    enqueue_task(pool, "delete_config", task_data).await?;
+async fn delete_config(k8s_client: &Arc<HttpK8sClient>, prefix: &str) -> Result<(), PipelineError> {
+    k8s_client.delete_config_map(prefix).await?;
     Ok(())
 }
 
-async fn enqueue_delete_replicator_task(
-    pool: &PgPool,
-    tenant_id: i64,
-    replicator_id: i64,
+async fn delete_replicator(
+    k8s_client: &Arc<HttpK8sClient>,
+    prefix: &str,
 ) -> Result<(), PipelineError> {
-    let req = Request::DeleteReplicator {
-        tenant_id,
-        replicator_id,
-    };
-
-    let task_data = serde_json::to_value(req)?;
-    enqueue_task(pool, "delete_replicator", task_data).await?;
+    k8s_client.delete_stateful_set(prefix).await?;
     Ok(())
 }
