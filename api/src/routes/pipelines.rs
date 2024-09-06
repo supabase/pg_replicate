@@ -18,8 +18,9 @@ use crate::{
         pipelines::{Pipeline, PipelineConfig},
         replicators::Replicator,
         sinks::{sink_exists, Sink, SinkConfig},
-        sources::{source_exists, Source, SourceConfig},
+        sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
+    encryption::EncryptionKey,
     k8s_client::{HttpK8sClient, K8sClient, K8sError},
     replicator_config,
     worker::Secrets,
@@ -61,6 +62,9 @@ enum PipelineError {
 
     #[error("k8s error: {0}")]
     K8sError(#[from] K8sError),
+
+    #[error("sources db error: {0}")]
+    SourcesDb(#[from] SourcesDbError),
 }
 
 impl PipelineError {
@@ -82,6 +86,7 @@ impl ResponseError for PipelineError {
             | PipelineError::ReplicatorNotFound(_)
             | PipelineError::ImageNotFound(_)
             | PipelineError::NoDefaultImageFound
+            | PipelineError::SourcesDb(_)
             | PipelineError::K8sError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantIdMissing
@@ -287,6 +292,7 @@ pub async fn read_all_pipelines(
 pub async fn start_pipeline(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     k8s_client: Data<Arc<HttpK8sClient>>,
     pipeline_id: Path<i64>,
 ) -> Result<impl Responder, PipelineError> {
@@ -294,7 +300,7 @@ pub async fn start_pipeline(
     let pipeline_id = pipeline_id.into_inner();
 
     let (pipeline, replicator, image, source, sink) =
-        read_data(&pool, tenant_id, pipeline_id).await?;
+        read_data(&pool, tenant_id, pipeline_id, &encryption_key).await?;
 
     let (secrets, config) = create_configs(source.config, sink.config, pipeline)?;
     let prefix = create_prefix(tenant_id, replicator.id);
@@ -332,6 +338,7 @@ async fn read_data(
     pool: &PgPool,
     tenant_id: i64,
     pipeline_id: i64,
+    encryption_key: &EncryptionKey,
 ) -> Result<(Pipeline, Replicator, Image, Source, Sink), PipelineError> {
     let pipeline = db::pipelines::read_pipeline(pool, tenant_id, pipeline_id)
         .await?
@@ -343,7 +350,7 @@ async fn read_data(
         .await?
         .ok_or(PipelineError::ImageNotFound(replicator.id))?;
     let source_id = pipeline.source_id;
-    let source = db::sources::read_source(pool, tenant_id, source_id)
+    let source = db::sources::read_source(pool, tenant_id, source_id, encryption_key)
         .await?
         .ok_or(PipelineError::SourceNotFound(source_id))?;
     let sink_id = pipeline.sink_id;
@@ -355,11 +362,10 @@ async fn read_data(
 }
 
 fn create_configs(
-    source_config: serde_json::Value,
+    source_config: SourceConfig,
     sink_config: serde_json::Value,
     pipeline: Pipeline,
 ) -> Result<(Secrets, replicator_config::Config), PipelineError> {
-    let source_config: SourceConfig = serde_json::from_value(source_config)?;
     let sink_config: SinkConfig = serde_json::from_value(sink_config)?;
 
     let SourceConfig::Postgres {
@@ -378,7 +384,7 @@ fn create_configs(
     } = sink_config;
 
     let secrets = Secrets {
-        postgres_password: postgres_password.unwrap_or_default(),
+        postgres_password,
         bigquery_service_account_key,
     };
 

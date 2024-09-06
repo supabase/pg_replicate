@@ -10,7 +10,8 @@ use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::{
-    db::{self, publications::Publication, sources::SourceConfig, tables::Table},
+    db::{self, publications::Publication, sources::SourcesDbError, tables::Table},
+    encryption::EncryptionKey,
     routes::ErrorMessage,
 };
 
@@ -31,8 +32,8 @@ enum PublicationError {
     #[error("tenant id ill formed in request")]
     TenantIdIllFormed,
 
-    #[error("invalid source config")]
-    InvalidConfig(#[from] serde_json::Error),
+    #[error("sources db error: {0}")]
+    SourcesDb(#[from] SourcesDbError),
 }
 
 impl PublicationError {
@@ -49,7 +50,7 @@ impl PublicationError {
 impl ResponseError for PublicationError {
     fn status_code(&self) -> StatusCode {
         match self {
-            PublicationError::DatabaseError(_) | PublicationError::InvalidConfig(_) => {
+            PublicationError::DatabaseError(_) | PublicationError::SourcesDb(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             PublicationError::SourceNotFound(_) | PublicationError::PublicationNotFound(_) => {
@@ -103,19 +104,16 @@ struct UpdatePublicationRequest {
 pub async fn create_publication(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source_id: Path<i64>,
     publication: Json<CreatePublicationRequest>,
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = source_id.into_inner();
 
-    let config = db::sources::read_source(&pool, tenant_id, source_id)
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SourceConfig = serde_json::from_value(s.config)?;
-            Ok::<SourceConfig, serde_json::Error>(config)
-        })
-        .transpose()?
+        .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
     let options = config.connect_options();
@@ -133,19 +131,16 @@ pub async fn create_publication(
 pub async fn update_publication(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source_id_and_pub_name: Path<(i64, String)>,
     publication: Json<UpdatePublicationRequest>,
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let (source_id, publication_name) = source_id_and_pub_name.into_inner();
 
-    let config = db::sources::read_source(&pool, tenant_id, source_id)
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SourceConfig = serde_json::from_value(s.config)?;
-            Ok::<SourceConfig, serde_json::Error>(config)
-        })
-        .transpose()?
+        .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
     let options = config.connect_options();
@@ -163,18 +158,15 @@ pub async fn update_publication(
 pub async fn read_publication(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source_id_and_pub_name: Path<(i64, String)>,
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let (source_id, publication_name) = source_id_and_pub_name.into_inner();
 
-    let config = db::sources::read_source(&pool, tenant_id, source_id)
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SourceConfig = serde_json::from_value(s.config)?;
-            Ok::<SourceConfig, serde_json::Error>(config)
-        })
-        .transpose()?
+        .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
     let options = config.connect_options();
@@ -189,18 +181,15 @@ pub async fn read_publication(
 pub async fn read_all_publications(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source_id: Path<i64>,
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = source_id.into_inner();
 
-    let config = db::sources::read_source(&pool, tenant_id, source_id)
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SourceConfig = serde_json::from_value(s.config)?;
-            Ok::<SourceConfig, serde_json::Error>(config)
-        })
-        .transpose()?
+        .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
     let options = config.connect_options();
@@ -213,18 +202,15 @@ pub async fn read_all_publications(
 pub async fn delete_publication(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source_id_and_pub_name: Path<(i64, String)>,
 ) -> Result<impl Responder, PublicationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let (source_id, publication_name) = source_id_and_pub_name.into_inner();
 
-    let config = db::sources::read_source(&pool, tenant_id, source_id)
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SourceConfig = serde_json::from_value(s.config)?;
-            Ok::<SourceConfig, serde_json::Error>(config)
-        })
-        .transpose()?
+        .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
     let options = config.connect_options();

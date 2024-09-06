@@ -10,7 +10,13 @@ use sqlx::PgPool;
 use thiserror::Error;
 
 use super::ErrorMessage;
-use crate::db::{self, sources::SourceConfig};
+use crate::{
+    db::{
+        self,
+        sources::{SourceConfig, SourcesDbError},
+    },
+    encryption::EncryptionKey,
+};
 
 pub mod publications;
 pub mod tables;
@@ -29,8 +35,8 @@ enum SourceError {
     #[error("tenant id ill formed in request")]
     TenantIdIllFormed,
 
-    #[error("invalid source config")]
-    InvalidConfig(#[from] serde_json::Error),
+    #[error("sources db error: {0}")]
+    SourcesDb(#[from] SourcesDbError),
 }
 
 impl SourceError {
@@ -47,9 +53,7 @@ impl SourceError {
 impl ResponseError for SourceError {
     fn status_code(&self) -> StatusCode {
         match self {
-            SourceError::DatabaseError(_) | SourceError::InvalidConfig(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            SourceError::DatabaseError(_) | SourceError::SourcesDb(_) => StatusCode::INTERNAL_SERVER_ERROR,
             SourceError::SourceNotFound(_) => StatusCode::NOT_FOUND,
             SourceError::TenantIdMissing | SourceError::TenantIdIllFormed => {
                 StatusCode::BAD_REQUEST
@@ -105,12 +109,13 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
 pub async fn create_source(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source: Json<PostSourceRequest>,
 ) -> Result<impl Responder, SourceError> {
     let source = source.0;
     let tenant_id = extract_tenant_id(&req)?;
     let config = source.config;
-    let id = db::sources::create_source(&pool, tenant_id, &config).await?;
+    let id = db::sources::create_source(&pool, tenant_id, config, &encryption_key).await?;
     let response = PostSourceResponse { id };
     Ok(Json(response))
 }
@@ -119,21 +124,18 @@ pub async fn create_source(
 pub async fn read_source(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source_id: Path<i64>,
 ) -> Result<impl Responder, SourceError> {
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = source_id.into_inner();
-    let response = db::sources::read_source(&pool, tenant_id, source_id)
+    let response = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SourceConfig = serde_json::from_value(s.config)?;
-            Ok::<GetSourceResponse, serde_json::Error>(GetSourceResponse {
-                id: s.id,
-                tenant_id: s.tenant_id,
-                config,
-            })
+        .map(|s| GetSourceResponse {
+            id: s.id,
+            tenant_id: s.tenant_id,
+            config: s.config,
         })
-        .transpose()?
         .ok_or(SourceError::SourceNotFound(source_id))?;
     Ok(Json(response))
 }
@@ -143,12 +145,14 @@ pub async fn update_source(
     req: HttpRequest,
     pool: Data<PgPool>,
     source_id: Path<i64>,
+    encryption_key: Data<EncryptionKey>,
     source: Json<PostSourceRequest>,
 ) -> Result<impl Responder, SourceError> {
+    let source = source.0;
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = source_id.into_inner();
-    let config = &source.config;
-    db::sources::update_source(&pool, tenant_id, source_id, config)
+    let config = source.config;
+    db::sources::update_source(&pool, tenant_id, source_id, config, &encryption_key)
         .await?
         .ok_or(SourceError::SourceNotFound(source_id))?;
     Ok(HttpResponse::Ok().finish())
@@ -172,15 +176,15 @@ pub async fn delete_source(
 pub async fn read_all_sources(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
 ) -> Result<impl Responder, SourceError> {
     let tenant_id = extract_tenant_id(&req)?;
     let mut sources = vec![];
-    for source in db::sources::read_all_sources(&pool, tenant_id).await? {
-        let config: SourceConfig = serde_json::from_value(source.config)?;
+    for source in db::sources::read_all_sources(&pool, tenant_id, &encryption_key).await? {
         let source = GetSourceResponse {
             id: source.id,
             tenant_id: source.tenant_id,
-            config,
+            config: source.config,
         };
         sources.push(source);
     }

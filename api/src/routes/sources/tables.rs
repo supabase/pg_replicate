@@ -8,7 +8,8 @@ use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::{
-    db::{self, sources::SourceConfig},
+    db::{self, sources::SourcesDbError},
+    encryption::EncryptionKey,
     routes::ErrorMessage,
 };
 
@@ -26,8 +27,8 @@ enum TableError {
     #[error("tenant id ill formed in request")]
     TenantIdIllFormed,
 
-    #[error("invalid source config")]
-    InvalidConfig(#[from] serde_json::Error),
+    #[error("sources db error: {0}")]
+    SourcesDb(#[from] SourcesDbError),
 }
 
 impl TableError {
@@ -44,7 +45,7 @@ impl TableError {
 impl ResponseError for TableError {
     fn status_code(&self) -> StatusCode {
         match self {
-            TableError::DatabaseError(_) | TableError::InvalidConfig(_) => {
+            TableError::DatabaseError(_) | TableError::SourcesDb(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             TableError::SourceNotFound(_) => StatusCode::NOT_FOUND,
@@ -83,18 +84,15 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, TableError> {
 pub async fn read_table_names(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     source_id: Path<i64>,
 ) -> Result<impl Responder, TableError> {
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = source_id.into_inner();
 
-    let config = db::sources::read_source(&pool, tenant_id, source_id)
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SourceConfig = serde_json::from_value(s.config)?;
-            Ok::<SourceConfig, serde_json::Error>(config)
-        })
-        .transpose()?
+        .map(|s| s.config)
         .ok_or(TableError::SourceNotFound(source_id))?;
 
     let options = config.connect_options();
