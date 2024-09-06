@@ -4,10 +4,17 @@ use secrecy::{ExposeSecret, Secret};
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 #[derive(serde::Deserialize, Clone)]
+pub struct EncryptionKey {
+    pub id: u32,
+    pub key: String,
+}
+
+#[derive(serde::Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub worker: WorkerSettings,
+    pub encryption_key: EncryptionKey,
 }
 
 impl Display for Settings {

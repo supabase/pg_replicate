@@ -1,5 +1,6 @@
 pub mod configuration;
 pub mod db;
+pub mod encryption;
 pub mod k8s_client;
 pub mod queue;
 pub mod replicator_config;

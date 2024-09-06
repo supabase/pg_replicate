@@ -3,6 +3,7 @@ use std::net::TcpListener;
 use api::{
     configuration::get_configuration,
     db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
+    encryption::{self, generate_random_key},
     startup::{get_connection_pool, run},
 };
 use serde::{Deserialize, Serialize};
@@ -401,7 +402,9 @@ pub async fn spawn_app() -> TestApp {
     configuration.database.name = Uuid::new_v4().to_string();
     let connection_pool = get_connection_pool(&configuration.database);
     configure_database(&configuration.database).await;
-    let server = run(listener, connection_pool.clone(), None)
+    let key = generate_random_key::<32>().expect("failed to generate random key");
+    let encryption_key = encryption::EncryptionKey { id: 0, key };
+    let server = run(listener, connection_pool.clone(), encryption_key, None)
         .await
         .expect("failed to bind address");
     tokio::spawn(server);

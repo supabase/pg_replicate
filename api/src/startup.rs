@@ -1,11 +1,14 @@
 use std::{net::TcpListener, sync::Arc};
 
 use actix_web::{dev::Server, web, App, HttpServer};
+use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
+use base64::{prelude::BASE64_STANDARD, Engine};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tracing_actix_web::TracingLogger;
 
 use crate::{
     configuration::{DatabaseSettings, Settings},
+    encryption,
     k8s_client::HttpK8sClient,
     routes::{
         health_check::health_check,
@@ -44,8 +47,14 @@ impl Application {
         );
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
+        let key_bytes = BASE64_STANDARD.decode(&configuration.encryption_key.key)?;
+        let key = RandomizedNonceKey::new(&AES_256_GCM, &key_bytes)?;
+        let encryption_key = encryption::EncryptionKey {
+            id: configuration.encryption_key.id,
+            key,
+        };
         let k8s_client = HttpK8sClient::new().await?;
-        let server = run(listener, connection_pool, Some(k8s_client)).await?;
+        let server = run(listener, connection_pool, encryption_key, Some(k8s_client)).await?;
 
         Ok(Self { port, server })
     }
@@ -69,9 +78,11 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
 pub async fn run(
     listener: TcpListener,
     connection_pool: PgPool,
+    encryption_key: encryption::EncryptionKey,
     http_k8s_client: Option<HttpK8sClient>,
 ) -> Result<Server, anyhow::Error> {
     let connection_pool = web::Data::new(connection_pool);
+    let encryption_key = web::Data::new(encryption_key);
     let k8s_client = http_k8s_client.map(|client| web::Data::new(Arc::new(client)));
     let server = HttpServer::new(move || {
         let app = App::new()
@@ -120,7 +131,8 @@ pub async fn run(
                     .service(delete_image)
                     .service(read_all_images),
             )
-            .app_data(connection_pool.clone());
+            .app_data(connection_pool.clone())
+            .app_data(encryption_key.clone());
         if let Some(k8s_client) = k8s_client.clone() {
             app.app_data(k8s_client.clone())
         } else {
