@@ -15,7 +15,6 @@ pub enum SourceSettings {
         /// Postgres database user name
         username: String,
 
-        //TODO: remove from here and read from kms
         /// Postgres database user password
         password: Option<String>,
 
@@ -61,7 +60,6 @@ pub enum SinkSettings {
         /// BigQuery dataset id
         dataset_id: String,
 
-        //TODO: remove from here and read from kms
         /// BigQuery service account key
         service_account_key: String,
     },
