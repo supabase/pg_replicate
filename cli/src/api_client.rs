@@ -290,7 +290,7 @@ impl ApiClient {
     ) -> Result<CreateTenantResponse, ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/tenants", &self.address))
+            .post(format!("{}/v1/tenants", &self.address))
             .json(tenant)
             .send()
             .await?;
@@ -306,7 +306,7 @@ impl ApiClient {
     pub async fn read_tenant(&self, tenant_id: i64) -> Result<TenantResponse, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .get(format!("{}/v1/tenants/{tenant_id}", &self.address))
             .send()
             .await?;
 
@@ -325,7 +325,7 @@ impl ApiClient {
     ) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .post(format!("{}/v1/tenants/{tenant_id}", &self.address))
             .json(tenant)
             .send()
             .await?;
@@ -341,7 +341,7 @@ impl ApiClient {
     pub async fn delete_tenant(&self, tenant_id: i64) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .delete(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .delete(format!("{}/v1/tenants/{tenant_id}", &self.address))
             .send()
             .await?;
 
@@ -356,7 +356,7 @@ impl ApiClient {
     pub async fn read_all_tenants(&self) -> Result<Vec<TenantResponse>, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/tenants", &self.address))
+            .get(format!("{}/v1/tenants", &self.address))
             .send()
             .await?;
 
@@ -375,7 +375,7 @@ impl ApiClient {
     ) -> Result<CreateSourceResponse, ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/sources", &self.address))
+            .post(format!("{}/v1/sources", &self.address))
             .header("tenant_id", tenant_id)
             .json(source)
             .send()
@@ -396,7 +396,7 @@ impl ApiClient {
     ) -> Result<SourceResponse, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/sources/{source_id}", &self.address))
+            .get(format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -417,7 +417,7 @@ impl ApiClient {
     ) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/sources/{source_id}", &self.address))
+            .post(format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(source)
             .send()
@@ -438,7 +438,7 @@ impl ApiClient {
     ) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .delete(&format!("{}/v1/sources/{source_id}", &self.address))
+            .delete(format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -457,7 +457,7 @@ impl ApiClient {
     ) -> Result<Vec<SourceResponse>, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/sources", &self.address))
+            .get(format!("{}/v1/sources", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -477,7 +477,7 @@ impl ApiClient {
     ) -> Result<CreateSinkResponse, ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/sinks", &self.address))
+            .post(format!("{}/v1/sinks", &self.address))
             .header("tenant_id", tenant_id)
             .json(sink)
             .send()
@@ -498,7 +498,7 @@ impl ApiClient {
     ) -> Result<SinkResponse, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .get(format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -519,7 +519,7 @@ impl ApiClient {
     ) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .post(format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(sink)
             .send()
@@ -536,7 +536,7 @@ impl ApiClient {
     pub async fn delete_sink(&self, tenant_id: i64, sink_id: i64) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .delete(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .delete(format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -555,7 +555,7 @@ impl ApiClient {
     ) -> Result<Vec<SinkResponse>, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/sinks", &self.address))
+            .get(format!("{}/v1/sinks", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -575,7 +575,7 @@ impl ApiClient {
     ) -> Result<CreatePipelineResponse, ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/pipelines", &self.address))
+            .post(format!("{}/v1/pipelines", &self.address))
             .header("tenant_id", tenant_id)
             .json(pipeline)
             .send()
@@ -596,7 +596,7 @@ impl ApiClient {
     ) -> Result<PipelineResponse, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .get(format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -617,7 +617,7 @@ impl ApiClient {
     ) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .post(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .post(format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(pipeline)
             .send()
@@ -638,7 +638,7 @@ impl ApiClient {
     ) -> Result<(), ApiClientError> {
         let response = self
             .client
-            .delete(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .delete(format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
@@ -657,7 +657,7 @@ impl ApiClient {
     ) -> Result<Vec<PipelineResponse>, ApiClientError> {
         let response = self
             .client
-            .get(&format!("{}/v1/pipelines", &self.address))
+            .get(format!("{}/v1/pipelines", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await?;
