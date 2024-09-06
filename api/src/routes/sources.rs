@@ -53,7 +53,9 @@ impl SourceError {
 impl ResponseError for SourceError {
     fn status_code(&self) -> StatusCode {
         match self {
-            SourceError::DatabaseError(_) | SourceError::SourcesDb(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SourceError::DatabaseError(_) | SourceError::SourcesDb(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             SourceError::SourceNotFound(_) => StatusCode::NOT_FOUND,
             SourceError::TenantIdMissing | SourceError::TenantIdIllFormed => {
                 StatusCode::BAD_REQUEST
