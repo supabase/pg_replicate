@@ -15,7 +15,7 @@ fn new_source_config() -> SourceConfig {
         port: 5432,
         name: "postgres".to_string(),
         username: "postgres".to_string(),
-        password: "postgres".to_string(),
+        password: Some("postgres".to_string()),
         slot_name: "slot".to_string(),
     }
 }
@@ -26,7 +26,7 @@ fn updated_source_config() -> SourceConfig {
         port: 2345,
         name: "sergtsop".to_string(),
         username: "sergtsop".to_string(),
-        password: "sergtsop".to_string(),
+        password: Some("sergtsop".to_string()),
         slot_name: "tols".to_string(),
     }
 }

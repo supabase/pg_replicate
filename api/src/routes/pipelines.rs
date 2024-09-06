@@ -384,7 +384,7 @@ fn create_configs(
     } = sink_config;
 
     let secrets = Secrets {
-        postgres_password,
+        postgres_password: postgres_password.unwrap_or_default(),
         bigquery_service_account_key,
     };
 

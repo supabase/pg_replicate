@@ -35,7 +35,7 @@ enum SourceConfigInDb {
         username: String,
 
         /// Postgres database user password
-        password: EncryptedPassword,
+        password: Option<EncryptedPassword>,
 
         /// Postgres slot name
         slot_name: String,
@@ -52,24 +52,29 @@ impl SourceConfigInDb {
             password: encrypted_password,
             slot_name,
         } = self;
-        if encrypted_password.id != encryption_key.id {
-            return Err(SourcesDbError::MismatchedKeyId(
-                encrypted_password.id,
-                encryption_key.id,
-            ));
-        }
-        let encrypted_password_bytes = BASE64_STANDARD.decode(encrypted_password.value)?;
-        let nonce =
-            Nonce::try_assume_unique_for_key(&BASE64_STANDARD.decode(encrypted_password.nonce)?)?;
-        let decrypted_password = from_utf8(&decrypt(
-            encrypted_password_bytes,
-            nonce,
-            &encryption_key.key,
-        )?)?
-        .to_string();
-        // let (encrypted_password, nonce) = encrypt(password.as_bytes(), &encryption_key.key)?;
-        // let encrypted_encoded_password = BASE64_STANDARD.encode(encrypted_password);
-        // let encoded_nonce = BASE64_STANDARD.encode(nonce.as_ref());
+
+        let decrypted_password = encrypted_password
+            .map(|encrypted_password| {
+                if encrypted_password.id != encryption_key.id {
+                    return Err(SourcesDbError::MismatchedKeyId(
+                        encrypted_password.id,
+                        encryption_key.id,
+                    ));
+                }
+                let encrypted_password_bytes = BASE64_STANDARD.decode(encrypted_password.value)?;
+                let nonce = Nonce::try_assume_unique_for_key(
+                    &BASE64_STANDARD.decode(encrypted_password.nonce)?,
+                )?;
+                let decrypted_password = from_utf8(&decrypt(
+                    encrypted_password_bytes,
+                    nonce,
+                    &encryption_key.key,
+                )?)?
+                .to_string();
+                Ok(decrypted_password)
+            })
+            .transpose()?;
+
         Ok(SourceConfig::Postgres {
             host,
             port,
@@ -97,7 +102,7 @@ pub enum SourceConfig {
         username: String,
 
         /// Postgres database user password
-        password: String,
+        password: Option<String>,
 
         /// Postgres slot name
         slot_name: String,
@@ -117,13 +122,17 @@ impl SourceConfig {
             } => {
                 let ssl_mode = PgSslMode::Prefer;
 
-                PgConnectOptions::new_without_pgpass()
+                let options = PgConnectOptions::new_without_pgpass()
                     .host(host)
                     .port(*port)
                     .database(name)
                     .username(username)
-                    .ssl_mode(ssl_mode)
-                    .password(password)
+                    .ssl_mode(ssl_mode);
+                if let Some(password) = password {
+                    options.password(password)
+                } else {
+                    options
+                }
             }
         }
     }
@@ -140,19 +149,27 @@ impl SourceConfig {
             password,
             slot_name,
         } = self;
-        let (encrypted_password, nonce) = encrypt(password.as_bytes(), &encryption_key.key)?;
-        let encrypted_encoded_password = BASE64_STANDARD.encode(encrypted_password);
-        let encoded_nonce = BASE64_STANDARD.encode(nonce.as_ref());
+
+        let encrypted_password = password
+            .map(|password| {
+                let (encrypted_password, nonce) =
+                    encrypt(password.as_bytes(), &encryption_key.key)?;
+                let encrypted_encoded_password = BASE64_STANDARD.encode(encrypted_password);
+                let encoded_nonce = BASE64_STANDARD.encode(nonce.as_ref());
+                Ok::<EncryptedPassword, Unspecified>(EncryptedPassword {
+                    id: encryption_key.id,
+                    nonce: encoded_nonce,
+                    value: encrypted_encoded_password,
+                })
+            })
+            .transpose()?;
+
         Ok(SourceConfigInDb::Postgres {
             host,
             port,
             name,
             username,
-            password: EncryptedPassword {
-                id: encryption_key.id,
-                nonce: encoded_nonce,
-                value: encrypted_encoded_password,
-            },
+            password: encrypted_password,
             slot_name,
         })
     }
