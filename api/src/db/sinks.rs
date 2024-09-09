@@ -1,5 +1,13 @@
+use aws_lc_rs::{aead::Nonce, error::Unspecified};
+use base64::{prelude::BASE64_STANDARD, DecodeError, Engine};
 use sqlx::PgPool;
-use std::fmt::{Debug, Formatter};
+use std::{
+    fmt::{Debug, Formatter},
+    str::{from_utf8, Utf8Error},
+};
+use thiserror::Error;
+
+use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SinkConfig {
@@ -10,10 +18,35 @@ pub enum SinkConfig {
         /// BigQuery dataset id
         dataset_id: String,
 
-        //TODO: encrypt before storing in db
         /// BigQuery service account key
         service_account_key: String,
     },
+}
+
+impl SinkConfig {
+    fn into_db_config(self, encryption_key: &EncryptionKey) -> Result<SinkConfigInDb, Unspecified> {
+        let SinkConfig::BigQuery {
+            project_id,
+            dataset_id,
+            service_account_key,
+        } = self;
+
+        let (encrypted_sa_key, nonce) =
+            encrypt(service_account_key.as_bytes(), &encryption_key.key)?;
+        let encrypted_encoded_sa_key = BASE64_STANDARD.encode(encrypted_sa_key);
+        let encoded_nonce = BASE64_STANDARD.encode(nonce.as_ref());
+        let encrypted_sa_key = EncryptedValue {
+            id: encryption_key.id,
+            nonce: encoded_nonce,
+            value: encrypted_encoded_sa_key,
+        };
+
+        Ok(SinkConfigInDb::BigQuery {
+            project_id,
+            dataset_id,
+            service_account_key: encrypted_sa_key,
+        })
+    }
 }
 
 impl Debug for SinkConfig {
@@ -33,18 +66,88 @@ impl Debug for SinkConfig {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub enum SinkConfigInDb {
+    BigQuery {
+        /// BigQuery project id
+        project_id: String,
+
+        /// BigQuery dataset id
+        dataset_id: String,
+
+        /// BigQuery service account key
+        service_account_key: EncryptedValue,
+    },
+}
+
+impl SinkConfigInDb {
+    fn into_config(self, encryption_key: &EncryptionKey) -> Result<SinkConfig, SinksDbError> {
+        let SinkConfigInDb::BigQuery {
+            project_id,
+            dataset_id,
+            service_account_key: encrypted_sa_key,
+        } = self;
+
+        if encrypted_sa_key.id != encryption_key.id {
+            return Err(SinksDbError::MismatchedKeyId(
+                encrypted_sa_key.id,
+                encryption_key.id,
+            ));
+        }
+
+        let encrypted_sa_key_bytes = BASE64_STANDARD.decode(encrypted_sa_key.value)?;
+        let nonce =
+            Nonce::try_assume_unique_for_key(&BASE64_STANDARD.decode(encrypted_sa_key.nonce)?)?;
+        let decrypted_sa_key = from_utf8(&decrypt(
+            encrypted_sa_key_bytes,
+            nonce,
+            &encryption_key.key,
+        )?)?
+        .to_string();
+
+        Ok(SinkConfig::BigQuery {
+            project_id,
+            dataset_id,
+            service_account_key: decrypted_sa_key,
+        })
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum SinksDbError {
+    #[error("sqlx error: {0}")]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error("encryption error: {0}")]
+    Encryption(#[from] Unspecified),
+
+    #[error("invalid source config in db")]
+    InvalidConfig(#[from] serde_json::Error),
+
+    #[error("mismatched key id. Expected: {0}, actual: {1}")]
+    MismatchedKeyId(u32, u32),
+
+    #[error("base64 decode error: {0}")]
+    Base64Decode(#[from] DecodeError),
+
+    #[error("utf8 error: {0}")]
+    Utf8(#[from] Utf8Error),
+}
+
 pub struct Sink {
     pub id: i64,
     pub tenant_id: i64,
-    pub config: serde_json::Value,
+    pub config: SinkConfig,
 }
 
 pub async fn create_sink(
     pool: &PgPool,
     tenant_id: i64,
-    config: &SinkConfig,
-) -> Result<i64, sqlx::Error> {
-    let config = serde_json::to_value(config).expect("failed to serialize config");
+    config: SinkConfig,
+    encryption_key: &EncryptionKey,
+) -> Result<i64, SinksDbError> {
+    let db_config = config.into_db_config(encryption_key)?;
+    let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
         insert into app.sinks (tenant_id, config)
@@ -52,7 +155,7 @@ pub async fn create_sink(
         returning id
         "#,
         tenant_id,
-        config
+        db_config
     )
     .fetch_one(pool)
     .await?;
@@ -64,7 +167,8 @@ pub async fn read_sink(
     pool: &PgPool,
     tenant_id: i64,
     sink_id: i64,
-) -> Result<Option<Sink>, sqlx::Error> {
+    encryption_key: &EncryptionKey,
+) -> Result<Option<Sink>, SinksDbError> {
     let record = sqlx::query!(
         r#"
         select id, tenant_id, config
@@ -77,20 +181,30 @@ pub async fn read_sink(
     .fetch_optional(pool)
     .await?;
 
-    Ok(record.map(|r| Sink {
-        id: r.id,
-        tenant_id: r.tenant_id,
-        config: r.config,
-    }))
+    let sink = record
+        .map(|r| {
+            let config: SinkConfigInDb = serde_json::from_value(r.config)?;
+            let config = config.into_config(encryption_key)?;
+            let source = Sink {
+                id: r.id,
+                tenant_id: r.tenant_id,
+                config,
+            };
+            Ok::<Sink, SinksDbError>(source)
+        })
+        .transpose()?;
+    Ok(sink)
 }
 
 pub async fn update_sink(
     pool: &PgPool,
     tenant_id: i64,
     sink_id: i64,
-    config: &SinkConfig,
-) -> Result<Option<i64>, sqlx::Error> {
-    let config = serde_json::to_value(config).expect("failed to serialize config");
+    config: SinkConfig,
+    encryption_key: &EncryptionKey,
+) -> Result<Option<i64>, SinksDbError> {
+    let db_config = config.into_db_config(encryption_key)?;
+    let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
         update app.sinks
@@ -98,7 +212,7 @@ pub async fn update_sink(
         where tenant_id = $2 and id = $3
         returning id
         "#,
-        config,
+        db_config,
         tenant_id,
         sink_id
     )
@@ -128,8 +242,12 @@ pub async fn delete_sink(
     Ok(record.map(|r| r.id))
 }
 
-pub async fn read_all_sinks(pool: &PgPool, tenant_id: i64) -> Result<Vec<Sink>, sqlx::Error> {
-    let mut record = sqlx::query!(
+pub async fn read_all_sinks(
+    pool: &PgPool,
+    tenant_id: i64,
+    encryption_key: &EncryptionKey,
+) -> Result<Vec<Sink>, SinksDbError> {
+    let records = sqlx::query!(
         r#"
         select id, tenant_id, config
         from app.sinks
@@ -140,14 +258,19 @@ pub async fn read_all_sinks(pool: &PgPool, tenant_id: i64) -> Result<Vec<Sink>, 
     .fetch_all(pool)
     .await?;
 
-    Ok(record
-        .drain(..)
-        .map(|r| Sink {
-            id: r.id,
-            tenant_id: r.tenant_id,
-            config: r.config,
-        })
-        .collect())
+    let mut sinks = Vec::with_capacity(records.len());
+    for record in records {
+        let config: SinkConfigInDb = serde_json::from_value(record.config)?;
+        let config = config.into_config(encryption_key)?;
+        let source = Sink {
+            id: record.id,
+            tenant_id: record.tenant_id,
+            config,
+        };
+        sinks.push(source);
+    }
+
+    Ok(sinks)
 }
 
 pub async fn sink_exists(pool: &PgPool, tenant_id: i64, sink_id: i64) -> Result<bool, sqlx::Error> {

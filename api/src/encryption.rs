@@ -9,6 +9,13 @@ pub struct EncryptionKey {
     pub key: RandomizedNonceKey,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct EncryptedValue {
+    pub id: u32,
+    pub nonce: String,
+    pub value: String,
+}
+
 pub fn encrypt(
     plaintext: &[u8],
     key: &RandomizedNonceKey,

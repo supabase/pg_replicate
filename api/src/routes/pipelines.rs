@@ -17,7 +17,7 @@ use crate::{
         images::Image,
         pipelines::{Pipeline, PipelineConfig},
         replicators::Replicator,
-        sinks::{sink_exists, Sink, SinkConfig},
+        sinks::{sink_exists, Sink, SinkConfig, SinksDbError},
         sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
@@ -65,6 +65,9 @@ enum PipelineError {
 
     #[error("sources db error: {0}")]
     SourcesDb(#[from] SourcesDbError),
+
+    #[error("sinks db error: {0}")]
+    SinksDb(#[from] SinksDbError),
 }
 
 impl PipelineError {
@@ -87,6 +90,7 @@ impl ResponseError for PipelineError {
             | PipelineError::ImageNotFound(_)
             | PipelineError::NoDefaultImageFound
             | PipelineError::SourcesDb(_)
+            | PipelineError::SinksDb(_)
             | PipelineError::K8sError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantIdMissing
@@ -354,7 +358,7 @@ async fn read_data(
         .await?
         .ok_or(PipelineError::SourceNotFound(source_id))?;
     let sink_id = pipeline.sink_id;
-    let sink = db::sinks::read_sink(pool, tenant_id, sink_id)
+    let sink = db::sinks::read_sink(pool, tenant_id, sink_id, encryption_key)
         .await?
         .ok_or(PipelineError::SinkNotFound(sink_id))?;
 
@@ -363,11 +367,9 @@ async fn read_data(
 
 fn create_configs(
     source_config: SourceConfig,
-    sink_config: serde_json::Value,
+    sink_config: SinkConfig,
     pipeline: Pipeline,
 ) -> Result<(Secrets, replicator_config::Config), PipelineError> {
-    let sink_config: SinkConfig = serde_json::from_value(sink_config)?;
-
     let SourceConfig::Postgres {
         host,
         port,

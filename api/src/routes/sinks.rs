@@ -9,7 +9,13 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::db::{self, sinks::SinkConfig};
+use crate::{
+    db::{
+        self,
+        sinks::{SinkConfig, SinksDbError},
+    },
+    encryption::EncryptionKey,
+};
 
 use super::ErrorMessage;
 
@@ -27,8 +33,8 @@ enum SinkError {
     #[error("tenant id ill formed in request")]
     TenantIdIllFormed,
 
-    #[error("invalid sink config")]
-    InvalidConfig(#[from] serde_json::Error),
+    #[error("sinks db error: {0}")]
+    SinksDb(#[from] SinksDbError),
 }
 
 impl SinkError {
@@ -45,7 +51,7 @@ impl SinkError {
 impl ResponseError for SinkError {
     fn status_code(&self) -> StatusCode {
         match self {
-            SinkError::DatabaseError(_) | SinkError::InvalidConfig(_) => {
+            SinkError::DatabaseError(_) | SinkError::SinksDb(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             SinkError::SinkNotFound(_) => StatusCode::NOT_FOUND,
@@ -99,12 +105,13 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SinkError> {
 pub async fn create_sink(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     sink: Json<PostSinkRequest>,
 ) -> Result<impl Responder, SinkError> {
     let sink = sink.0;
     let tenant_id = extract_tenant_id(&req)?;
     let config = sink.config;
-    let id = db::sinks::create_sink(&pool, tenant_id, &config).await?;
+    let id = db::sinks::create_sink(&pool, tenant_id, config, &encryption_key).await?;
     let response = PostSinkResponse { id };
     Ok(Json(response))
 }
@@ -113,21 +120,18 @@ pub async fn create_sink(
 pub async fn read_sink(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
     sink_id: Path<i64>,
 ) -> Result<impl Responder, SinkError> {
     let tenant_id = extract_tenant_id(&req)?;
     let sink_id = sink_id.into_inner();
-    let response = db::sinks::read_sink(&pool, tenant_id, sink_id)
+    let response = db::sinks::read_sink(&pool, tenant_id, sink_id, &encryption_key)
         .await?
-        .map(|s| {
-            let config: SinkConfig = serde_json::from_value(s.config)?;
-            Ok::<GetSinkResponse, serde_json::Error>(GetSinkResponse {
-                id: s.id,
-                tenant_id: s.tenant_id,
-                config,
-            })
+        .map(|s| GetSinkResponse {
+            id: s.id,
+            tenant_id: s.tenant_id,
+            config: s.config,
         })
-        .transpose()?
         .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(Json(response))
 }
@@ -137,12 +141,14 @@ pub async fn update_sink(
     req: HttpRequest,
     pool: Data<PgPool>,
     sink_id: Path<i64>,
+    encryption_key: Data<EncryptionKey>,
     sink: Json<PostSinkRequest>,
 ) -> Result<impl Responder, SinkError> {
+    let sink = sink.0;
     let tenant_id = extract_tenant_id(&req)?;
     let sink_id = sink_id.into_inner();
-    let config = &sink.config;
-    db::sinks::update_sink(&pool, tenant_id, sink_id, config)
+    let config = sink.config;
+    db::sinks::update_sink(&pool, tenant_id, sink_id, config, &encryption_key)
         .await?
         .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(HttpResponse::Ok().finish())
@@ -166,15 +172,15 @@ pub async fn delete_sink(
 pub async fn read_all_sinks(
     req: HttpRequest,
     pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
 ) -> Result<impl Responder, SinkError> {
     let tenant_id = extract_tenant_id(&req)?;
     let mut sinks = vec![];
-    for sink in db::sinks::read_all_sinks(&pool, tenant_id).await? {
-        let config: SinkConfig = serde_json::from_value(sink.config)?;
+    for sink in db::sinks::read_all_sinks(&pool, tenant_id, &encryption_key).await? {
         let sink = GetSinkResponse {
             id: sink.id,
             tenant_id: sink.tenant_id,
-            config,
+            config: sink.config,
         };
         sinks.push(sink);
     }

@@ -10,14 +10,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::encryption::{decrypt, encrypt, EncryptionKey};
-
-#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-struct EncryptedPassword {
-    id: u32,
-    nonce: String,
-    value: String,
-}
+use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 enum SourceConfigInDb {
@@ -35,7 +28,7 @@ enum SourceConfigInDb {
         username: String,
 
         /// Postgres database user password
-        password: Option<EncryptedPassword>,
+        password: Option<EncryptedValue>,
 
         /// Postgres slot name
         slot_name: String,
@@ -156,7 +149,7 @@ impl SourceConfig {
                     encrypt(password.as_bytes(), &encryption_key.key)?;
                 let encrypted_encoded_password = BASE64_STANDARD.encode(encrypted_password);
                 let encoded_nonce = BASE64_STANDARD.encode(nonce.as_ref());
-                Ok::<EncryptedPassword, Unspecified>(EncryptedPassword {
+                Ok::<EncryptedValue, Unspecified>(EncryptedValue {
                     id: encryption_key.id,
                     nonce: encoded_nonce,
                     value: encrypted_encoded_password,
