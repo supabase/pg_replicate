@@ -39,3 +39,5 @@ tracing-actix-web = { version = "0.7", default-features = false }
 tracing-bunyan-formatter = { version = "0.3", default-features = false }
 tracing-log = { version = "0.1.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
+utoipa = { version = "4.2.3", default-features = false }
+utoipa-swagger-ui = { version = "7.1.0", default-features = false }

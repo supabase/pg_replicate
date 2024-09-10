@@ -8,18 +8,20 @@ use actix_web::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::db;
 
 use super::ErrorMessage;
 
-#[derive(Deserialize)]
-struct PostTenantRequest {
+#[derive(Deserialize, ToSchema)]
+pub struct PostTenantRequest {
+    #[schema(example = "Tenant Name", required = true)]
     name: String,
 }
 
-#[derive(Serialize)]
-struct PostTenantResponse {
+#[derive(Serialize, ToSchema)]
+pub struct PostTenantResponse {
     id: i64,
 }
 
@@ -63,12 +65,21 @@ impl ResponseError for TenantError {
     }
 }
 
-#[derive(Serialize)]
-struct GetTenantResponse {
+#[derive(Serialize, ToSchema)]
+pub struct GetTenantResponse {
+    #[schema(example = 1)]
     id: i64,
+    #[schema(example = "Tenant name")]
     name: String,
 }
 
+#[utoipa::path(
+    request_body = PostTenantRequest,
+    responses(
+        (status = 200, description = "New tenant created", body = PostTenantResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/tenants")]
 pub async fn create_tenant(
     pool: Data<PgPool>,
@@ -81,6 +92,16 @@ pub async fn create_tenant(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    params(
+        ("tenant_id" = i64, Path, description = "Id of the tenant"),
+    ),
+    responses(
+        (status = 200, description = "Returned tenant with id = tenant_id", body = GetTenantResponse),
+        (status = 404, description = "Tenant not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/tenants/{tenant_id}")]
 pub async fn read_tenant(
     pool: Data<PgPool>,
@@ -97,6 +118,14 @@ pub async fn read_tenant(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    request_body = PostTenantRequest,
+    responses(
+        (status = 200, description = "Updated a tenant"),
+        (status = 404, description = "Tenant not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/tenants/{tenant_id}")]
 pub async fn update_tenant(
     pool: Data<PgPool>,
@@ -110,6 +139,16 @@ pub async fn update_tenant(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    params(
+        ("tenant_id" = i64, Path, description = "Id of the tenant"),
+    ),
+    responses(
+        (status = 200, description = "Delete tenant with id = tenant_id"),
+        (status = 404, description = "Tenant not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[delete("/tenants/{tenant_id}")]
 pub async fn delete_tenant(
     pool: Data<PgPool>,
@@ -122,6 +161,12 @@ pub async fn delete_tenant(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Returned all tenants"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/tenants")]
 pub async fn read_all_tenants(pool: Data<PgPool>) -> Result<impl Responder, TenantError> {
     let response: Vec<GetTenantResponse> = db::tenants::read_all_tenants(&pool)

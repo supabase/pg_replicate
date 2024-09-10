@@ -5,6 +5,8 @@ use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tracing_actix_web::TracingLogger;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     configuration::{DatabaseSettings, Settings},
@@ -28,7 +30,10 @@ use crate::{
             tables::read_table_names,
             update_source,
         },
-        tenants::{create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant},
+        tenants::{
+            create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant,
+            GetTenantResponse, PostTenantRequest, PostTenantResponse,
+        },
     },
 };
 
@@ -84,10 +89,29 @@ pub async fn run(
     let connection_pool = web::Data::new(connection_pool);
     let encryption_key = web::Data::new(encryption_key);
     let k8s_client = http_k8s_client.map(|client| web::Data::new(Arc::new(client)));
+
+    #[derive(OpenApi)]
+    #[openapi(
+        paths(
+            crate::routes::tenants::create_tenant,
+            crate::routes::tenants::read_tenant,
+            crate::routes::tenants::update_tenant,
+            crate::routes::tenants::delete_tenant,
+            crate::routes::tenants::read_all_tenants,
+        ),
+        components(schemas(PostTenantRequest, PostTenantResponse, GetTenantResponse))
+    )]
+    struct ApiDoc;
+
+    let openapi = ApiDoc::openapi();
+
     let server = HttpServer::new(move || {
         let app = App::new()
             .wrap(TracingLogger::default())
             .service(health_check)
+            .service(
+                SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
+            )
             .service(
                 web::scope("v1")
                     //tenants
