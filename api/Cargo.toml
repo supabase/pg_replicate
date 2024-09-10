@@ -45,7 +45,7 @@ tracing-bunyan-formatter = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["registry", "env-filter"] }
 utoipa = { workspace = true, features = ["actix_extras"] }
-utoipa-swagger-ui = { workspace = true, features = ["actix-web"] }
+utoipa-swagger-ui = { workspace = true, features = ["actix-web", "reqwest"] }
 
 [dev-dependencies]
 uuid = { version = "1.10.0", features = ["v4"] }
