@@ -80,6 +80,15 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, TableError> {
     Ok(tenant_id)
 }
 
+#[utoipa::path(
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+    ),
+    responses(
+        (status = 200, description = "Return all tables from source with id = source_id", body = Vec<Table>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/sources/{source_id}/tables")]
 pub async fn read_table_names(
     req: HttpRequest,

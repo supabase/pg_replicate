@@ -76,7 +76,7 @@ pub struct GetTenantResponse {
 #[utoipa::path(
     request_body = PostTenantRequest,
     responses(
-        (status = 200, description = "New tenant created", body = PostTenantResponse),
+        (status = 200, description = "Create new tenant", body = PostTenantResponse),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -97,7 +97,7 @@ pub async fn create_tenant(
         ("tenant_id" = i64, Path, description = "Id of the tenant"),
     ),
     responses(
-        (status = 200, description = "Returned tenant with id = tenant_id", body = GetTenantResponse),
+        (status = 200, description = "Return tenant with id = tenant_id", body = GetTenantResponse),
         (status = 404, description = "Tenant not found"),
         (status = 500, description = "Internal server error")
     )
@@ -120,8 +120,11 @@ pub async fn read_tenant(
 
 #[utoipa::path(
     request_body = PostTenantRequest,
+    params(
+        ("tenant_id" = i64, Path, description = "Id of the tenant"),
+    ),
     responses(
-        (status = 200, description = "Updated a tenant"),
+        (status = 200, description = "Update tenant with id = tenant_id"),
         (status = 404, description = "Tenant not found"),
         (status = 500, description = "Internal server error")
     )
@@ -163,7 +166,7 @@ pub async fn delete_tenant(
 
 #[utoipa::path(
     responses(
-        (status = 200, description = "Returned all tenants"),
+        (status = 200, description = "Return all tenants"),
         (status = 500, description = "Internal server error")
     )
 )]

@@ -2,6 +2,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use serde::Serialize;
 use sqlx::{postgres::PgConnectOptions, Connection, Executor, PgConnection, Row};
+use utoipa::ToSchema;
 
 use super::tables::Table;
 
@@ -48,7 +49,7 @@ pub fn quote_literal(literal: &str) -> String {
     quoted_literal
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Publication {
     pub name: String,
     pub tables: Vec<Table>,

@@ -10,6 +10,7 @@ use actix_web::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::{
     db::{
@@ -112,21 +113,21 @@ impl ResponseError for PipelineError {
     }
 }
 
-#[derive(Deserialize)]
-struct PostPipelineRequest {
+#[derive(Deserialize, ToSchema)]
+pub struct PostPipelineRequest {
     pub source_id: i64,
     pub sink_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
 }
 
-#[derive(Serialize)]
-struct PostPipelineResponse {
+#[derive(Serialize, ToSchema)]
+pub struct PostPipelineResponse {
     id: i64,
 }
 
-#[derive(Serialize)]
-struct GetPipelineResponse {
+#[derive(Serialize, ToSchema)]
+pub struct GetPipelineResponse {
     id: i64,
     tenant_id: i64,
     source_id: i64,
@@ -151,6 +152,13 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PipelineError> {
     Ok(tenant_id)
 }
 
+#[utoipa::path(
+    request_body = PostPipelineRequest,
+    responses(
+        (status = 200, description = "Create new pipeline", body = PostPipelineResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/pipelines")]
 pub async fn create_pipeline(
     req: HttpRequest,
@@ -188,6 +196,16 @@ pub async fn create_pipeline(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    params(
+        ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
+    ),
+    responses(
+        (status = 200, description = "Return pipeline with id = pipeline_id", body = GetPipelineResponse),
+        (status = 404, description = "Pipeline not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/pipelines/{pipeline_id}")]
 pub async fn read_pipeline(
     req: HttpRequest,
@@ -217,6 +235,17 @@ pub async fn read_pipeline(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    request_body = PostSinkRequest,
+    params(
+        ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
+    ),
+    responses(
+        (status = 200, description = "Update pipeline with id = pipeline_id"),
+        (status = 404, description = "Pipeline not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/pipelines/{pipeline_id}")]
 pub async fn update_pipeline(
     req: HttpRequest,
@@ -255,6 +284,16 @@ pub async fn update_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    params(
+        ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
+    ),
+    responses(
+        (status = 200, description = "Delete pipeline with id = pipeline_id"),
+        (status = 404, description = "Pipeline not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[delete("/pipelines/{pipeline_id}")]
 pub async fn delete_pipeline(
     req: HttpRequest,
@@ -269,6 +308,12 @@ pub async fn delete_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Return all pipelines"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/pipelines")]
 pub async fn read_all_pipelines(
     req: HttpRequest,

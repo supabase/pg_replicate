@@ -8,6 +8,7 @@ use actix_web::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::db;
 
@@ -53,24 +54,33 @@ impl ResponseError for ImageError {
     }
 }
 
-#[derive(Deserialize)]
-struct PostImageRequest {
+#[derive(Deserialize, ToSchema)]
+pub struct PostImageRequest {
+    #[schema(example = "supabase/replicator:1.2.3")]
     pub name: String,
+    #[schema(example = true)]
     pub is_default: bool,
 }
 
-#[derive(Serialize)]
-struct PostImageResponse {
+#[derive(Serialize, ToSchema)]
+pub struct PostImageResponse {
     id: i64,
 }
 
-#[derive(Serialize)]
-struct GetImageResponse {
+#[derive(Serialize, ToSchema)]
+pub struct GetImageResponse {
     id: i64,
     name: String,
     is_default: bool,
 }
 
+#[utoipa::path(
+    request_body = PostImageRequest,
+    responses(
+        (status = 200, description = "Create new image", body = PostImageResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/images")]
 pub async fn create_image(
     pool: Data<PgPool>,
@@ -82,6 +92,16 @@ pub async fn create_image(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    params(
+        ("image_id" = i64, Path, description = "Id of the image"),
+    ),
+    responses(
+        (status = 200, description = "Return image with id = image_id", body = GetImageResponse),
+        (status = 404, description = "Image not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/images/{image_id}")]
 pub async fn read_image(
     pool: Data<PgPool>,
@@ -99,6 +119,17 @@ pub async fn read_image(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    request_body = PostImageRequest,
+    params(
+        ("image_id" = i64, Path, description = "Id of the image"),
+    ),
+    responses(
+        (status = 200, description = "Update image with id = image_id"),
+        (status = 404, description = "Image not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/images/{image_id}")]
 pub async fn update_image(
     pool: Data<PgPool>,
@@ -112,6 +143,16 @@ pub async fn update_image(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    params(
+        ("image_id" = i64, Path, description = "Id of the image"),
+    ),
+    responses(
+        (status = 200, description = "Delete image with id = image_id"),
+        (status = 404, description = "Image not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[delete("/images/{image_id}")]
 pub async fn delete_image(
     pool: Data<PgPool>,
@@ -124,6 +165,12 @@ pub async fn delete_image(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Return all images"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/images")]
 pub async fn read_all_images(pool: Data<PgPool>) -> Result<impl Responder, ImageError> {
     let mut sources = vec![];

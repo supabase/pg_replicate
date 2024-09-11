@@ -8,6 +8,7 @@ use actix_web::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use super::ErrorMessage;
 use crate::{
@@ -75,19 +76,22 @@ impl ResponseError for SourceError {
     }
 }
 
-#[derive(Deserialize)]
-struct PostSourceRequest {
+#[derive(Deserialize, ToSchema)]
+pub struct PostSourceRequest {
+    #[schema(required = true)]
     pub config: SourceConfig,
 }
 
-#[derive(Serialize)]
-struct PostSourceResponse {
+#[derive(Serialize, ToSchema)]
+pub struct PostSourceResponse {
     id: i64,
 }
 
-#[derive(Serialize)]
-struct GetSourceResponse {
+#[derive(Serialize, ToSchema)]
+pub struct GetSourceResponse {
+    #[schema(example = 1)]
     id: i64,
+    #[schema(example = 1)]
     tenant_id: i64,
     config: SourceConfig,
 }
@@ -107,6 +111,13 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
     Ok(tenant_id)
 }
 
+#[utoipa::path(
+    request_body = PostSourceRequest,
+    responses(
+        (status = 200, description = "Create new source", body = PostSourceResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/sources")]
 pub async fn create_source(
     req: HttpRequest,
@@ -122,6 +133,16 @@ pub async fn create_source(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+    ),
+    responses(
+        (status = 200, description = "Return source with id = source_id", body = GetSourceResponse),
+        (status = 404, description = "Source not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/sources/{source_id}")]
 pub async fn read_source(
     req: HttpRequest,
@@ -142,6 +163,17 @@ pub async fn read_source(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    request_body = PostSourceRequest,
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+    ),
+    responses(
+        (status = 200, description = "Update source with id = source_id"),
+        (status = 404, description = "Source not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/sources/{source_id}")]
 pub async fn update_source(
     req: HttpRequest,
@@ -160,6 +192,16 @@ pub async fn update_source(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+    ),
+    responses(
+        (status = 200, description = "Delete source with id = source_id"),
+        (status = 404, description = "Source not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[delete("/sources/{source_id}")]
 pub async fn delete_source(
     req: HttpRequest,
@@ -174,6 +216,12 @@ pub async fn delete_source(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Return all sources"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/sources")]
 pub async fn read_all_sources(
     req: HttpRequest,

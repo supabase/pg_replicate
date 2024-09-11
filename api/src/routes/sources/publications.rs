@@ -8,6 +8,7 @@ use actix_web::{
 use serde::Deserialize;
 use sqlx::PgPool;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::{
     db::{self, publications::Publication, sources::SourcesDbError, tables::Table},
@@ -89,17 +90,24 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PublicationError> {
     Ok(tenant_id)
 }
 
-#[derive(Deserialize)]
-struct CreatePublicationRequest {
+#[derive(Deserialize, ToSchema)]
+pub struct CreatePublicationRequest {
     name: String,
     tables: Vec<Table>,
 }
 
-#[derive(Deserialize)]
-struct UpdatePublicationRequest {
+#[derive(Deserialize, ToSchema)]
+pub struct UpdatePublicationRequest {
     tables: Vec<Table>,
 }
 
+#[utoipa::path(
+    request_body = CreatePublicationRequest,
+    responses(
+        (status = 200, description = "Create new publication"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/sources/{source_id}/publications")]
 pub async fn create_publication(
     req: HttpRequest,
@@ -127,6 +135,52 @@ pub async fn create_publication(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+        ("publication_name" = i64, Path, description = "Name of the publication"),
+    ),
+    responses(
+        (status = 200, description = "Return publication with name = publication_name from source with id = source_id", body = Publication),
+        (status = 404, description = "Publication not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+#[get("/sources/{source_id}/publications/{publication_name}")]
+pub async fn read_publication(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
+    source_id_and_pub_name: Path<(i64, String)>,
+) -> Result<impl Responder, PublicationError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let (source_id, publication_name) = source_id_and_pub_name.into_inner();
+
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
+        .await?
+        .map(|s| s.config)
+        .ok_or(PublicationError::SourceNotFound(source_id))?;
+
+    let options = config.connect_options();
+    let publications = db::publications::read_publication(&publication_name, &options)
+        .await?
+        .ok_or(PublicationError::PublicationNotFound(publication_name))?;
+
+    Ok(Json(publications))
+}
+
+#[utoipa::path(
+    request_body = UpdatePublicationRequest,
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+        ("publication_name" = i64, Path, description = "Name of the publication"),
+    ),
+    responses(
+        (status = 200, description = "Update publication with name = publication_name from source with id = source_id"),
+        (status = 404, description = "Publication not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/sources/{source_id}/publications/{publication_name}")]
 pub async fn update_publication(
     req: HttpRequest,
@@ -154,50 +208,17 @@ pub async fn update_publication(
     Ok(HttpResponse::Ok().finish())
 }
 
-#[get("/sources/{source_id}/publications/{publication_name}")]
-pub async fn read_publication(
-    req: HttpRequest,
-    pool: Data<PgPool>,
-    encryption_key: Data<EncryptionKey>,
-    source_id_and_pub_name: Path<(i64, String)>,
-) -> Result<impl Responder, PublicationError> {
-    let tenant_id = extract_tenant_id(&req)?;
-    let (source_id, publication_name) = source_id_and_pub_name.into_inner();
-
-    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
-        .await?
-        .map(|s| s.config)
-        .ok_or(PublicationError::SourceNotFound(source_id))?;
-
-    let options = config.connect_options();
-    let publications = db::publications::read_publication(&publication_name, &options)
-        .await?
-        .ok_or(PublicationError::PublicationNotFound(publication_name))?;
-
-    Ok(Json(publications))
-}
-
-#[get("/sources/{source_id}/publications")]
-pub async fn read_all_publications(
-    req: HttpRequest,
-    pool: Data<PgPool>,
-    encryption_key: Data<EncryptionKey>,
-    source_id: Path<i64>,
-) -> Result<impl Responder, PublicationError> {
-    let tenant_id = extract_tenant_id(&req)?;
-    let source_id = source_id.into_inner();
-
-    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
-        .await?
-        .map(|s| s.config)
-        .ok_or(PublicationError::SourceNotFound(source_id))?;
-
-    let options = config.connect_options();
-    let publications = db::publications::read_all_publications(&options).await?;
-
-    Ok(Json(publications))
-}
-
+#[utoipa::path(
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+        ("publication_name" = i64, Path, description = "Name of the publication"),
+    ),
+    responses(
+        (status = 200, description = "Delete publication with name = publication_name from source with id = source_id"),
+        (status = 404, description = "Publication not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[delete("/sources/{source_id}/publications/{publication_name}")]
 pub async fn delete_publication(
     req: HttpRequest,
@@ -217,4 +238,34 @@ pub async fn delete_publication(
     db::publications::drop_publication(&publication_name, &options).await?;
 
     Ok(HttpResponse::Ok().finish())
+}
+
+#[utoipa::path(
+    params(
+        ("source_id" = i64, Path, description = "Id of the source"),
+    ),
+    responses(
+        (status = 200, description = "Return all publications"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+#[get("/sources/{source_id}/publications")]
+pub async fn read_all_publications(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    encryption_key: Data<EncryptionKey>,
+    source_id: Path<i64>,
+) -> Result<impl Responder, PublicationError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let source_id = source_id.into_inner();
+
+    let config = db::sources::read_source(&pool, tenant_id, source_id, &encryption_key)
+        .await?
+        .map(|s| s.config)
+        .ok_or(PublicationError::SourceNotFound(source_id))?;
+
+    let options = config.connect_options();
+    let publications = db::publications::read_all_publications(&options).await?;
+
+    Ok(Json(publications))
 }

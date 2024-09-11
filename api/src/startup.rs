@@ -10,25 +10,33 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     configuration::{DatabaseSettings, Settings},
+    db::publications::Publication,
     encryption,
     k8s_client::HttpK8sClient,
     routes::{
         health_check::health_check,
-        images::{create_image, delete_image, read_all_images, read_image, update_image},
+        images::{
+            create_image, delete_image, read_all_images, read_image, update_image,
+            GetImageResponse, PostImageRequest, PostImageResponse,
+        },
         pipelines::{
             create_pipeline, delete_pipeline, read_all_pipelines, read_pipeline, start_pipeline,
-            stop_pipeline, update_pipeline,
+            stop_pipeline, update_pipeline, GetPipelineResponse, PostPipelineRequest,
+            PostPipelineResponse,
         },
-        sinks::{create_sink, delete_sink, read_all_sinks, read_sink, update_sink},
+        sinks::{
+            create_sink, delete_sink, read_all_sinks, read_sink, update_sink, GetSinkResponse,
+            PostSinkRequest, PostSinkResponse,
+        },
         sources::{
             create_source, delete_source,
             publications::{
                 create_publication, delete_publication, read_all_publications, read_publication,
-                update_publication,
+                update_publication, CreatePublicationRequest, UpdatePublicationRequest,
             },
             read_all_sources, read_source,
             tables::read_table_names,
-            update_source,
+            update_source, GetSourceResponse, PostSourceRequest, PostSourceResponse,
         },
         tenants::{
             create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant,
@@ -93,13 +101,59 @@ pub async fn run(
     #[derive(OpenApi)]
     #[openapi(
         paths(
+            crate::routes::health_check::health_check,
+            crate::routes::images::create_image,
+            crate::routes::images::read_image,
+            crate::routes::images::update_image,
+            crate::routes::images::delete_image,
+            crate::routes::images::read_all_images,
+            crate::routes::pipelines::create_pipeline,
+            crate::routes::pipelines::read_pipeline,
+            crate::routes::pipelines::update_pipeline,
+            crate::routes::pipelines::delete_pipeline,
+            crate::routes::pipelines::read_all_pipelines,
             crate::routes::tenants::create_tenant,
             crate::routes::tenants::read_tenant,
             crate::routes::tenants::update_tenant,
             crate::routes::tenants::delete_tenant,
             crate::routes::tenants::read_all_tenants,
+            crate::routes::sources::create_source,
+            crate::routes::sources::read_source,
+            crate::routes::sources::update_source,
+            crate::routes::sources::delete_source,
+            crate::routes::sources::read_all_sources,
+            crate::routes::sources::publications::create_publication,
+            crate::routes::sources::publications::read_publication,
+            crate::routes::sources::publications::update_publication,
+            crate::routes::sources::publications::delete_publication,
+            crate::routes::sources::publications::read_all_publications,
+            crate::routes::sources::tables::read_table_names,
+            crate::routes::sinks::create_sink,
+            crate::routes::sinks::read_sink,
+            crate::routes::sinks::update_sink,
+            crate::routes::sinks::delete_sink,
+            crate::routes::sinks::read_all_sinks,
         ),
-        components(schemas(PostTenantRequest, PostTenantResponse, GetTenantResponse))
+        components(schemas(
+            PostImageRequest,
+            PostImageResponse,
+            GetImageResponse,
+            PostPipelineRequest,
+            PostPipelineResponse,
+            GetPipelineResponse,
+            PostTenantRequest,
+            PostTenantResponse,
+            GetTenantResponse,
+            PostSourceRequest,
+            PostSourceResponse,
+            GetSourceResponse,
+            CreatePublicationRequest,
+            UpdatePublicationRequest,
+            Publication,
+            PostSinkRequest,
+            PostSinkResponse,
+            GetSinkResponse,
+        ))
     )]
     struct ApiDoc;
 

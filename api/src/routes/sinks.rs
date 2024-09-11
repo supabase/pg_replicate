@@ -8,6 +8,7 @@ use actix_web::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::{
     db::{
@@ -71,19 +72,21 @@ impl ResponseError for SinkError {
     }
 }
 
-#[derive(Deserialize)]
-struct PostSinkRequest {
+#[derive(Deserialize, ToSchema)]
+pub struct PostSinkRequest {
     pub config: SinkConfig,
 }
 
-#[derive(Serialize)]
-struct PostSinkResponse {
+#[derive(Serialize, ToSchema)]
+pub struct PostSinkResponse {
     id: i64,
 }
 
-#[derive(Serialize)]
-struct GetSinkResponse {
+#[derive(Serialize, ToSchema)]
+pub struct GetSinkResponse {
+    #[schema(example = 1)]
     id: i64,
+    #[schema(example = 1)]
     tenant_id: i64,
     config: SinkConfig,
 }
@@ -101,6 +104,13 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SinkError> {
     Ok(tenant_id)
 }
 
+#[utoipa::path(
+    request_body = PostSinkRequest,
+    responses(
+        (status = 200, description = "Create new sink", body = PostSinkResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/sinks")]
 pub async fn create_sink(
     req: HttpRequest,
@@ -116,6 +126,16 @@ pub async fn create_sink(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    params(
+        ("sink_id" = i64, Path, description = "Id of the sink"),
+    ),
+    responses(
+        (status = 200, description = "Return sink with id = sink_id", body = GetSourceResponse),
+        (status = 404, description = "Sink not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/sinks/{sink_id}")]
 pub async fn read_sink(
     req: HttpRequest,
@@ -136,6 +156,17 @@ pub async fn read_sink(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    request_body = PostSinkRequest,
+    params(
+        ("sink_id" = i64, Path, description = "Id of the sink"),
+    ),
+    responses(
+        (status = 200, description = "Update sink with id = sink_id"),
+        (status = 404, description = "Sink not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/sinks/{sink_id}")]
 pub async fn update_sink(
     req: HttpRequest,
@@ -154,6 +185,16 @@ pub async fn update_sink(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    params(
+        ("sink_id" = i64, Path, description = "Id of the sink"),
+    ),
+    responses(
+        (status = 200, description = "Delete sink with id = sink_id"),
+        (status = 404, description = "Sink not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[delete("/sinks/{sink_id}")]
 pub async fn delete_sink(
     req: HttpRequest,
@@ -168,6 +209,12 @@ pub async fn delete_sink(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Return all sinks"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[get("/sinks")]
 pub async fn read_all_sinks(
     req: HttpRequest,
