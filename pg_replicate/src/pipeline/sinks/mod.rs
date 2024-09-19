@@ -41,6 +41,12 @@ pub enum SinkError {
     #[error("no response received")]
     NoResponseReceived,
 
+    #[error("incorrect commit lsn: {0} (expected: {0})")]
+    IncorrectCommitLsn(PgLsn, PgLsn),
+
+    #[error("commit message without begin message")]
+    CommitWithoutBegin,
+
     #[cfg(feature = "bigquery")]
     #[error("bigquery sink error: {0}")]
     BigQuerySink(#[from] BigQuerySinkError),

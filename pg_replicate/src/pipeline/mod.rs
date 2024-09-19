@@ -28,6 +28,6 @@ pub enum PipelineError {
 }
 
 pub struct PipelineResumptionState {
-    copied_tables: HashSet<TableId>,
-    last_lsn: PgLsn,
+    pub copied_tables: HashSet<TableId>,
+    pub last_lsn: PgLsn,
 }
