@@ -20,6 +20,33 @@ pub enum Cell {
     Bytes(Vec<u8>),
 }
 
+impl TryFrom<Cell> for String {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::String(s) => Ok(s),
+            _ => Err(CellConversionError)
+        }
+    }
+}
+
+impl TryFrom<Cell> for Option<String> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::String(s) => Ok(Some(s)),
+            Cell::Null => Ok(None),
+            _ => Err(CellConversionError)
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("cell conversion error")]
+pub struct CellConversionError;
+
 #[derive(Debug)]
 pub struct TableRow {
     pub values: Vec<Cell>,
