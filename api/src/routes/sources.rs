@@ -112,6 +112,7 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSourceRequest,
     responses(
         (status = 200, description = "Create new source", body = PostSourceResponse),
@@ -134,6 +135,7 @@ pub async fn create_source(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
     ),
@@ -164,6 +166,7 @@ pub async fn read_source(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSourceRequest,
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
@@ -193,6 +196,7 @@ pub async fn update_source(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
     ),
@@ -217,6 +221,7 @@ pub async fn delete_source(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     responses(
         (status = 200, description = "Return all sources"),
         (status = 500, description = "Internal server error")

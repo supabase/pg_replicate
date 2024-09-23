@@ -81,6 +81,7 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, TableError> {
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
     ),

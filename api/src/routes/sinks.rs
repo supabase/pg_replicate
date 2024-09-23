@@ -105,6 +105,7 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SinkError> {
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSinkRequest,
     responses(
         (status = 200, description = "Create new sink", body = PostSinkResponse),
@@ -127,6 +128,7 @@ pub async fn create_sink(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("sink_id" = i64, Path, description = "Id of the sink"),
     ),
@@ -157,6 +159,7 @@ pub async fn read_sink(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSinkRequest,
     params(
         ("sink_id" = i64, Path, description = "Id of the sink"),
@@ -186,6 +189,7 @@ pub async fn update_sink(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("sink_id" = i64, Path, description = "Id of the sink"),
     ),
@@ -210,6 +214,7 @@ pub async fn delete_sink(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     responses(
         (status = 200, description = "Return all sinks"),
         (status = 500, description = "Internal server error")

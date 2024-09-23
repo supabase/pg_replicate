@@ -153,6 +153,7 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PipelineError> {
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostPipelineRequest,
     responses(
         (status = 200, description = "Create new pipeline", body = PostPipelineResponse),
@@ -197,6 +198,7 @@ pub async fn create_pipeline(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
     ),
@@ -236,6 +238,7 @@ pub async fn read_pipeline(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSinkRequest,
     params(
         ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
@@ -285,6 +288,7 @@ pub async fn update_pipeline(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
     ),
@@ -309,6 +313,7 @@ pub async fn delete_pipeline(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     responses(
         (status = 200, description = "Return all pipelines"),
         (status = 500, description = "Internal server error")
@@ -337,6 +342,13 @@ pub async fn read_all_pipelines(
     Ok(Json(pipelines))
 }
 
+#[utoipa::path(
+    context_path = "/v1",
+    responses(
+        (status = 200, description = "Start a pipeline"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/pipelines/{pipeline_id}/start")]
 pub async fn start_pipeline(
     req: HttpRequest,
@@ -361,6 +373,13 @@ pub async fn start_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    context_path = "/v1",
+    responses(
+        (status = 200, description = "Stop a pipeline"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/pipelines/{pipeline_id}/stop")]
 pub async fn stop_pipeline(
     req: HttpRequest,
