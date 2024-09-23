@@ -157,6 +157,8 @@ pub async fn run(
     )]
     struct ApiDoc;
 
+    //TODO: replace all the context_path = v1 in route modules with the nest attribute
+    //when it is available in utoipa 5.0.0: https://github.com/juhaku/utoipa/pull/930
     let openapi = ApiDoc::openapi();
 
     let server = HttpServer::new(move || {
