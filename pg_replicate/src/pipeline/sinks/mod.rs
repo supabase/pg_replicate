@@ -41,6 +41,9 @@ pub enum SinkError {
     #[error("no response received")]
     NoResponseReceived,
 
+    #[error("generic sink error")]
+    GenericSinkError,
+
     #[error("incorrect commit lsn: {0} (expected: {0})")]
     IncorrectCommitLsn(PgLsn, PgLsn),
 
