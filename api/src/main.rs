@@ -21,6 +21,7 @@ pub async fn main() -> anyhow::Result<()> {
         let command = args.nth(1).unwrap();
         if command == "migrate" {
             Application::migrate_database(configuration).await?;
+            info!("database migrated successfullly");
         } else {
             let message = "invalid command line arguments";
             error!("{message}");
