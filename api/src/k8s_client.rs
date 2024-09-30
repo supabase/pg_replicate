@@ -72,6 +72,7 @@ const POSTGRES_SECRET_NAME_SUFFIX: &str = "postgres-password";
 const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
 const STATEFUL_SET_NAME_SUFFIX: &str = "replicator";
 const CONTAINER_NAME_SUFFIX: &str = "replicator";
+const NAMESPACE_NAME: &str = "replicator-data-plane";
 
 impl HttpK8sClient {
     pub async fn new() -> Result<HttpK8sClient, K8sError> {
@@ -106,7 +107,8 @@ impl K8sClient for HttpK8sClient {
           "apiVersion": "v1",
           "kind": "Secret",
           "metadata": {
-            "name": secret_name
+            "name": secret_name,
+            "namespace": NAMESPACE_NAME,
           },
           "type": "Opaque",
           "data": {
@@ -137,7 +139,8 @@ impl K8sClient for HttpK8sClient {
           "apiVersion": "v1",
           "kind": "Secret",
           "metadata": {
-            "name": secret_name
+            "name": secret_name,
+            "namespace": NAMESPACE_NAME,
           },
           "type": "Opaque",
           "data": {
@@ -206,7 +209,8 @@ impl K8sClient for HttpK8sClient {
           "kind": "ConfigMap",
           "apiVersion": "v1",
           "metadata": {
-            "name": config_map_name
+            "name": config_map_name,
+            "namespace": NAMESPACE_NAME,
           },
           "data": {
             "base.yaml": base_config,
@@ -260,6 +264,7 @@ impl K8sClient for HttpK8sClient {
           "kind": "StatefulSet",
           "metadata": {
             "name": stateful_set_name,
+            "namespace": NAMESPACE_NAME,
           },
           "spec": {
             "replicas": 1,
