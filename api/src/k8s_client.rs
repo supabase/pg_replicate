@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use base64::{prelude::BASE64_STANDARD, Engine};
 use k8s_openapi::api::{
     apps::v1::StatefulSet,
     core::v1::{ConfigMap, Pod, Secret},
@@ -99,6 +100,7 @@ impl K8sClient for HttpK8sClient {
     ) -> Result<(), K8sError> {
         info!("patching postgres secret");
 
+        let encoded_postgres_password = BASE64_STANDARD.encode(postgres_password);
         let secret_name = format!("{prefix}-{POSTGRES_SECRET_NAME_SUFFIX}");
         let secret_json = json!({
           "apiVersion": "v1",
@@ -107,8 +109,8 @@ impl K8sClient for HttpK8sClient {
             "name": secret_name
           },
           "type": "Opaque",
-          "stringData": {
-            "password": postgres_password,
+          "data": {
+            "password": encoded_postgres_password,
           }
         });
         let secret: Secret = serde_json::from_value(secret_json)?;
@@ -129,6 +131,7 @@ impl K8sClient for HttpK8sClient {
     ) -> Result<(), K8sError> {
         info!("patching bq secret");
 
+        let encoded_bq_service_account_key = BASE64_STANDARD.encode(bq_service_account_key);
         let secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
         let secret_json = json!({
           "apiVersion": "v1",
@@ -137,8 +140,8 @@ impl K8sClient for HttpK8sClient {
             "name": secret_name
           },
           "type": "Opaque",
-          "stringData": {
-            "service-account-key": bq_service_account_key,
+          "data": {
+            "service-account-key": encoded_bq_service_account_key,
           }
         });
         let secret: Secret = serde_json::from_value(secret_json)?;
