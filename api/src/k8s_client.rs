@@ -78,10 +78,10 @@ impl HttpK8sClient {
     pub async fn new() -> Result<HttpK8sClient, K8sError> {
         let client = Client::try_default().await?;
 
-        let secrets_api: Api<Secret> = Api::default_namespaced(client.clone());
-        let config_maps_api: Api<ConfigMap> = Api::default_namespaced(client.clone());
-        let stateful_sets_api: Api<StatefulSet> = Api::default_namespaced(client.clone());
-        let pods_api: Api<Pod> = Api::default_namespaced(client);
+        let secrets_api: Api<Secret> = Api::namespaced(client.clone(), NAMESPACE_NAME);
+        let config_maps_api: Api<ConfigMap> = Api::namespaced(client.clone(), NAMESPACE_NAME);
+        let stateful_sets_api: Api<StatefulSet> = Api::namespaced(client.clone(), NAMESPACE_NAME);
+        let pods_api: Api<Pod> = Api::namespaced(client, NAMESPACE_NAME);
 
         Ok(HttpK8sClient {
             secrets_api,
