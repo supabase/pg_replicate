@@ -140,7 +140,7 @@ pub struct UpdateImageRequest {
 impl TestApp {
     pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/tenants", &self.address))
+            .post(format!("{}/v1/tenants", &self.address))
             .json(tenant)
             .send()
             .await
@@ -149,7 +149,7 @@ impl TestApp {
 
     pub async fn read_tenant(&self, tenant_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .get(format!("{}/v1/tenants/{tenant_id}", &self.address))
             .send()
             .await
             .expect("failed to execute request")
@@ -161,7 +161,7 @@ impl TestApp {
         tenant: &UpdateTenantRequest,
     ) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .post(format!("{}/v1/tenants/{tenant_id}", &self.address))
             .json(tenant)
             .send()
             .await
@@ -170,7 +170,7 @@ impl TestApp {
 
     pub async fn delete_tenant(&self, tenant_id: i64) -> reqwest::Response {
         self.api_client
-            .delete(&format!("{}/v1/tenants/{tenant_id}", &self.address))
+            .delete(format!("{}/v1/tenants/{tenant_id}", &self.address))
             .send()
             .await
             .expect("Failed to execute request.")
@@ -178,7 +178,7 @@ impl TestApp {
 
     pub async fn read_all_tenants(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/tenants", &self.address))
+            .get(format!("{}/v1/tenants", &self.address))
             .send()
             .await
             .expect("failed to execute request")
@@ -190,7 +190,7 @@ impl TestApp {
         source: &CreateSourceRequest,
     ) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/sources", &self.address))
+            .post(format!("{}/v1/sources", &self.address))
             .header("tenant_id", tenant_id)
             .json(source)
             .send()
@@ -200,7 +200,7 @@ impl TestApp {
 
     pub async fn read_source(&self, tenant_id: i64, source_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/sources/{source_id}", &self.address))
+            .get(format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -214,7 +214,7 @@ impl TestApp {
         source: &UpdateSourceRequest,
     ) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/sources/{source_id}", &self.address))
+            .post(format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(source)
             .send()
@@ -224,7 +224,7 @@ impl TestApp {
 
     pub async fn delete_source(&self, tenant_id: i64, source_id: i64) -> reqwest::Response {
         self.api_client
-            .delete(&format!("{}/v1/sources/{source_id}", &self.address))
+            .delete(format!("{}/v1/sources/{source_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -233,7 +233,7 @@ impl TestApp {
 
     pub async fn read_all_sources(&self, tenant_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/sources", &self.address))
+            .get(format!("{}/v1/sources", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -242,7 +242,7 @@ impl TestApp {
 
     pub async fn create_sink(&self, tenant_id: i64, sink: &CreateSinkRequest) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/sinks", &self.address))
+            .post(format!("{}/v1/sinks", &self.address))
             .header("tenant_id", tenant_id)
             .json(sink)
             .send()
@@ -252,7 +252,7 @@ impl TestApp {
 
     pub async fn read_sink(&self, tenant_id: i64, sink_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .get(format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -266,7 +266,7 @@ impl TestApp {
         sink: &UpdateSinkRequest,
     ) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .post(format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(sink)
             .send()
@@ -276,7 +276,7 @@ impl TestApp {
 
     pub async fn delete_sink(&self, tenant_id: i64, sink_id: i64) -> reqwest::Response {
         self.api_client
-            .delete(&format!("{}/v1/sinks/{sink_id}", &self.address))
+            .delete(format!("{}/v1/sinks/{sink_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -285,7 +285,7 @@ impl TestApp {
 
     pub async fn read_all_sinks(&self, tenant_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/sinks", &self.address))
+            .get(format!("{}/v1/sinks", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -298,7 +298,7 @@ impl TestApp {
         pipeline: &CreatePipelineRequest,
     ) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/pipelines", &self.address))
+            .post(format!("{}/v1/pipelines", &self.address))
             .header("tenant_id", tenant_id)
             .json(pipeline)
             .send()
@@ -308,7 +308,7 @@ impl TestApp {
 
     pub async fn read_pipeline(&self, tenant_id: i64, pipeline_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .get(format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -322,7 +322,7 @@ impl TestApp {
         pipeline: &UpdatePipelineRequest,
     ) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .post(format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .json(pipeline)
             .send()
@@ -332,7 +332,7 @@ impl TestApp {
 
     pub async fn delete_pipeline(&self, tenant_id: i64, pipeline_id: i64) -> reqwest::Response {
         self.api_client
-            .delete(&format!("{}/v1/pipelines/{pipeline_id}", &self.address))
+            .delete(format!("{}/v1/pipelines/{pipeline_id}", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -341,7 +341,7 @@ impl TestApp {
 
     pub async fn read_all_pipelines(&self, tenant_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/pipelines", &self.address))
+            .get(format!("{}/v1/pipelines", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -350,7 +350,7 @@ impl TestApp {
 
     pub async fn create_image(&self, image: &CreateImageRequest) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/images", &self.address))
+            .post(format!("{}/v1/images", &self.address))
             .json(image)
             .send()
             .await
@@ -359,7 +359,7 @@ impl TestApp {
 
     pub async fn read_image(&self, image_id: i64) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/images/{image_id}", &self.address))
+            .get(format!("{}/v1/images/{image_id}", &self.address))
             .send()
             .await
             .expect("failed to execute request")
@@ -371,7 +371,7 @@ impl TestApp {
         image: &UpdateImageRequest,
     ) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/v1/images/{image_id}", &self.address))
+            .post(format!("{}/v1/images/{image_id}", &self.address))
             .json(image)
             .send()
             .await
@@ -380,7 +380,7 @@ impl TestApp {
 
     pub async fn delete_image(&self, image_id: i64) -> reqwest::Response {
         self.api_client
-            .delete(&format!("{}/v1/images/{image_id}", &self.address))
+            .delete(format!("{}/v1/images/{image_id}", &self.address))
             .send()
             .await
             .expect("Failed to execute request.")
@@ -388,7 +388,7 @@ impl TestApp {
 
     pub async fn read_all_images(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/v1/images", &self.address))
+            .get(format!("{}/v1/images", &self.address))
             .send()
             .await
             .expect("failed to execute request")
