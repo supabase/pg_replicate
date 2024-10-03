@@ -1,6 +1,7 @@
 use std::{net::TcpListener, sync::Arc};
 
 use actix_web::{dev::Server, web, App, HttpServer};
+use actix_web_httpauth::middleware::HttpAuthentication;
 use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -9,6 +10,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
+    authentication::auth_validator,
     configuration::{DatabaseSettings, Settings},
     db::publications::Publication,
     encryption,
@@ -66,8 +68,16 @@ impl Application {
             id: configuration.encryption_key.id,
             key,
         };
+        let api_key = configuration.api_key;
         let k8s_client = HttpK8sClient::new().await?;
-        let server = run(listener, connection_pool, encryption_key, Some(k8s_client)).await?;
+        let server = run(
+            listener,
+            connection_pool,
+            encryption_key,
+            api_key,
+            Some(k8s_client),
+        )
+        .await?;
 
         Ok(Self { port, server })
     }
@@ -100,10 +110,12 @@ pub async fn run(
     listener: TcpListener,
     connection_pool: PgPool,
     encryption_key: encryption::EncryptionKey,
+    api_key: String,
     http_k8s_client: Option<HttpK8sClient>,
 ) -> Result<Server, anyhow::Error> {
     let connection_pool = web::Data::new(connection_pool);
     let encryption_key = web::Data::new(encryption_key);
+    let api_key = web::Data::new(api_key);
     let k8s_client = http_k8s_client.map(|client| web::Data::new(Arc::new(client)));
 
     #[derive(OpenApi)]
@@ -170,6 +182,7 @@ pub async fn run(
     let openapi = ApiDoc::openapi();
 
     let server = HttpServer::new(move || {
+        let authentication = HttpAuthentication::bearer(auth_validator);
         let app = App::new()
             .wrap(TracingLogger::default())
             .service(health_check)
@@ -178,6 +191,7 @@ pub async fn run(
             )
             .service(
                 web::scope("v1")
+                    .wrap(authentication)
                     //tenants
                     .service(create_tenant)
                     .service(read_tenant)
@@ -220,7 +234,8 @@ pub async fn run(
                     .service(read_all_images),
             )
             .app_data(connection_pool.clone())
-            .app_data(encryption_key.clone());
+            .app_data(encryption_key.clone())
+            .app_data(api_key.clone());
         if let Some(k8s_client) = k8s_client.clone() {
             app.app_data(k8s_client.clone())
         } else {

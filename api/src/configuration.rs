@@ -9,12 +9,20 @@ pub struct EncryptionKey {
     pub key: String,
 }
 
+impl Display for EncryptionKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "    id: {}", self.id)?;
+        writeln!(f, "    key: REDACTED")
+    }
+}
+
 #[derive(serde::Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub worker: WorkerSettings,
     pub encryption_key: EncryptionKey,
+    pub api_key: String,
 }
 
 impl Display for Settings {
@@ -22,7 +30,9 @@ impl Display for Settings {
         writeln!(f, "configuration:")?;
         writeln!(f, "  database:\n{}", self.database)?;
         writeln!(f, "  application:\n{}", self.application)?;
-        writeln!(f, "  worker:\n{}", self.worker)
+        writeln!(f, "  worker:\n{}", self.worker)?;
+        writeln!(f, "  encryption_key:\n{}", self.encryption_key)?;
+        writeln!(f, "  api_key: REDACTED")
     }
 }
 
