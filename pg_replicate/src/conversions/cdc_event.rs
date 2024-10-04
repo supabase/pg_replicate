@@ -42,7 +42,7 @@ pub enum CdcEventConversionError {
     #[error("invalid timestamp value")]
     InvalidTimestamp(#[from] chrono::ParseError),
 
-    #[error("unsupported type")]
+    #[error("unsupported type: {0}")]
     UnsupportedType(String),
 
     #[error("out of range timestamp")]
