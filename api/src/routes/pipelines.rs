@@ -22,7 +22,7 @@ use crate::{
         sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
-    k8s_client::{HttpK8sClient, K8sClient, K8sError},
+    k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase},
     replicator_config,
     worker::Secrets,
 };
@@ -400,6 +400,51 @@ pub async fn stop_pipeline(
     delete_replicator(&k8s_client, &prefix).await?;
 
     Ok(HttpResponse::Ok().finish())
+}
+
+#[derive(Serialize, ToSchema)]
+pub enum PipelineStatus {
+    Stopped,
+    Starting,
+    Started,
+    Stopping,
+    Unknown,
+}
+
+#[utoipa::path(
+    context_path = "/v1",
+    responses(
+        (status = 200, description = "Get pipeline status"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+#[get("/pipelines/{pipeline_id}/status")]
+pub async fn get_pipeline_status(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    k8s_client: Data<Arc<HttpK8sClient>>,
+    pipeline_id: Path<i64>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let pipeline_id = pipeline_id.into_inner();
+
+    let replicator = db::replicators::read_replicator_by_pipeline_id(&pool, tenant_id, pipeline_id)
+        .await?
+        .ok_or(PipelineError::ReplicatorNotFound(pipeline_id))?;
+
+    let prefix = create_prefix(tenant_id, replicator.id);
+
+    let pod_phase = k8s_client.get_pod_phase(&prefix).await?;
+
+    let status = match pod_phase {
+        PodPhase::Pending => PipelineStatus::Starting,
+        PodPhase::Running => PipelineStatus::Started,
+        PodPhase::Succeeded => PipelineStatus::Stopped,
+        PodPhase::Failed => PipelineStatus::Stopped,
+        PodPhase::Unknown => PipelineStatus::Unknown,
+    };
+
+    Ok(Json(status))
 }
 
 async fn read_data(

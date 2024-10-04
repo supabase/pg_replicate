@@ -22,6 +22,26 @@ pub enum K8sError {
     Kube(#[from] kube::Error),
 }
 
+pub enum PodPhase {
+    Pending,
+    Running,
+    Succeeded,
+    Failed,
+    Unknown,
+}
+
+impl From<&str> for PodPhase {
+    fn from(value: &str) -> Self {
+        match value {
+            "Pending" => PodPhase::Pending,
+            "Running" => PodPhase::Running,
+            "Succeeded" => PodPhase::Succeeded,
+            "Failed" => PodPhase::Failed,
+            _ => PodPhase::Unknown,
+        }
+    }
+}
+
 #[async_trait]
 pub trait K8sClient {
     async fn create_or_update_postgres_secret(
@@ -56,6 +76,8 @@ pub trait K8sClient {
     ) -> Result<(), K8sError>;
 
     async fn delete_stateful_set(&self, prefix: &str) -> Result<(), K8sError>;
+
+    async fn get_pod_phase(&self, prefix: &str) -> Result<PodPhase, K8sError>;
 
     async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError>;
 }
@@ -359,6 +381,37 @@ impl K8sClient for HttpK8sClient {
         self.delete_pod(prefix).await?;
         info!("deleted stateful set");
         Ok(())
+    }
+
+    async fn get_pod_phase(&self, prefix: &str) -> Result<PodPhase, K8sError> {
+        info!("getting pod status");
+        let pod_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}-0");
+        let pod = match self.pods_api.get(&pod_name).await {
+            Ok(pod) => pod,
+            Err(e) => match e {
+                kube::Error::Api(ref er) => {
+                    if er.code == 404 {
+                        return Ok(PodPhase::Succeeded);
+                    }
+                    return Err(e.into());
+                }
+                e => return Err(e.into()),
+            },
+        };
+        let phase = pod
+            .status
+            .map(|status| {
+                let phase: PodPhase = status
+                    .phase
+                    .map(|phase| {
+                        let phase: PodPhase = phase.as_str().into();
+                        phase
+                    })
+                    .unwrap_or(PodPhase::Unknown);
+                phase
+            })
+            .unwrap_or(PodPhase::Unknown);
+        Ok(phase)
     }
 
     async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError> {

@@ -22,9 +22,9 @@ use crate::{
             GetImageResponse, PostImageRequest, PostImageResponse,
         },
         pipelines::{
-            create_pipeline, delete_pipeline, read_all_pipelines, read_pipeline, start_pipeline,
-            stop_pipeline, update_pipeline, GetPipelineResponse, PostPipelineRequest,
-            PostPipelineResponse,
+            create_pipeline, delete_pipeline, get_pipeline_status, read_all_pipelines,
+            read_pipeline, start_pipeline, stop_pipeline, update_pipeline, GetPipelineResponse,
+            PostPipelineRequest, PostPipelineResponse,
         },
         sinks::{
             create_sink, delete_sink, read_all_sinks, read_sink, update_sink, GetSinkResponse,
@@ -132,6 +132,7 @@ pub async fn run(
             crate::routes::pipelines::update_pipeline,
             crate::routes::pipelines::delete_pipeline,
             crate::routes::pipelines::read_all_pipelines,
+            crate::routes::pipelines::get_pipeline_status,
             crate::routes::tenants::create_tenant,
             crate::routes::tenants::read_tenant,
             crate::routes::tenants::update_tenant,
@@ -218,6 +219,7 @@ pub async fn run(
                     .service(read_all_pipelines)
                     .service(start_pipeline)
                     .service(stop_pipeline)
+                    .service(get_pipeline_status)
                     //tables
                     .service(read_table_names)
                     //publications
