@@ -109,7 +109,7 @@ impl CdcEventConverter {
                 let val = val.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                 Ok(Cell::TimeStamp(val))
             }
-            ref typ => Err(CdcEventConversionError::UnsupportedType(typ.to_string())),
+            _ => Ok(Cell::Bytes(bytes.to_vec())),
         }
     }
 
