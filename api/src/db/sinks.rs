@@ -136,13 +136,13 @@ pub enum SinksDbError {
 
 pub struct Sink {
     pub id: i64,
-    pub tenant_id: i64,
+    pub tenant_id: String,
     pub config: SinkConfig,
 }
 
 pub async fn create_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     config: SinkConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<i64, SinksDbError> {
@@ -165,7 +165,7 @@ pub async fn create_sink(
 
 pub async fn read_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     sink_id: i64,
     encryption_key: &EncryptionKey,
 ) -> Result<Option<Sink>, SinksDbError> {
@@ -198,7 +198,7 @@ pub async fn read_sink(
 
 pub async fn update_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     sink_id: i64,
     config: SinkConfig,
     encryption_key: &EncryptionKey,
@@ -224,7 +224,7 @@ pub async fn update_sink(
 
 pub async fn delete_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     sink_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
@@ -244,7 +244,7 @@ pub async fn delete_sink(
 
 pub async fn read_all_sinks(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     encryption_key: &EncryptionKey,
 ) -> Result<Vec<Sink>, SinksDbError> {
     let records = sqlx::query!(
@@ -273,7 +273,11 @@ pub async fn read_all_sinks(
     Ok(sinks)
 }
 
-pub async fn sink_exists(pool: &PgPool, tenant_id: i64, sink_id: i64) -> Result<bool, sqlx::Error> {
+pub async fn sink_exists(
+    pool: &PgPool,
+    tenant_id: &str,
+    sink_id: i64,
+) -> Result<bool, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         select exists (select id

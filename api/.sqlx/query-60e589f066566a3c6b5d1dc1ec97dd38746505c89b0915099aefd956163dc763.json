@@ -12,7 +12,7 @@
     "parameters": {
       "Left": [
         "Jsonb",
-        "Int8",
+        "Text",
         "Int8"
       ]
     },

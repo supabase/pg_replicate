@@ -18,7 +18,7 @@ pub struct BatchConfig {
 
 pub struct Pipeline {
     pub id: i64,
-    pub tenant_id: i64,
+    pub tenant_id: String,
     pub source_id: i64,
     pub sink_id: i64,
     pub replicator_id: i64,
@@ -28,7 +28,7 @@ pub struct Pipeline {
 
 pub async fn create_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     source_id: i64,
     sink_id: i64,
     image_id: i64,
@@ -60,7 +60,7 @@ pub async fn create_pipeline(
 
 pub async fn read_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
 ) -> Result<Option<Pipeline>, sqlx::Error> {
     let record = sqlx::query!(
@@ -88,7 +88,7 @@ pub async fn read_pipeline(
 
 pub async fn update_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
     source_id: i64,
     sink_id: i64,
@@ -118,7 +118,7 @@ pub async fn update_pipeline(
 
 pub async fn delete_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
@@ -138,7 +138,7 @@ pub async fn delete_pipeline(
 
 pub async fn read_all_pipelines(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
 ) -> Result<Vec<Pipeline>, sqlx::Error> {
     let mut record = sqlx::query!(
         r#"

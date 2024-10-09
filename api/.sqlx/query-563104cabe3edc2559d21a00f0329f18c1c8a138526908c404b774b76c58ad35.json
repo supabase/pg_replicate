@@ -11,7 +11,7 @@
       {
         "ordinal": 1,
         "name": "tenant_id",
-        "type_info": "Int8"
+        "type_info": "Text"
       },
       {
         "ordinal": 2,
@@ -21,7 +21,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
+        "Text",
         "Int8"
       ]
     },

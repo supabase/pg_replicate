@@ -92,21 +92,18 @@ pub struct GetSourceResponse {
     #[schema(example = 1)]
     id: i64,
     #[schema(example = 1)]
-    tenant_id: i64,
+    tenant_id: String,
     config: SourceConfig,
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, SourceError> {
     let headers = req.headers();
     let tenant_id = headers
         .get("tenant_id")
         .ok_or(SourceError::TenantIdMissing)?;
     let tenant_id = tenant_id
         .to_str()
-        .map_err(|_| SourceError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
         .map_err(|_| SourceError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }
@@ -216,7 +213,7 @@ pub async fn delete_source(
     let source_id = source_id.into_inner();
     db::sources::delete_source(&pool, tenant_id, source_id)
         .await?
-        .ok_or(SourceError::SourceNotFound(tenant_id))?;
+        .ok_or(SourceError::SourceNotFound(source_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 

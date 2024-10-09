@@ -66,16 +66,13 @@ impl ResponseError for TableError {
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, TableError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, TableError> {
     let headers = req.headers();
     let tenant_id = headers
         .get("tenant_id")
         .ok_or(TableError::TenantIdMissing)?;
     let tenant_id = tenant_id
         .to_str()
-        .map_err(|_| TableError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
         .map_err(|_| TableError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }

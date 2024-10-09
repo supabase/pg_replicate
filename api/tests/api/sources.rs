@@ -31,11 +31,15 @@ fn updated_source_config() -> SourceConfig {
     }
 }
 
-pub async fn create_source(app: &TestApp, tenant_id: i64) -> i64 {
+pub async fn create_source(app: &TestApp, tenant_id: &str) -> i64 {
     create_source_with_config(app, tenant_id, new_source_config()).await
 }
 
-pub async fn create_source_with_config(app: &TestApp, tenant_id: i64, config: SourceConfig) -> i64 {
+pub async fn create_source_with_config(
+    app: &TestApp,
+    tenant_id: &str,
+    config: SourceConfig,
+) -> i64 {
     let source = CreateSourceRequest { config };
     let response = app.create_source(tenant_id, &source).await;
     let response: CreateSourceResponse = response
@@ -49,7 +53,7 @@ pub async fn create_source_with_config(app: &TestApp, tenant_id: i64, config: So
 async fn source_can_be_created() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     // Act
     let source = CreateSourceRequest {
@@ -70,7 +74,7 @@ async fn source_can_be_created() {
 async fn an_existing_source_can_be_read() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     let source = CreateSourceRequest {
         config: new_source_config(),
@@ -92,15 +96,15 @@ async fn an_existing_source_can_be_read() {
         .await
         .expect("failed to deserialize response");
     assert_eq!(response.id, source_id);
-    assert_eq!(response.tenant_id, tenant_id);
+    assert_eq!(&response.tenant_id, tenant_id);
     assert_eq!(response.config, source.config);
 }
 
 #[tokio::test]
-async fn an_non_existing_source_cant_be_read() {
+async fn a_non_existing_source_cant_be_read() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     // Act
     let response = app.read_source(tenant_id, 42).await;
@@ -113,7 +117,7 @@ async fn an_non_existing_source_cant_be_read() {
 async fn an_existing_source_can_be_updated() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     let source = CreateSourceRequest {
         config: new_source_config(),
@@ -141,15 +145,15 @@ async fn an_existing_source_can_be_updated() {
         .await
         .expect("failed to deserialize response");
     assert_eq!(response.id, source_id);
-    assert_eq!(response.tenant_id, tenant_id);
+    assert_eq!(&response.tenant_id, tenant_id);
     assert_eq!(response.config, updated_config.config);
 }
 
 #[tokio::test]
-async fn an_non_existing_source_cant_be_updated() {
+async fn a_non_existing_source_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     // Act
     let updated_config = UpdateSourceRequest {
@@ -165,7 +169,7 @@ async fn an_non_existing_source_cant_be_updated() {
 async fn an_existing_source_can_be_deleted() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     let source = CreateSourceRequest {
         config: new_source_config(),
@@ -187,10 +191,10 @@ async fn an_existing_source_can_be_deleted() {
 }
 
 #[tokio::test]
-async fn an_non_existing_source_cant_be_deleted() {
+async fn a_non_existing_source_cant_be_deleted() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     // Act
     let response = app.delete_source(tenant_id, 42).await;
@@ -203,7 +207,7 @@ async fn an_non_existing_source_cant_be_deleted() {
 async fn all_sources_can_be_read() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
     let source1_id = create_source_with_config(&app, tenant_id, new_source_config()).await;
     let source2_id = create_source_with_config(&app, tenant_id, updated_source_config()).await;
 
@@ -219,11 +223,11 @@ async fn all_sources_can_be_read() {
     for source in response {
         if source.id == source1_id {
             let config = new_source_config();
-            assert_eq!(source.tenant_id, tenant_id);
+            assert_eq!(&source.tenant_id, tenant_id);
             assert_eq!(source.config, config);
         } else if source.id == source2_id {
             let config = updated_source_config();
-            assert_eq!(source.tenant_id, tenant_id);
+            assert_eq!(&source.tenant_id, tenant_id);
             assert_eq!(source.config, config);
         }
     }

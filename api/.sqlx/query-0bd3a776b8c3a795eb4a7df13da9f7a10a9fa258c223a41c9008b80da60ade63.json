@@ -6,13 +6,13 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
         "Text",
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [

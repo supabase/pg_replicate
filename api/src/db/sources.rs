@@ -193,7 +193,7 @@ impl Debug for SourceConfig {
 
 pub struct Source {
     pub id: i64,
-    pub tenant_id: i64,
+    pub tenant_id: String,
     pub config: SourceConfig,
 }
 
@@ -220,7 +220,7 @@ pub enum SourcesDbError {
 
 pub async fn create_source(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     config: SourceConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<i64, SourcesDbError> {
@@ -243,7 +243,7 @@ pub async fn create_source(
 
 pub async fn read_source(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     source_id: i64,
     encryption_key: &EncryptionKey,
 ) -> Result<Option<Source>, SourcesDbError> {
@@ -276,7 +276,7 @@ pub async fn read_source(
 
 pub async fn update_source(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     source_id: i64,
     config: SourceConfig,
     encryption_key: &EncryptionKey,
@@ -302,7 +302,7 @@ pub async fn update_source(
 
 pub async fn delete_source(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     source_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
@@ -322,7 +322,7 @@ pub async fn delete_source(
 
 pub async fn read_all_sources(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     encryption_key: &EncryptionKey,
 ) -> Result<Vec<Source>, SourcesDbError> {
     let records = sqlx::query!(
@@ -353,7 +353,7 @@ pub async fn read_all_sources(
 
 pub async fn source_exists(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     source_id: i64,
 ) -> Result<bool, sqlx::Error> {
     let record = sqlx::query!(

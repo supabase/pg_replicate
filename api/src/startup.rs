@@ -42,7 +42,7 @@ use crate::{
         },
         tenants::{
             create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant,
-            GetTenantResponse, PostTenantRequest, PostTenantResponse,
+            CreateTenantRequest, GetTenantResponse, PostTenantResponse,
         },
     },
 };
@@ -162,7 +162,7 @@ pub async fn run(
             PostPipelineRequest,
             PostPipelineResponse,
             GetPipelineResponse,
-            PostTenantRequest,
+            CreateTenantRequest,
             PostTenantResponse,
             GetTenantResponse,
             PostSourceRequest,

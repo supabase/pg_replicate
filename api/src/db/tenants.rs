@@ -1,17 +1,22 @@
 use sqlx::PgPool;
 
 pub struct Tenant {
-    pub id: i64,
+    pub id: String,
     pub name: String,
 }
 
-pub async fn create_tenant(pool: &PgPool, tenant_name: &str) -> Result<i64, sqlx::Error> {
+pub async fn create_tenant(
+    pool: &PgPool,
+    tenant_id: &str,
+    tenant_name: &str,
+) -> Result<String, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        insert into app.tenants (name)
-        values ($1)
+        insert into app.tenants (id, name)
+        values ($1, $2)
         returning id
         "#,
+        tenant_id,
         tenant_name,
     )
     .fetch_one(pool)
@@ -20,7 +25,7 @@ pub async fn create_tenant(pool: &PgPool, tenant_name: &str) -> Result<i64, sqlx
     Ok(record.id)
 }
 
-pub async fn read_tenant(pool: &PgPool, tenant_id: i64) -> Result<Option<Tenant>, sqlx::Error> {
+pub async fn read_tenant(pool: &PgPool, tenant_id: &str) -> Result<Option<Tenant>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         select id, name
@@ -40,9 +45,9 @@ pub async fn read_tenant(pool: &PgPool, tenant_id: i64) -> Result<Option<Tenant>
 
 pub async fn update_tenant(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     tenant_name: &str,
-) -> Result<Option<i64>, sqlx::Error> {
+) -> Result<Option<String>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         update app.tenants
@@ -59,7 +64,7 @@ pub async fn update_tenant(
     Ok(record.map(|r| r.id))
 }
 
-pub async fn delete_tenant(pool: &PgPool, tenant_id: i64) -> Result<Option<i64>, sqlx::Error> {
+pub async fn delete_tenant(pool: &PgPool, tenant_id: &str) -> Result<Option<String>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         delete from app.tenants

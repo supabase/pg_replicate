@@ -87,19 +87,16 @@ pub struct GetSinkResponse {
     #[schema(example = 1)]
     id: i64,
     #[schema(example = 1)]
-    tenant_id: i64,
+    tenant_id: String,
     config: SinkConfig,
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SinkError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, SinkError> {
     let headers = req.headers();
     let tenant_id = headers.get("tenant_id").ok_or(SinkError::TenantIdMissing)?;
     let tenant_id = tenant_id
         .to_str()
-        .map_err(|_| SinkError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
         .map_err(|_| SinkError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }
@@ -209,7 +206,7 @@ pub async fn delete_sink(
     let sink_id = sink_id.into_inner();
     db::sinks::delete_sink(&pool, tenant_id, sink_id)
         .await?
-        .ok_or(SinkError::SinkNotFound(tenant_id))?;
+        .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 

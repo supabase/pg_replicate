@@ -6,6 +6,7 @@ use crate::{
     sinks::create_sink,
     sources::create_source,
     tenants::create_tenant,
+    tenants::create_tenant_with_id_and_name,
     test_app::{
         spawn_app, CreatePipelineRequest, CreatePipelineResponse, PipelineResponse, TestApp,
         UpdatePipelineRequest,
@@ -32,7 +33,7 @@ fn updated_pipeline_config() -> PipelineConfig {
 
 pub async fn create_pipeline_with_config(
     app: &TestApp,
-    tenant_id: i64,
+    tenant_id: &str,
     source_id: i64,
     sink_id: i64,
     config: PipelineConfig,
@@ -57,7 +58,7 @@ async fn pipeline_can_be_created() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
 
@@ -84,8 +85,18 @@ async fn pipeline_with_another_tenants_source_cant_be_created() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant1_id = create_tenant(&app).await;
-    let tenant2_id = create_tenant(&app).await;
+    let tenant1_id = &create_tenant_with_id_and_name(
+        &app,
+        "abcdefghijklmnopqrst".to_string(),
+        "tenant_1".to_string(),
+    )
+    .await;
+    let tenant2_id = &create_tenant_with_id_and_name(
+        &app,
+        "tsrqponmlkjihgfedcba".to_string(),
+        "tenant_2".to_string(),
+    )
+    .await;
     let source2_id = create_source(&app, tenant2_id).await;
     let sink1_id = create_sink(&app, tenant1_id).await;
 
@@ -107,8 +118,18 @@ async fn pipeline_with_another_tenants_sink_cant_be_created() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant1_id = create_tenant(&app).await;
-    let tenant2_id = create_tenant(&app).await;
+    let tenant1_id = &create_tenant_with_id_and_name(
+        &app,
+        "abcdefghijklmnopqrst".to_string(),
+        "tenant_1".to_string(),
+    )
+    .await;
+    let tenant2_id = &create_tenant_with_id_and_name(
+        &app,
+        "tsrqponmlkjihgfedcba".to_string(),
+        "tenant_2".to_string(),
+    )
+    .await;
     let source1_id = create_source(&app, tenant1_id).await;
     let sink2_id = create_sink(&app, tenant2_id).await;
 
@@ -130,7 +151,7 @@ async fn an_existing_pipeline_can_be_read() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
 
@@ -157,7 +178,7 @@ async fn an_existing_pipeline_can_be_read() {
         .await
         .expect("failed to deserialize response");
     assert_eq!(response.id, sink_id);
-    assert_eq!(response.tenant_id, tenant_id);
+    assert_eq!(&response.tenant_id, tenant_id);
     assert_eq!(response.source_id, source_id);
     assert_eq!(response.sink_id, sink_id);
     assert!(response.replicator_id != 0);
@@ -165,10 +186,10 @@ async fn an_existing_pipeline_can_be_read() {
 }
 
 #[tokio::test]
-async fn an_non_existing_pipeline_cant_be_read() {
+async fn a_non_existing_pipeline_cant_be_read() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     // Act
     let response = app.read_pipeline(tenant_id, 42).await;
@@ -182,7 +203,7 @@ async fn an_existing_pipeline_can_be_updated() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
 
@@ -220,7 +241,7 @@ async fn an_existing_pipeline_can_be_updated() {
         .await
         .expect("failed to deserialize response");
     assert_eq!(response.id, pipeline_id);
-    assert_eq!(response.tenant_id, tenant_id);
+    assert_eq!(&response.tenant_id, tenant_id);
     assert_eq!(response.source_id, source_id);
     assert_eq!(response.sink_id, sink_id);
     assert_eq!(response.publication_name, "updated_publication".to_string());
@@ -232,8 +253,18 @@ async fn pipeline_with_another_tenants_source_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant1_id = create_tenant(&app).await;
-    let tenant2_id = create_tenant(&app).await;
+    let tenant1_id = &create_tenant_with_id_and_name(
+        &app,
+        "abcdefghijklmnopqrst".to_string(),
+        "tenant_1".to_string(),
+    )
+    .await;
+    let tenant2_id = &create_tenant_with_id_and_name(
+        &app,
+        "tsrqponmlkjihgfedcba".to_string(),
+        "tenant_2".to_string(),
+    )
+    .await;
     let source1_id = create_source(&app, tenant1_id).await;
     let sink1_id = create_sink(&app, tenant1_id).await;
 
@@ -271,8 +302,18 @@ async fn pipeline_with_another_tenants_sink_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant1_id = create_tenant(&app).await;
-    let tenant2_id = create_tenant(&app).await;
+    let tenant1_id = &create_tenant_with_id_and_name(
+        &app,
+        "abcdefghijklmnopqrst".to_string(),
+        "tenant_1".to_string(),
+    )
+    .await;
+    let tenant2_id = &create_tenant_with_id_and_name(
+        &app,
+        "tsrqponmlkjihgfedcba".to_string(),
+        "tenant_2".to_string(),
+    )
+    .await;
     let source1_id = create_source(&app, tenant1_id).await;
     let sink1_id = create_sink(&app, tenant1_id).await;
 
@@ -306,10 +347,10 @@ async fn pipeline_with_another_tenants_sink_cant_be_updated() {
 }
 
 #[tokio::test]
-async fn an_non_existing_pipeline_cant_be_updated() {
+async fn a_non_existing_pipeline_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
 
@@ -331,7 +372,7 @@ async fn an_existing_pipeline_can_be_deleted() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
 
@@ -358,10 +399,10 @@ async fn an_existing_pipeline_can_be_deleted() {
 }
 
 #[tokio::test]
-async fn an_non_existing_pipeline_cant_be_deleted() {
+async fn a_non_existing_pipeline_cant_be_deleted() {
     // Arrange
     let app = spawn_app().await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
 
     // Act
     let response = app.delete_pipeline(tenant_id, 42).await;
@@ -375,7 +416,7 @@ async fn all_pipelines_can_be_read() {
     // Arrange
     let app = spawn_app().await;
     create_default_image(&app).await;
-    let tenant_id = create_tenant(&app).await;
+    let tenant_id = &create_tenant(&app).await;
     let source1_id = create_source(&app, tenant_id).await;
     let source2_id = create_source(&app, tenant_id).await;
     let sink1_id = create_sink(&app, tenant_id).await;
@@ -405,13 +446,13 @@ async fn all_pipelines_can_be_read() {
     for pipeline in response {
         if pipeline.id == pipeline1_id {
             let config = new_pipeline_config();
-            assert_eq!(pipeline.tenant_id, tenant_id);
+            assert_eq!(&pipeline.tenant_id, tenant_id);
             assert_eq!(pipeline.source_id, source1_id);
             assert_eq!(pipeline.sink_id, sink1_id);
             assert_eq!(pipeline.config, config);
         } else if pipeline.id == pipeline2_id {
             let config = updated_pipeline_config();
-            assert_eq!(pipeline.tenant_id, tenant_id);
+            assert_eq!(&pipeline.tenant_id, tenant_id);
             assert_eq!(pipeline.source_id, source2_id);
             assert_eq!(pipeline.sink_id, sink2_id);
             assert_eq!(pipeline.config, config);

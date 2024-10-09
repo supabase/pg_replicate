@@ -129,7 +129,7 @@ pub struct PostPipelineResponse {
 #[derive(Serialize, ToSchema)]
 pub struct GetPipelineResponse {
     id: i64,
-    tenant_id: i64,
+    tenant_id: String,
     source_id: i64,
     sink_id: i64,
     replicator_id: i64,
@@ -138,16 +138,13 @@ pub struct GetPipelineResponse {
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PipelineError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, PipelineError> {
     let headers = req.headers();
     let tenant_id = headers
         .get("tenant_id")
         .ok_or(PipelineError::TenantIdMissing)?;
     let tenant_id = tenant_id
         .to_str()
-        .map_err(|_| PipelineError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
         .map_err(|_| PipelineError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }
@@ -308,7 +305,7 @@ pub async fn delete_pipeline(
     let pipeline_id = pipeline_id.into_inner();
     db::pipelines::delete_pipeline(&pool, tenant_id, pipeline_id)
         .await?
-        .ok_or(PipelineError::PipelineNotFound(tenant_id))?;
+        .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -449,7 +446,7 @@ pub async fn get_pipeline_status(
 
 async fn read_data(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
     encryption_key: &EncryptionKey,
 ) -> Result<(Pipeline, Replicator, Image, Source, Sink), PipelineError> {
@@ -530,7 +527,7 @@ fn create_configs(
     Ok((secrets, config))
 }
 
-fn create_prefix(tenant_id: i64, replicator_id: i64) -> String {
+fn create_prefix(tenant_id: &str, replicator_id: i64) -> String {
     format!("{tenant_id}-{replicator_id}")
 }
 
