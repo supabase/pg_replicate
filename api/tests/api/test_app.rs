@@ -149,6 +149,10 @@ impl TestApp {
         self.api_client.post(url).bearer_auth(self.api_key.clone())
     }
 
+    fn put_authenticated<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.api_client.put(url).bearer_auth(self.api_key.clone())
+    }
+
     fn delete_authenticated<U: IntoUrl>(&self, url: U) -> RequestBuilder {
         self.api_client
             .delete(url)
@@ -157,6 +161,18 @@ impl TestApp {
 
     pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.post_authenticated(format!("{}/v1/tenants", &self.address))
+            .json(tenant)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn create_or_update_tenant(
+        &self,
+        tenant_id: &str,
+        tenant: &UpdateTenantRequest,
+    ) -> reqwest::Response {
+        self.put_authenticated(format!("{}/v1/tenants/{tenant_id}", &self.address))
             .json(tenant)
             .send()
             .await

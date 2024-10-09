@@ -56,6 +56,73 @@ async fn tenant_can_be_created() {
 }
 
 #[tokio::test]
+async fn create_or_update_tenant_creates_a_new_tenant() {
+    // Arrange
+    let app = spawn_app().await;
+
+    // Act
+    let tenant_id = "abcdefghijklmnopqrst";
+    let tenant = UpdateTenantRequest {
+        name: "NewTenant".to_string(),
+    };
+    let response = app.create_or_update_tenant(tenant_id, &tenant).await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response: CreateTenantResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    assert_eq!(response.id, tenant_id);
+
+    let tenant_id = &response.id;
+    let response = app.read_tenant(tenant_id).await;
+    let response: TenantResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+
+    assert_eq!(&response.id, tenant_id);
+    assert_eq!(response.name, tenant.name);
+}
+
+#[tokio::test]
+async fn create_or_update_tenant_updates_an_existing_tenant() {
+    // Arrange
+    let app = spawn_app().await;
+
+    // Act
+    let tenant_id = "abcdefghijklmnopqrst";
+    let tenant = UpdateTenantRequest {
+        name: "NewTenant".to_string(),
+    };
+    let response = app.create_or_update_tenant(tenant_id, &tenant).await;
+    assert!(response.status().is_success());
+    let tenant = UpdateTenantRequest {
+        name: "UpdatedTenant".to_string(),
+    };
+    let response = app.create_or_update_tenant(tenant_id, &tenant).await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response: CreateTenantResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    assert_eq!(response.id, tenant_id);
+
+    let tenant_id = &response.id;
+    let response = app.read_tenant(tenant_id).await;
+    let response: TenantResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+
+    assert_eq!(&response.id, tenant_id);
+    assert_eq!(response.name, tenant.name);
+}
+
+#[tokio::test]
 async fn an_existing_tenant_can_be_read() {
     // Arrange
     let app = spawn_app().await;

@@ -41,8 +41,8 @@ use crate::{
             update_source, GetSourceResponse, PostSourceRequest, PostSourceResponse,
         },
         tenants::{
-            create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant,
-            CreateTenantRequest, GetTenantResponse, PostTenantResponse,
+            create_or_update_tenant, create_tenant, delete_tenant, read_all_tenants, read_tenant,
+            update_tenant, CreateTenantRequest, GetTenantResponse, PostTenantResponse,
         },
     },
 };
@@ -134,6 +134,7 @@ pub async fn run(
             crate::routes::pipelines::read_all_pipelines,
             crate::routes::pipelines::get_pipeline_status,
             crate::routes::tenants::create_tenant,
+            crate::routes::tenants::create_or_update_tenant,
             crate::routes::tenants::read_tenant,
             crate::routes::tenants::update_tenant,
             crate::routes::tenants::delete_tenant,
@@ -195,6 +196,7 @@ pub async fn run(
                     .wrap(authentication)
                     //tenants
                     .service(create_tenant)
+                    .service(create_or_update_tenant)
                     .service(read_tenant)
                     .service(update_tenant)
                     .service(delete_tenant)

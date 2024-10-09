@@ -1,7 +1,7 @@
 use actix_web::{
     delete, get,
     http::{header::ContentType, StatusCode},
-    post,
+    post, put,
     web::{Data, Json, Path},
     HttpResponse, Responder, ResponseError,
 };
@@ -95,9 +95,31 @@ pub async fn create_tenant(
     tenant: Json<CreateTenantRequest>,
 ) -> Result<impl Responder, TenantError> {
     let tenant = tenant.0;
-    let name = tenant.name;
     let id = tenant.id;
+    let name = tenant.name;
     let id = db::tenants::create_tenant(&pool, &id, &name).await?;
+    let response = PostTenantResponse { id };
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    context_path = "/v1",
+    request_body = UpdateTenantRequest,
+    responses(
+        (status = 200, description = "Create a new tenant or update an existing one", body = PostTenantResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
+#[put("/tenants/{tenant_id}")]
+pub async fn create_or_update_tenant(
+    pool: Data<PgPool>,
+    tenant_id: Path<String>,
+    tenant: Json<UpdateTenantRequest>,
+) -> Result<impl Responder, TenantError> {
+    let tenant = tenant.0;
+    let tenant_id = tenant_id.into_inner();
+    let name = tenant.name;
+    let id = db::tenants::create_or_update_tenant(&pool, &tenant_id, &name).await?;
     let response = PostTenantResponse { id };
     Ok(Json(response))
 }

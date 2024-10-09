@@ -25,6 +25,27 @@ pub async fn create_tenant(
     Ok(record.id)
 }
 
+pub async fn create_or_update_tenant(
+    pool: &PgPool,
+    tenant_id: &str,
+    tenant_name: &str,
+) -> Result<String, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        insert into app.tenants (id, name)
+        values ($1, $2)
+        on conflict (id) do update set name = $2
+        returning id
+        "#,
+        tenant_id,
+        tenant_name,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(record.id)
+}
+
 pub async fn read_tenant(pool: &PgPool, tenant_id: &str) -> Result<Option<Tenant>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
