@@ -64,9 +64,8 @@ impl DuckDbExecutor {
                 match req {
                     DuckDbRequest::GetResumptionState => {
                         let result = self.get_resumption_state();
-                        let result = result.map(|rs| {
+                        let result = result.inspect(|rs| {
                             self.committed_lsn = Some(rs.last_lsn);
-                            rs
                         });
                         let response = DuckDbResponse::ResumptionState(result);
                         self.send_response(response).await;
