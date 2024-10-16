@@ -133,8 +133,11 @@ pub async fn read_publication(
     let mut query = String::new();
     query.push_str(
         r#"
-        select p.pubname, pt.schemaname, pt.tablename from pg_publication p
-        join pg_publication_tables pt on p.pubname = pt.pubname
+        select p.pubname,
+            pt.schemaname as "schemaname?",
+            pt.tablename as "tablename?"
+        from pg_publication p
+        left join pg_publication_tables pt on p.pubname = pt.pubname
         where
            	p.puballtables = false
            	and p.pubinsert = true
@@ -160,9 +163,11 @@ pub async fn read_publication(
         } else {
             name = Some(pub_name);
         }
-        let schema = row.get("schemaname");
-        let name = row.get("tablename");
-        tables.push(Table { schema, name });
+        let schema: Option<String> = row.get("schemaname?");
+        let name: Option<String> = row.get("tablename?");
+        if let (Some(schema), Some(name)) = (schema, name) {
+            tables.push(Table { schema, name });
+        }
     }
 
     let publication = name.map(|name| Publication { name, tables });
@@ -174,8 +179,11 @@ pub async fn read_all_publications(
     options: &PgConnectOptions,
 ) -> Result<Vec<Publication>, sqlx::Error> {
     let query = r#"
-        select p.pubname, pt.schemaname, pt.tablename from pg_publication p
-        join pg_publication_tables pt on p.pubname = pt.pubname
+        select p.pubname,
+            pt.schemaname as "schemaname?",
+            pt.tablename as "tablename?"
+        from pg_publication p
+        left join pg_publication_tables pt on p.pubname = pt.pubname
         where
            	p.puballtables = false
            	and p.pubinsert = true
@@ -190,10 +198,13 @@ pub async fn read_all_publications(
 
     for row in connection.fetch_all(query).await? {
         let pub_name: String = row.get("pubname");
-        let schema = row.get("schemaname");
-        let name = row.get("tablename");
+        let schema: Option<String> = row.get("schemaname?");
+        let name: Option<String> = row.get("tablename?");
         let tables = pub_name_to_tables.entry(pub_name).or_default();
-        tables.push(Table { schema, name });
+
+        if let (Some(schema), Some(name)) = (schema, name) {
+            tables.push(Table { schema, name });
+        }
     }
 
     let publications = pub_name_to_tables
