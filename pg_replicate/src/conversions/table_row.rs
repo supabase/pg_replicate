@@ -53,6 +53,17 @@ impl TryFrom<Cell> for String {
     }
 }
 
+impl TryFrom<Cell> for std::borrow::Cow<'static, str> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::String(s) => Ok(std::borrow::Cow::Owned(s)),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
 impl TryFrom<Cell> for Option<String> {
     type Error = CellConversionError;
 
