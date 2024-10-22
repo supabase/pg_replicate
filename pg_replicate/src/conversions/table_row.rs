@@ -20,13 +20,35 @@ pub enum Cell {
     Bytes(Vec<u8>),
 }
 
+impl TryFrom<Cell> for i64 {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::I64(i) => Ok(i),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
+impl TryFrom<Cell> for u64 {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::I64(i) => Ok(i as u64),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
 impl TryFrom<Cell> for String {
     type Error = CellConversionError;
 
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::String(s) => Ok(s),
-            _ => Err(CellConversionError)
+            _ => Err(CellConversionError),
         }
     }
 }
@@ -38,7 +60,7 @@ impl TryFrom<Cell> for Option<String> {
         match cell {
             Cell::String(s) => Ok(Some(s)),
             Cell::Null => Ok(None),
-            _ => Err(CellConversionError)
+            _ => Err(CellConversionError),
         }
     }
 }
