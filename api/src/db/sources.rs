@@ -194,6 +194,7 @@ impl Debug for SourceConfig {
 pub struct Source {
     pub id: i64,
     pub tenant_id: String,
+    pub name: String,
     pub config: SourceConfig,
 }
 
@@ -221,6 +222,7 @@ pub enum SourcesDbError {
 pub async fn create_source(
     pool: &PgPool,
     tenant_id: &str,
+    name: &str,
     config: SourceConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<i64, SourcesDbError> {
@@ -228,11 +230,12 @@ pub async fn create_source(
     let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        insert into app.sources (tenant_id, config)
-        values ($1, $2)
+        insert into app.sources (tenant_id, name, config)
+        values ($1, $2, $3)
         returning id
         "#,
         tenant_id,
+        name,
         db_config
     )
     .fetch_one(pool)
@@ -249,7 +252,7 @@ pub async fn read_source(
 ) -> Result<Option<Source>, SourcesDbError> {
     let record = sqlx::query!(
         r#"
-        select id, tenant_id, config
+        select id, tenant_id, name, config
         from app.sources
         where tenant_id = $1 and id = $2
         "#,
@@ -266,6 +269,7 @@ pub async fn read_source(
             let source = Source {
                 id: r.id,
                 tenant_id: r.tenant_id,
+                name: r.name,
                 config,
             };
             Ok::<Source, SourcesDbError>(source)
@@ -277,6 +281,7 @@ pub async fn read_source(
 pub async fn update_source(
     pool: &PgPool,
     tenant_id: &str,
+    name: &str,
     source_id: i64,
     config: SourceConfig,
     encryption_key: &EncryptionKey,
@@ -286,11 +291,12 @@ pub async fn update_source(
     let record = sqlx::query!(
         r#"
         update app.sources
-        set config = $1
-        where tenant_id = $2 and id = $3
+        set config = $1, name = $2
+        where tenant_id = $3 and id = $4
         returning id
         "#,
         db_config,
+        name,
         tenant_id,
         source_id
     )
@@ -327,7 +333,7 @@ pub async fn read_all_sources(
 ) -> Result<Vec<Source>, SourcesDbError> {
     let records = sqlx::query!(
         r#"
-        select id, tenant_id, config
+        select id, tenant_id, name, config
         from app.sources
         where tenant_id = $1
         "#,
@@ -343,6 +349,7 @@ pub async fn read_all_sources(
         let source = Source {
             id: record.id,
             tenant_id: record.tenant_id,
+            name: record.name,
             config,
         };
         sources.push(source);

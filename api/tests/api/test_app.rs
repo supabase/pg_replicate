@@ -42,6 +42,7 @@ pub struct TenantResponse {
 
 #[derive(Serialize)]
 pub struct CreateSourceRequest {
+    pub name: String,
     pub config: SourceConfig,
 }
 
@@ -52,6 +53,7 @@ pub struct CreateSourceResponse {
 
 #[derive(Serialize)]
 pub struct UpdateSourceRequest {
+    pub name: String,
     pub config: SourceConfig,
 }
 
@@ -59,11 +61,13 @@ pub struct UpdateSourceRequest {
 pub struct SourceResponse {
     pub id: i64,
     pub tenant_id: String,
+    pub name: String,
     pub config: SourceConfig,
 }
 
 #[derive(Serialize)]
 pub struct CreateSinkRequest {
+    pub name: String,
     pub config: SinkConfig,
 }
 
@@ -74,6 +78,7 @@ pub struct CreateSinkResponse {
 
 #[derive(Serialize)]
 pub struct UpdateSinkRequest {
+    pub name: String,
     pub config: SinkConfig,
 }
 
@@ -81,6 +86,7 @@ pub struct UpdateSinkRequest {
 pub struct SinkResponse {
     pub id: i64,
     pub tenant_id: String,
+    pub name: String,
     pub config: SinkConfig,
 }
 

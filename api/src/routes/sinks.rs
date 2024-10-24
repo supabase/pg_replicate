@@ -74,6 +74,8 @@ impl ResponseError for SinkError {
 
 #[derive(Deserialize, ToSchema)]
 pub struct PostSinkRequest {
+    pub name: String,
+    #[schema(required = true)]
     pub config: SinkConfig,
 }
 
@@ -88,6 +90,8 @@ pub struct GetSinkResponse {
     id: i64,
     #[schema(example = 1)]
     tenant_id: String,
+    #[schema(example = "BigQuery Sink")]
+    name: String,
     config: SinkConfig,
 }
 
@@ -118,8 +122,9 @@ pub async fn create_sink(
 ) -> Result<impl Responder, SinkError> {
     let sink = sink.0;
     let tenant_id = extract_tenant_id(&req)?;
+    let name = sink.name;
     let config = sink.config;
-    let id = db::sinks::create_sink(&pool, tenant_id, config, &encryption_key).await?;
+    let id = db::sinks::create_sink(&pool, tenant_id, &name, config, &encryption_key).await?;
     let response = PostSinkResponse { id };
     Ok(Json(response))
 }
@@ -149,6 +154,7 @@ pub async fn read_sink(
         .map(|s| GetSinkResponse {
             id: s.id,
             tenant_id: s.tenant_id,
+            name: s.name,
             config: s.config,
         })
         .ok_or(SinkError::SinkNotFound(sink_id))?;
@@ -178,8 +184,9 @@ pub async fn update_sink(
     let sink = sink.0;
     let tenant_id = extract_tenant_id(&req)?;
     let sink_id = sink_id.into_inner();
+    let name = sink.name;
     let config = sink.config;
-    db::sinks::update_sink(&pool, tenant_id, sink_id, config, &encryption_key)
+    db::sinks::update_sink(&pool, tenant_id, &name, sink_id, config, &encryption_key)
         .await?
         .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(HttpResponse::Ok().finish())
@@ -229,6 +236,7 @@ pub async fn read_all_sinks(
         let sink = GetSinkResponse {
             id: sink.id,
             tenant_id: sink.tenant_id,
+            name: sink.name,
             config: sink.config,
         };
         sinks.push(sink);

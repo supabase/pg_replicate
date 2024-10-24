@@ -8,12 +8,20 @@ use crate::{
     },
 };
 
+fn new_name() -> String {
+    "BigQuery Sink".to_string()
+}
+
 fn new_sink_config() -> SinkConfig {
     SinkConfig::BigQuery {
         project_id: "project-id".to_string(),
         dataset_id: "dataset-id".to_string(),
         service_account_key: "service-account-key".to_string(),
     }
+}
+
+fn updated_name() -> String {
+    "BigQuery Sink (Updated)".to_string()
 }
 
 fn updated_sink_config() -> SinkConfig {
@@ -24,8 +32,13 @@ fn updated_sink_config() -> SinkConfig {
     }
 }
 
-pub async fn create_sink_with_config(app: &TestApp, tenant_id: &str, config: SinkConfig) -> i64 {
-    let sink = CreateSinkRequest { config };
+pub async fn create_sink_with_config(
+    app: &TestApp,
+    tenant_id: &str,
+    name: String,
+    config: SinkConfig,
+) -> i64 {
+    let sink = CreateSinkRequest { name, config };
     let response = app.create_sink(tenant_id, &sink).await;
     let response: CreateSinkResponse = response
         .json()
@@ -35,7 +48,7 @@ pub async fn create_sink_with_config(app: &TestApp, tenant_id: &str, config: Sin
 }
 
 pub async fn create_sink(app: &TestApp, tenant_id: &str) -> i64 {
-    create_sink_with_config(app, tenant_id, new_sink_config()).await
+    create_sink_with_config(app, tenant_id, new_name(), new_sink_config()).await
 }
 
 #[tokio::test]
@@ -46,6 +59,7 @@ async fn sink_can_be_created() {
 
     // Act
     let sink = CreateSinkRequest {
+        name: new_name(),
         config: new_sink_config(),
     };
     let response = app.create_sink(tenant_id, &sink).await;
@@ -66,6 +80,7 @@ async fn an_existing_sink_can_be_read() {
     let tenant_id = &create_tenant(&app).await;
 
     let sink = CreateSinkRequest {
+        name: new_name(),
         config: new_sink_config(),
     };
     let response = app.create_sink(tenant_id, &sink).await;
@@ -86,6 +101,7 @@ async fn an_existing_sink_can_be_read() {
         .expect("failed to deserialize response");
     assert_eq!(response.id, sink_id);
     assert_eq!(&response.tenant_id, tenant_id);
+    assert_eq!(response.name, sink.name);
     assert_eq!(response.config, sink.config);
 }
 
@@ -109,6 +125,7 @@ async fn an_existing_sink_can_be_updated() {
     let tenant_id = &create_tenant(&app).await;
 
     let sink = CreateSinkRequest {
+        name: new_name(),
         config: new_sink_config(),
     };
     let response = app.create_sink(tenant_id, &sink).await;
@@ -120,6 +137,7 @@ async fn an_existing_sink_can_be_updated() {
 
     // Act
     let updated_config = UpdateSinkRequest {
+        name: updated_name(),
         config: updated_sink_config(),
     };
     let response = app.update_sink(tenant_id, sink_id, &updated_config).await;
@@ -133,6 +151,7 @@ async fn an_existing_sink_can_be_updated() {
         .expect("failed to deserialize response");
     assert_eq!(response.id, sink_id);
     assert_eq!(&response.tenant_id, tenant_id);
+    assert_eq!(response.name, updated_config.name);
     assert_eq!(response.config, updated_config.config);
 }
 
@@ -144,6 +163,7 @@ async fn a_non_existing_sink_cant_be_updated() {
 
     // Act
     let updated_config = UpdateSinkRequest {
+        name: updated_name(),
         config: updated_sink_config(),
     };
     let response = app.update_sink(tenant_id, 42, &updated_config).await;
@@ -159,6 +179,7 @@ async fn an_existing_sink_can_be_deleted() {
     let tenant_id = &create_tenant(&app).await;
 
     let sink = CreateSinkRequest {
+        name: new_name(),
         config: new_sink_config(),
     };
     let response = app.create_sink(tenant_id, &sink).await;
@@ -195,8 +216,9 @@ async fn all_sinks_can_be_read() {
     // Arrange
     let app = spawn_app().await;
     let tenant_id = &create_tenant(&app).await;
-    let sink1_id = create_sink_with_config(&app, tenant_id, new_sink_config()).await;
-    let sink2_id = create_sink_with_config(&app, tenant_id, updated_sink_config()).await;
+    let sink1_id = create_sink_with_config(&app, tenant_id, new_name(), new_sink_config()).await;
+    let sink2_id =
+        create_sink_with_config(&app, tenant_id, updated_name(), updated_sink_config()).await;
 
     // Act
     let response = app.read_all_sinks(tenant_id).await;
@@ -209,12 +231,16 @@ async fn all_sinks_can_be_read() {
         .expect("failed to deserialize response");
     for sink in response {
         if sink.id == sink1_id {
+            let name = new_name();
             let config = new_sink_config();
             assert_eq!(&sink.tenant_id, tenant_id);
+            assert_eq!(sink.name, name);
             assert_eq!(sink.config, config);
         } else if sink.id == sink2_id {
+            let name = updated_name();
             let config = updated_sink_config();
             assert_eq!(&sink.tenant_id, tenant_id);
+            assert_eq!(sink.name, name);
             assert_eq!(sink.config, config);
         }
     }
