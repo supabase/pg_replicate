@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select id, tenant_id, source_id, sink_id, replicator_id, publication_name, config\n        from app.pipelines\n        where tenant_id = $1 and id = $2\n        ",
+  "query": "\n        select p.id,\n            p.tenant_id,\n            source_id,\n            sr.name as source_name,\n            sink_id,\n            sn.name as sink_name,\n            replicator_id,\n            publication_name,\n            p.config\n        from app.pipelines p\n        join app.sources sr on p.source_id = sr.id\n        join app.sinks sn on p.sink_id = sn.id\n        where p.tenant_id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -20,29 +20,38 @@
       },
       {
         "ordinal": 3,
+        "name": "source_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
         "name": "sink_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 4,
-        "name": "replicator_id",
-        "type_info": "Int8"
-      },
-      {
         "ordinal": 5,
-        "name": "publication_name",
+        "name": "sink_name",
         "type_info": "Text"
       },
       {
         "ordinal": 6,
+        "name": "replicator_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "publication_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
         "name": "config",
         "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [
@@ -52,8 +61,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "18191e619e3ea3a347179af049f02dca73400184e933fc41f58ad8defad54bc8"
+  "hash": "0e0113748d9ccc4081f80e34a2ff51427b97da60a79b9266f9372890bb5ed8fd"
 }
