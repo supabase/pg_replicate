@@ -83,7 +83,7 @@ impl CdcEventConverter {
                 let val = match val {
                     "t" => true,
                     "f" => false,
-                    other => val.parse()?
+                    _ => val.parse()?
                 };
                 Ok(Cell::Bool(val))
             }
