@@ -80,7 +80,11 @@ impl CdcEventConverter {
         match *typ {
             Type::BOOL => {
                 let val = from_utf8(bytes)?;
-                let val: bool = val.parse()?;
+                let val = match val {
+                    "t" => true,
+                    "f" => false,
+                    _ => val.parse()?
+                };
                 Ok(Cell::Bool(val))
             }
             // Type::BYTEA => Ok(Value::Bytes(bytes.to_vec())),
