@@ -87,6 +87,15 @@ impl TryFrom<Cell> for DateTime<Utc> {
     }
 }
 
+// CR alee: why does a blanket impl conflict here?
+impl TryFrom<Cell> for Option<DateTime<Utc>> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        DateTime::<Utc>::try_from(cell).map(Some)
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("cell conversion error")]
 pub struct CellConversionError;
