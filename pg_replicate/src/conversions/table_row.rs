@@ -21,6 +21,17 @@ pub enum Cell {
     Bytes(Vec<u8>),
 }
 
+impl TryFrom<Cell> for bool {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Bool(b) => Ok(b),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
 impl TryFrom<Cell> for i64 {
     type Error = CellConversionError;
 
@@ -76,7 +87,7 @@ impl TryFrom<Cell> for DateTime<Utc> {
     }
 }
 
-#[trait_gen(T -> i64, u64, String, DateTime<Utc>)]
+#[trait_gen(T -> bool, i64, u64, String, DateTime<Utc>)]
 impl TryFrom<Cell> for Option<T> {
     type Error = CellConversionError;
 
