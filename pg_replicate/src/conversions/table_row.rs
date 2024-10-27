@@ -5,6 +5,7 @@ use tokio_postgres::{
     binary_copy::BinaryCopyOutRow,
     types::{FromSql, Type},
 };
+use trait_gen::trait_gen;
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
@@ -64,18 +65,6 @@ impl TryFrom<Cell> for std::borrow::Cow<'static, str> {
     }
 }
 
-impl TryFrom<Cell> for Option<String> {
-    type Error = CellConversionError;
-
-    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
-        match cell {
-            Cell::String(s) => Ok(Some(s)),
-            Cell::Null => Ok(None),
-            _ => Err(CellConversionError),
-        }
-    }
-}
-
 impl TryFrom<Cell> for DateTime<Utc> {
     type Error = CellConversionError;
 
@@ -87,12 +76,15 @@ impl TryFrom<Cell> for DateTime<Utc> {
     }
 }
 
-// CR alee: why does a blanket impl conflict here?
-impl TryFrom<Cell> for Option<DateTime<Utc>> {
+#[trait_gen(T -> i64, u64, String, DateTime<Utc>)]
+impl TryFrom<Cell> for Option<T> {
     type Error = CellConversionError;
 
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
-        DateTime::<Utc>::try_from(cell).map(Some)
+        match cell {
+            Cell::Null => Ok(None),
+            _ => T::try_from(cell).map(Some),
+        }
     }
 }
 

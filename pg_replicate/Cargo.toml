@@ -37,6 +37,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-postgres = { workspace = true, features = ["runtime", "with-chrono-0_4"] }
 tracing = { workspace = true, default-features = true }
+trait-gen = { workspace = true }
 
 [dev-dependencies]
 clap = { workspace = true, default-features = true, features = [
