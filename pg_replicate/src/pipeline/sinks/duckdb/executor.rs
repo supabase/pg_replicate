@@ -109,9 +109,12 @@ impl DuckDbExecutor {
                             CdcEvent::Insert((table_id, table_row)) => {
                                 self.insert_row(table_id, table_row)
                             }
-                            CdcEvent::Update((table_id, table_row)) => {
-                                self.update_row(table_id, table_row)
-                            }
+                            CdcEvent::Update {
+                                table_id,
+                                old_row: _,
+                                key_row: _,
+                                row: table_row,
+                            } => self.update_row(table_id, table_row),
                             CdcEvent::Delete((table_id, table_row)) => {
                                 self.delete_row(table_id, table_row)
                             }

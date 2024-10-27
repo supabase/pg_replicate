@@ -204,7 +204,12 @@ impl BatchSink for BigQueryBatchSink {
                         table_name_to_table_rows.entry(table_id).or_default();
                     table_rows.push(table_row);
                 }
-                CdcEvent::Update((table_id, mut table_row)) => {
+                CdcEvent::Update {
+                    table_id,
+                    old_row: _,
+                    key_row: _,
+                    row: mut table_row,
+                } => {
                     table_row.values.push(Cell::String("UPSERT".to_string()));
                     let table_rows: &mut Vec<TableRow> =
                         table_name_to_table_rows.entry(table_id).or_default();

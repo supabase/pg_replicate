@@ -76,6 +76,17 @@ impl TryFrom<Cell> for Option<String> {
     }
 }
 
+impl TryFrom<Cell> for DateTime<Utc> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::TimeStamp(s) => Ok(s.parse().map_err(|_| CellConversionError)?),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("cell conversion error")]
 pub struct CellConversionError;
