@@ -238,6 +238,7 @@ impl ReplicationClient {
             .await?
             .ok_or(ReplicationClientError::MissingTable(table_name.clone()))?;
         let column_schemas = self.get_column_schemas(table_id).await?;
+        println!("{table_name} column_schemas: {:?}", column_schemas);
         Ok(TableSchema {
             table_name,
             table_id,
