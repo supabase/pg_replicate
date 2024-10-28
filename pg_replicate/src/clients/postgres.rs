@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use std::time::Duration;
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutStream,
@@ -68,6 +69,11 @@ impl ReplicationClient {
             .port(port)
             .dbname(database)
             .user(username)
+            // CR alee: thread this thru config
+            .keepalives(true)
+            .keepalives_idle(Duration::from_secs(30))
+            .keepalives_interval(Duration::from_secs(30))
+            .keepalives_retries(3)
             .replication_mode(ReplicationMode::Logical);
 
         if let Some(password) = password {
