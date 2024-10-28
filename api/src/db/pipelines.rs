@@ -18,9 +18,11 @@ pub struct BatchConfig {
 
 pub struct Pipeline {
     pub id: i64,
-    pub tenant_id: i64,
+    pub tenant_id: String,
     pub source_id: i64,
+    pub source_name: String,
     pub sink_id: i64,
+    pub sink_name: String,
     pub replicator_id: i64,
     pub publication_name: String,
     pub config: serde_json::Value,
@@ -28,7 +30,7 @@ pub struct Pipeline {
 
 pub async fn create_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     source_id: i64,
     sink_id: i64,
     image_id: i64,
@@ -60,14 +62,24 @@ pub async fn create_pipeline(
 
 pub async fn read_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
 ) -> Result<Option<Pipeline>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        select id, tenant_id, source_id, sink_id, replicator_id, publication_name, config
-        from app.pipelines
-        where tenant_id = $1 and id = $2
+        select p.id,
+            p.tenant_id,
+            source_id,
+            sr.name as source_name,
+            sink_id,
+            sn.name as sink_name,
+            replicator_id,
+            publication_name,
+            p.config
+        from app.pipelines p
+        join app.sources sr on p.source_id = sr.id
+        join app.sinks sn on p.sink_id = sn.id
+        where p.tenant_id = $1 and p.id = $2
         "#,
         tenant_id,
         pipeline_id,
@@ -79,7 +91,9 @@ pub async fn read_pipeline(
         id: r.id,
         tenant_id: r.tenant_id,
         source_id: r.source_id,
+        source_name: r.source_name,
         sink_id: r.sink_id,
+        sink_name: r.sink_name,
         replicator_id: r.replicator_id,
         publication_name: r.publication_name,
         config: r.config,
@@ -88,7 +102,7 @@ pub async fn read_pipeline(
 
 pub async fn update_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
     source_id: i64,
     sink_id: i64,
@@ -118,7 +132,7 @@ pub async fn update_pipeline(
 
 pub async fn delete_pipeline(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
@@ -138,13 +152,23 @@ pub async fn delete_pipeline(
 
 pub async fn read_all_pipelines(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
 ) -> Result<Vec<Pipeline>, sqlx::Error> {
     let mut record = sqlx::query!(
         r#"
-        select id, tenant_id, source_id, sink_id, replicator_id, publication_name, config
-        from app.pipelines
-        where tenant_id = $1
+        select p.id,
+            p.tenant_id,
+            source_id,
+            sr.name as source_name,
+            sink_id,
+            sn.name as sink_name,
+            replicator_id,
+            publication_name,
+            p.config
+        from app.pipelines p
+        join app.sources sr on p.source_id = sr.id
+        join app.sinks sn on p.sink_id = sn.id
+        where p.tenant_id = $1
         "#,
         tenant_id,
     )
@@ -157,7 +181,9 @@ pub async fn read_all_pipelines(
             id: r.id,
             tenant_id: r.tenant_id,
             source_id: r.source_id,
+            source_name: r.source_name,
             sink_id: r.sink_id,
+            sink_name: r.sink_name,
             replicator_id: r.replicator_id,
             publication_name: r.publication_name,
             config: r.config,

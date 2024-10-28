@@ -6,6 +6,7 @@ members = ["api", "pg_replicate", "replicator"]
 
 [workspace.dependencies]
 actix-web = { version = "4", default-features = false }
+actix-web-httpauth = { version = "0.8.2", default-features = false }
 anyhow = { version = "1.0", default-features = false }
 async-trait = { version = "0.1" }
 aws-lc-rs = { version = "1.8.1", default-features = false }
@@ -14,6 +15,7 @@ bytes = { version = "1.0" }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4.5", default-features = false }
 config = { version = "0.14", default-features = false }
+constant_time_eq = { version = "0.3.1" }
 duckdb = { version = "1.0", default-features = false, features = ["bundled"] }
 futures = { version = "0.3", default-features = false }
 gcp-bigquery-client = { version = "0.23.0", default-features = false }
@@ -29,8 +31,7 @@ rustyline = { version = "14.0.0", default-features = false }
 secrecy = { version = "0.8.0", default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
-sqlx = { git = "https://github.com/launchbadge/sqlx", rev = "20ba796b0d0b8547d2a6f00720294e2ad46700d7" }
-# sqlx = { version = "0.8.1", default-features = false }
+sqlx = { version = "0.8.2", default-features = false }
 thiserror = "1.0"
 tokio = { version = "1.38", default-features = false }
 tokio-postgres = { git = "https://github.com/MaterializeInc/rust-postgres", default-features = false, rev = "02336bebb28507665184c21566e5d1dc8de1dd7d" }

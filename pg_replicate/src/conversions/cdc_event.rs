@@ -42,7 +42,7 @@ pub enum CdcEventConversionError {
     #[error("invalid timestamp value")]
     InvalidTimestamp(#[from] chrono::ParseError),
 
-    #[error("unsupported type")]
+    #[error("unsupported type: {0}")]
     UnsupportedType(String),
 
     #[error("out of range timestamp")]
@@ -80,7 +80,11 @@ impl CdcEventConverter {
         match *typ {
             Type::BOOL => {
                 let val = from_utf8(bytes)?;
-                let val: bool = val.parse()?;
+                let val = match val {
+                    "t" => true,
+                    "f" => false,
+                    _ => val.parse()?,
+                };
                 Ok(Cell::Bool(val))
             }
             // Type::BYTEA => Ok(Value::Bytes(bytes.to_vec())),
@@ -109,7 +113,7 @@ impl CdcEventConverter {
                 let val = val.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                 Ok(Cell::TimeStamp(val))
             }
-            ref typ => Err(CdcEventConversionError::UnsupportedType(typ.to_string())),
+            _ => Ok(Cell::Bytes(bytes.to_vec())),
         }
     }
 

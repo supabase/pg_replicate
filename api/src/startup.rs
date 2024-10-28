@@ -1,6 +1,7 @@
 use std::{net::TcpListener, sync::Arc};
 
 use actix_web::{dev::Server, web, App, HttpServer};
+use actix_web_httpauth::middleware::HttpAuthentication;
 use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -9,6 +10,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
+    authentication::auth_validator,
     configuration::{DatabaseSettings, Settings},
     db::publications::Publication,
     encryption,
@@ -20,9 +22,9 @@ use crate::{
             GetImageResponse, PostImageRequest, PostImageResponse,
         },
         pipelines::{
-            create_pipeline, delete_pipeline, read_all_pipelines, read_pipeline, start_pipeline,
-            stop_pipeline, update_pipeline, GetPipelineResponse, PostPipelineRequest,
-            PostPipelineResponse,
+            create_pipeline, delete_pipeline, get_pipeline_status, read_all_pipelines,
+            read_pipeline, start_pipeline, stop_pipeline, update_pipeline, GetPipelineResponse,
+            PostPipelineRequest, PostPipelineResponse,
         },
         sinks::{
             create_sink, delete_sink, read_all_sinks, read_sink, update_sink, GetSinkResponse,
@@ -39,8 +41,8 @@ use crate::{
             update_source, GetSourceResponse, PostSourceRequest, PostSourceResponse,
         },
         tenants::{
-            create_tenant, delete_tenant, read_all_tenants, read_tenant, update_tenant,
-            GetTenantResponse, PostTenantRequest, PostTenantResponse,
+            create_or_update_tenant, create_tenant, delete_tenant, read_all_tenants, read_tenant,
+            update_tenant, CreateTenantRequest, GetTenantResponse, PostTenantResponse,
         },
     },
 };
@@ -66,10 +68,26 @@ impl Application {
             id: configuration.encryption_key.id,
             key,
         };
+        let api_key = configuration.api_key;
         let k8s_client = HttpK8sClient::new().await?;
-        let server = run(listener, connection_pool, encryption_key, Some(k8s_client)).await?;
+        let server = run(
+            listener,
+            connection_pool,
+            encryption_key,
+            api_key,
+            Some(k8s_client),
+        )
+        .await?;
 
         Ok(Self { port, server })
+    }
+
+    pub async fn migrate_database(configuration: Settings) -> Result<(), anyhow::Error> {
+        let connection_pool = get_connection_pool(&configuration.database);
+
+        sqlx::migrate!("./migrations").run(&connection_pool).await?;
+
+        Ok(())
     }
 
     pub fn port(&self) -> u16 {
@@ -92,10 +110,12 @@ pub async fn run(
     listener: TcpListener,
     connection_pool: PgPool,
     encryption_key: encryption::EncryptionKey,
+    api_key: String,
     http_k8s_client: Option<HttpK8sClient>,
 ) -> Result<Server, anyhow::Error> {
     let connection_pool = web::Data::new(connection_pool);
     let encryption_key = web::Data::new(encryption_key);
+    let api_key = web::Data::new(api_key);
     let k8s_client = http_k8s_client.map(|client| web::Data::new(Arc::new(client)));
 
     #[derive(OpenApi)]
@@ -112,7 +132,9 @@ pub async fn run(
             crate::routes::pipelines::update_pipeline,
             crate::routes::pipelines::delete_pipeline,
             crate::routes::pipelines::read_all_pipelines,
+            crate::routes::pipelines::get_pipeline_status,
             crate::routes::tenants::create_tenant,
+            crate::routes::tenants::create_or_update_tenant,
             crate::routes::tenants::read_tenant,
             crate::routes::tenants::update_tenant,
             crate::routes::tenants::delete_tenant,
@@ -141,7 +163,7 @@ pub async fn run(
             PostPipelineRequest,
             PostPipelineResponse,
             GetPipelineResponse,
-            PostTenantRequest,
+            CreateTenantRequest,
             PostTenantResponse,
             GetTenantResponse,
             PostSourceRequest,
@@ -157,9 +179,12 @@ pub async fn run(
     )]
     struct ApiDoc;
 
+    //TODO: replace all the context_path = v1 in route modules with the nest attribute
+    //when it is available in utoipa 5.0.0: https://github.com/juhaku/utoipa/pull/930
     let openapi = ApiDoc::openapi();
 
     let server = HttpServer::new(move || {
+        let authentication = HttpAuthentication::bearer(auth_validator);
         let app = App::new()
             .wrap(TracingLogger::default())
             .service(health_check)
@@ -168,8 +193,10 @@ pub async fn run(
             )
             .service(
                 web::scope("v1")
+                    .wrap(authentication)
                     //tenants
                     .service(create_tenant)
+                    .service(create_or_update_tenant)
                     .service(read_tenant)
                     .service(update_tenant)
                     .service(delete_tenant)
@@ -194,6 +221,7 @@ pub async fn run(
                     .service(read_all_pipelines)
                     .service(start_pipeline)
                     .service(stop_pipeline)
+                    .service(get_pipeline_status)
                     //tables
                     .service(read_table_names)
                     //publications
@@ -210,7 +238,8 @@ pub async fn run(
                     .service(read_all_images),
             )
             .app_data(connection_pool.clone())
-            .app_data(encryption_key.clone());
+            .app_data(encryption_key.clone())
+            .app_data(api_key.clone());
         if let Some(k8s_client) = k8s_client.clone() {
             app.app_data(k8s_client.clone())
         } else {

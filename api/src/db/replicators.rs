@@ -11,14 +11,14 @@ pub enum ReplicatorStatus {
 
 pub struct Replicator {
     pub id: i64,
-    pub tenant_id: i64,
+    pub tenant_id: String,
     pub image_id: i64,
     pub status: ReplicatorStatus,
 }
 
 pub async fn create_replicator(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     image_id: i64,
 ) -> Result<i64, sqlx::Error> {
     let mut txn = pool.begin().await?;
@@ -29,7 +29,7 @@ pub async fn create_replicator(
 
 pub async fn create_replicator_txn(
     txn: &mut Transaction<'_, Postgres>,
-    tenant_id: i64,
+    tenant_id: &str,
     image_id: i64,
 ) -> Result<i64, sqlx::Error> {
     let record = sqlx::query!(
@@ -50,7 +50,7 @@ pub async fn create_replicator_txn(
 
 pub async fn read_replicator_by_pipeline_id(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
 ) -> Result<Option<Replicator>, sqlx::Error> {
     let record = sqlx::query!(

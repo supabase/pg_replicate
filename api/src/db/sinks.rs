@@ -136,13 +136,15 @@ pub enum SinksDbError {
 
 pub struct Sink {
     pub id: i64,
-    pub tenant_id: i64,
+    pub tenant_id: String,
+    pub name: String,
     pub config: SinkConfig,
 }
 
 pub async fn create_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
+    name: &str,
     config: SinkConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<i64, SinksDbError> {
@@ -150,11 +152,12 @@ pub async fn create_sink(
     let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
     let record = sqlx::query!(
         r#"
-        insert into app.sinks (tenant_id, config)
-        values ($1, $2)
+        insert into app.sinks (tenant_id, name, config)
+        values ($1, $2, $3)
         returning id
         "#,
         tenant_id,
+        name,
         db_config
     )
     .fetch_one(pool)
@@ -165,13 +168,13 @@ pub async fn create_sink(
 
 pub async fn read_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     sink_id: i64,
     encryption_key: &EncryptionKey,
 ) -> Result<Option<Sink>, SinksDbError> {
     let record = sqlx::query!(
         r#"
-        select id, tenant_id, config
+        select id, tenant_id, name, config
         from app.sinks
         where tenant_id = $1 and id = $2
         "#,
@@ -188,6 +191,7 @@ pub async fn read_sink(
             let source = Sink {
                 id: r.id,
                 tenant_id: r.tenant_id,
+                name: r.name,
                 config,
             };
             Ok::<Sink, SinksDbError>(source)
@@ -198,7 +202,8 @@ pub async fn read_sink(
 
 pub async fn update_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
+    name: &str,
     sink_id: i64,
     config: SinkConfig,
     encryption_key: &EncryptionKey,
@@ -208,11 +213,12 @@ pub async fn update_sink(
     let record = sqlx::query!(
         r#"
         update app.sinks
-        set config = $1
-        where tenant_id = $2 and id = $3
+        set config = $1, name = $2
+        where tenant_id = $3 and id = $4
         returning id
         "#,
         db_config,
+        name,
         tenant_id,
         sink_id
     )
@@ -224,7 +230,7 @@ pub async fn update_sink(
 
 pub async fn delete_sink(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     sink_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
@@ -244,12 +250,12 @@ pub async fn delete_sink(
 
 pub async fn read_all_sinks(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     encryption_key: &EncryptionKey,
 ) -> Result<Vec<Sink>, SinksDbError> {
     let records = sqlx::query!(
         r#"
-        select id, tenant_id, config
+        select id, tenant_id, name, config
         from app.sinks
         where tenant_id = $1
         "#,
@@ -265,6 +271,7 @@ pub async fn read_all_sinks(
         let source = Sink {
             id: record.id,
             tenant_id: record.tenant_id,
+            name: record.name,
             config,
         };
         sinks.push(source);
@@ -273,7 +280,11 @@ pub async fn read_all_sinks(
     Ok(sinks)
 }
 
-pub async fn sink_exists(pool: &PgPool, tenant_id: i64, sink_id: i64) -> Result<bool, sqlx::Error> {
+pub async fn sink_exists(
+    pool: &PgPool,
+    tenant_id: &str,
+    sink_id: i64,
+) -> Result<bool, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         select exists (select id

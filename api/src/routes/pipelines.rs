@@ -22,7 +22,7 @@ use crate::{
         sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
-    k8s_client::{HttpK8sClient, K8sClient, K8sError},
+    k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase},
     replicator_config,
     worker::Secrets,
 };
@@ -129,16 +129,18 @@ pub struct PostPipelineResponse {
 #[derive(Serialize, ToSchema)]
 pub struct GetPipelineResponse {
     id: i64,
-    tenant_id: i64,
+    tenant_id: String,
     source_id: i64,
+    source_name: String,
     sink_id: i64,
+    sink_name: String,
     replicator_id: i64,
     publication_name: String,
     config: PipelineConfig,
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PipelineError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, PipelineError> {
     let headers = req.headers();
     let tenant_id = headers
         .get("tenant_id")
@@ -146,13 +148,11 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PipelineError> {
     let tenant_id = tenant_id
         .to_str()
         .map_err(|_| PipelineError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
-        .map_err(|_| PipelineError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostPipelineRequest,
     responses(
         (status = 200, description = "Create new pipeline", body = PostPipelineResponse),
@@ -197,6 +197,7 @@ pub async fn create_pipeline(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
     ),
@@ -223,7 +224,9 @@ pub async fn read_pipeline(
                 id: s.id,
                 tenant_id: s.tenant_id,
                 source_id: s.source_id,
+                source_name: s.source_name,
                 sink_id: s.sink_id,
+                sink_name: s.sink_name,
                 replicator_id: s.replicator_id,
                 publication_name: s.publication_name,
                 config,
@@ -236,6 +239,7 @@ pub async fn read_pipeline(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSinkRequest,
     params(
         ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
@@ -285,6 +289,7 @@ pub async fn update_pipeline(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
     ),
@@ -304,11 +309,12 @@ pub async fn delete_pipeline(
     let pipeline_id = pipeline_id.into_inner();
     db::pipelines::delete_pipeline(&pool, tenant_id, pipeline_id)
         .await?
-        .ok_or(PipelineError::PipelineNotFound(tenant_id))?;
+        .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     responses(
         (status = 200, description = "Return all pipelines"),
         (status = 500, description = "Internal server error")
@@ -327,7 +333,9 @@ pub async fn read_all_pipelines(
             id: pipeline.id,
             tenant_id: pipeline.tenant_id,
             source_id: pipeline.source_id,
+            source_name: pipeline.source_name,
             sink_id: pipeline.sink_id,
+            sink_name: pipeline.sink_name,
             replicator_id: pipeline.replicator_id,
             publication_name: pipeline.publication_name,
             config,
@@ -337,6 +345,13 @@ pub async fn read_all_pipelines(
     Ok(Json(pipelines))
 }
 
+#[utoipa::path(
+    context_path = "/v1",
+    responses(
+        (status = 200, description = "Start a pipeline"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/pipelines/{pipeline_id}/start")]
 pub async fn start_pipeline(
     req: HttpRequest,
@@ -361,6 +376,13 @@ pub async fn start_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    context_path = "/v1",
+    responses(
+        (status = 200, description = "Stop a pipeline"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 #[post("/pipelines/{pipeline_id}/stop")]
 pub async fn stop_pipeline(
     req: HttpRequest,
@@ -383,9 +405,54 @@ pub async fn stop_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[derive(Serialize, ToSchema)]
+pub enum PipelineStatus {
+    Stopped,
+    Starting,
+    Started,
+    Stopping,
+    Unknown,
+}
+
+#[utoipa::path(
+    context_path = "/v1",
+    responses(
+        (status = 200, description = "Get pipeline status"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+#[get("/pipelines/{pipeline_id}/status")]
+pub async fn get_pipeline_status(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    k8s_client: Data<Arc<HttpK8sClient>>,
+    pipeline_id: Path<i64>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let pipeline_id = pipeline_id.into_inner();
+
+    let replicator = db::replicators::read_replicator_by_pipeline_id(&pool, tenant_id, pipeline_id)
+        .await?
+        .ok_or(PipelineError::ReplicatorNotFound(pipeline_id))?;
+
+    let prefix = create_prefix(tenant_id, replicator.id);
+
+    let pod_phase = k8s_client.get_pod_phase(&prefix).await?;
+
+    let status = match pod_phase {
+        PodPhase::Pending => PipelineStatus::Starting,
+        PodPhase::Running => PipelineStatus::Started,
+        PodPhase::Succeeded => PipelineStatus::Stopped,
+        PodPhase::Failed => PipelineStatus::Stopped,
+        PodPhase::Unknown => PipelineStatus::Unknown,
+    };
+
+    Ok(Json(status))
+}
+
 async fn read_data(
     pool: &PgPool,
-    tenant_id: i64,
+    tenant_id: &str,
     pipeline_id: i64,
     encryption_key: &EncryptionKey,
 ) -> Result<(Pipeline, Replicator, Image, Source, Sink), PipelineError> {
@@ -466,7 +533,7 @@ fn create_configs(
     Ok((secrets, config))
 }
 
-fn create_prefix(tenant_id: i64, replicator_id: i64) -> String {
+fn create_prefix(tenant_id: &str, replicator_id: i64) -> String {
     format!("{tenant_id}-{replicator_id}")
 }
 

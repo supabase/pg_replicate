@@ -72,7 +72,7 @@ async fn an_existing_image_can_be_read() {
 }
 
 #[tokio::test]
-async fn an_non_existing_image_cant_be_read() {
+async fn a_non_existing_image_cant_be_read() {
     // Arrange
     let app = spawn_app().await;
 
@@ -123,7 +123,7 @@ async fn an_existing_image_can_be_updated() {
 }
 
 #[tokio::test]
-async fn an_non_existing_source_cant_be_updated() {
+async fn a_non_existing_source_cant_be_updated() {
     // Arrange
     let app = spawn_app().await;
 
@@ -168,7 +168,7 @@ async fn an_existing_image_can_be_deleted() {
 }
 
 #[tokio::test]
-async fn an_non_existing_image_cant_be_deleted() {
+async fn a_non_existing_image_cant_be_deleted() {
     // Arrange
     let app = spawn_app().await;
 

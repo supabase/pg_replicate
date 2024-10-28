@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        insert into app.sources (tenant_id, config)\n        values ($1, $2)\n        returning id\n        ",
+  "query": "\n        insert into app.sources (tenant_id, name, config)\n        values ($1, $2, $3)\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,7 +11,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
+        "Text",
+        "Text",
         "Jsonb"
       ]
     },
@@ -19,5 +20,5 @@
       false
     ]
   },
-  "hash": "f736572d705b2c15f88e40c27dc8bbcea58c640b3c225af61e9b584e7eea70c5"
+  "hash": "0924fd49251cef93c0729c6ce5c803c4d6e340dc6ef9f1a948ff7a60d8e7022f"
 }

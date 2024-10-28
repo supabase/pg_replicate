@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use base64::{prelude::BASE64_STANDARD, Engine};
 use k8s_openapi::api::{
     apps::v1::StatefulSet,
     core::v1::{ConfigMap, Pod, Secret},
@@ -19,6 +20,26 @@ pub enum K8sError {
 
     #[error["kube error: {0}"]]
     Kube(#[from] kube::Error),
+}
+
+pub enum PodPhase {
+    Pending,
+    Running,
+    Succeeded,
+    Failed,
+    Unknown,
+}
+
+impl From<&str> for PodPhase {
+    fn from(value: &str) -> Self {
+        match value {
+            "Pending" => PodPhase::Pending,
+            "Running" => PodPhase::Running,
+            "Succeeded" => PodPhase::Succeeded,
+            "Failed" => PodPhase::Failed,
+            _ => PodPhase::Unknown,
+        }
+    }
 }
 
 #[async_trait]
@@ -56,6 +77,8 @@ pub trait K8sClient {
 
     async fn delete_stateful_set(&self, prefix: &str) -> Result<(), K8sError>;
 
+    async fn get_pod_phase(&self, prefix: &str) -> Result<PodPhase, K8sError>;
+
     async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError>;
 }
 
@@ -71,15 +94,16 @@ const POSTGRES_SECRET_NAME_SUFFIX: &str = "postgres-password";
 const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
 const STATEFUL_SET_NAME_SUFFIX: &str = "replicator";
 const CONTAINER_NAME_SUFFIX: &str = "replicator";
+const NAMESPACE_NAME: &str = "replicator-data-plane";
 
 impl HttpK8sClient {
     pub async fn new() -> Result<HttpK8sClient, K8sError> {
         let client = Client::try_default().await?;
 
-        let secrets_api: Api<Secret> = Api::default_namespaced(client.clone());
-        let config_maps_api: Api<ConfigMap> = Api::default_namespaced(client.clone());
-        let stateful_sets_api: Api<StatefulSet> = Api::default_namespaced(client.clone());
-        let pods_api: Api<Pod> = Api::default_namespaced(client);
+        let secrets_api: Api<Secret> = Api::namespaced(client.clone(), NAMESPACE_NAME);
+        let config_maps_api: Api<ConfigMap> = Api::namespaced(client.clone(), NAMESPACE_NAME);
+        let stateful_sets_api: Api<StatefulSet> = Api::namespaced(client.clone(), NAMESPACE_NAME);
+        let pods_api: Api<Pod> = Api::namespaced(client, NAMESPACE_NAME);
 
         Ok(HttpK8sClient {
             secrets_api,
@@ -99,16 +123,18 @@ impl K8sClient for HttpK8sClient {
     ) -> Result<(), K8sError> {
         info!("patching postgres secret");
 
+        let encoded_postgres_password = BASE64_STANDARD.encode(postgres_password);
         let secret_name = format!("{prefix}-{POSTGRES_SECRET_NAME_SUFFIX}");
         let secret_json = json!({
           "apiVersion": "v1",
           "kind": "Secret",
           "metadata": {
-            "name": secret_name
+            "name": secret_name,
+            "namespace": NAMESPACE_NAME,
           },
           "type": "Opaque",
-          "stringData": {
-            "password": postgres_password,
+          "data": {
+            "password": encoded_postgres_password,
           }
         });
         let secret: Secret = serde_json::from_value(secret_json)?;
@@ -129,16 +155,18 @@ impl K8sClient for HttpK8sClient {
     ) -> Result<(), K8sError> {
         info!("patching bq secret");
 
+        let encoded_bq_service_account_key = BASE64_STANDARD.encode(bq_service_account_key);
         let secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
         let secret_json = json!({
           "apiVersion": "v1",
           "kind": "Secret",
           "metadata": {
-            "name": secret_name
+            "name": secret_name,
+            "namespace": NAMESPACE_NAME,
           },
           "type": "Opaque",
-          "stringData": {
-            "service-account-key": bq_service_account_key,
+          "data": {
+            "service-account-key": encoded_bq_service_account_key,
           }
         });
         let secret: Secret = serde_json::from_value(secret_json)?;
@@ -203,7 +231,8 @@ impl K8sClient for HttpK8sClient {
           "kind": "ConfigMap",
           "apiVersion": "v1",
           "metadata": {
-            "name": config_map_name
+            "name": config_map_name,
+            "namespace": NAMESPACE_NAME,
           },
           "data": {
             "base.yaml": base_config,
@@ -257,6 +286,7 @@ impl K8sClient for HttpK8sClient {
           "kind": "StatefulSet",
           "metadata": {
             "name": stateful_set_name,
+            "namespace": NAMESPACE_NAME,
           },
           "spec": {
             "replicas": 1,
@@ -351,6 +381,37 @@ impl K8sClient for HttpK8sClient {
         self.delete_pod(prefix).await?;
         info!("deleted stateful set");
         Ok(())
+    }
+
+    async fn get_pod_phase(&self, prefix: &str) -> Result<PodPhase, K8sError> {
+        info!("getting pod status");
+        let pod_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}-0");
+        let pod = match self.pods_api.get(&pod_name).await {
+            Ok(pod) => pod,
+            Err(e) => match e {
+                kube::Error::Api(ref er) => {
+                    if er.code == 404 {
+                        return Ok(PodPhase::Succeeded);
+                    }
+                    return Err(e.into());
+                }
+                e => return Err(e.into()),
+            },
+        };
+        let phase = pod
+            .status
+            .map(|status| {
+                let phase: PodPhase = status
+                    .phase
+                    .map(|phase| {
+                        let phase: PodPhase = phase.as_str().into();
+                        phase
+                    })
+                    .unwrap_or(PodPhase::Unknown);
+                phase
+            })
+            .unwrap_or(PodPhase::Unknown);
+        Ok(phase)
     }
 
     async fn delete_pod(&self, prefix: &str) -> Result<(), K8sError> {

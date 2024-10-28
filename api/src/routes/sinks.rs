@@ -74,6 +74,8 @@ impl ResponseError for SinkError {
 
 #[derive(Deserialize, ToSchema)]
 pub struct PostSinkRequest {
+    pub name: String,
+    #[schema(required = true)]
     pub config: SinkConfig,
 }
 
@@ -87,24 +89,24 @@ pub struct GetSinkResponse {
     #[schema(example = 1)]
     id: i64,
     #[schema(example = 1)]
-    tenant_id: i64,
+    tenant_id: String,
+    #[schema(example = "BigQuery Sink")]
+    name: String,
     config: SinkConfig,
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SinkError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, SinkError> {
     let headers = req.headers();
     let tenant_id = headers.get("tenant_id").ok_or(SinkError::TenantIdMissing)?;
     let tenant_id = tenant_id
         .to_str()
         .map_err(|_| SinkError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
-        .map_err(|_| SinkError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSinkRequest,
     responses(
         (status = 200, description = "Create new sink", body = PostSinkResponse),
@@ -120,13 +122,15 @@ pub async fn create_sink(
 ) -> Result<impl Responder, SinkError> {
     let sink = sink.0;
     let tenant_id = extract_tenant_id(&req)?;
+    let name = sink.name;
     let config = sink.config;
-    let id = db::sinks::create_sink(&pool, tenant_id, config, &encryption_key).await?;
+    let id = db::sinks::create_sink(&pool, tenant_id, &name, config, &encryption_key).await?;
     let response = PostSinkResponse { id };
     Ok(Json(response))
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("sink_id" = i64, Path, description = "Id of the sink"),
     ),
@@ -150,6 +154,7 @@ pub async fn read_sink(
         .map(|s| GetSinkResponse {
             id: s.id,
             tenant_id: s.tenant_id,
+            name: s.name,
             config: s.config,
         })
         .ok_or(SinkError::SinkNotFound(sink_id))?;
@@ -157,6 +162,7 @@ pub async fn read_sink(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSinkRequest,
     params(
         ("sink_id" = i64, Path, description = "Id of the sink"),
@@ -178,14 +184,16 @@ pub async fn update_sink(
     let sink = sink.0;
     let tenant_id = extract_tenant_id(&req)?;
     let sink_id = sink_id.into_inner();
+    let name = sink.name;
     let config = sink.config;
-    db::sinks::update_sink(&pool, tenant_id, sink_id, config, &encryption_key)
+    db::sinks::update_sink(&pool, tenant_id, &name, sink_id, config, &encryption_key)
         .await?
         .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("sink_id" = i64, Path, description = "Id of the sink"),
     ),
@@ -205,11 +213,12 @@ pub async fn delete_sink(
     let sink_id = sink_id.into_inner();
     db::sinks::delete_sink(&pool, tenant_id, sink_id)
         .await?
-        .ok_or(SinkError::SinkNotFound(tenant_id))?;
+        .ok_or(SinkError::SinkNotFound(sink_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     responses(
         (status = 200, description = "Return all sinks"),
         (status = 500, description = "Internal server error")
@@ -227,6 +236,7 @@ pub async fn read_all_sinks(
         let sink = GetSinkResponse {
             id: sink.id,
             tenant_id: sink.tenant_id,
+            name: sink.name,
             config: sink.config,
         };
         sinks.push(sink);

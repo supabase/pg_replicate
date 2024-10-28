@@ -78,6 +78,7 @@ impl ResponseError for SourceError {
 
 #[derive(Deserialize, ToSchema)]
 pub struct PostSourceRequest {
+    pub name: String,
     #[schema(required = true)]
     pub config: SourceConfig,
 }
@@ -92,12 +93,14 @@ pub struct GetSourceResponse {
     #[schema(example = 1)]
     id: i64,
     #[schema(example = 1)]
-    tenant_id: i64,
+    tenant_id: String,
+    #[schema(example = "Postgres Source")]
+    name: String,
     config: SourceConfig,
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, SourceError> {
     let headers = req.headers();
     let tenant_id = headers
         .get("tenant_id")
@@ -105,13 +108,11 @@ fn extract_tenant_id(req: &HttpRequest) -> Result<i64, SourceError> {
     let tenant_id = tenant_id
         .to_str()
         .map_err(|_| SourceError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
-        .map_err(|_| SourceError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSourceRequest,
     responses(
         (status = 200, description = "Create new source", body = PostSourceResponse),
@@ -127,13 +128,15 @@ pub async fn create_source(
 ) -> Result<impl Responder, SourceError> {
     let source = source.0;
     let tenant_id = extract_tenant_id(&req)?;
+    let name = source.name;
     let config = source.config;
-    let id = db::sources::create_source(&pool, tenant_id, config, &encryption_key).await?;
+    let id = db::sources::create_source(&pool, tenant_id, &name, config, &encryption_key).await?;
     let response = PostSourceResponse { id };
     Ok(Json(response))
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
     ),
@@ -157,6 +160,7 @@ pub async fn read_source(
         .map(|s| GetSourceResponse {
             id: s.id,
             tenant_id: s.tenant_id,
+            name: s.name,
             config: s.config,
         })
         .ok_or(SourceError::SourceNotFound(source_id))?;
@@ -164,6 +168,7 @@ pub async fn read_source(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = PostSourceRequest,
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
@@ -185,14 +190,16 @@ pub async fn update_source(
     let source = source.0;
     let tenant_id = extract_tenant_id(&req)?;
     let source_id = source_id.into_inner();
+    let name = source.name;
     let config = source.config;
-    db::sources::update_source(&pool, tenant_id, source_id, config, &encryption_key)
+    db::sources::update_source(&pool, tenant_id, &name, source_id, config, &encryption_key)
         .await?
         .ok_or(SourceError::SourceNotFound(source_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
     ),
@@ -212,11 +219,12 @@ pub async fn delete_source(
     let source_id = source_id.into_inner();
     db::sources::delete_source(&pool, tenant_id, source_id)
         .await?
-        .ok_or(SourceError::SourceNotFound(tenant_id))?;
+        .ok_or(SourceError::SourceNotFound(source_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     responses(
         (status = 200, description = "Return all sources"),
         (status = 500, description = "Internal server error")
@@ -234,6 +242,7 @@ pub async fn read_all_sources(
         let source = GetSourceResponse {
             id: source.id,
             tenant_id: source.tenant_id,
+            name: source.name,
             config: source.config,
         };
         sources.push(source);

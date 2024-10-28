@@ -1,16 +1,17 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        insert into app.tenants (name)\n        values ($1)\n        returning id\n        ",
+  "query": "\n        insert into app.tenants (id, name)\n        values ($1, $2)\n        returning id\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "01b5eceaaeaea94b7b47791f0312008829ecaf5b4d2182d6bdca9f360824e6e1"
+  "hash": "7864a7c199c4c65647e620f5c7e77c9f4f8cda589e565fa2d2d5a2f29df9c60e"
 }

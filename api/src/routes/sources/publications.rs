@@ -76,16 +76,13 @@ impl ResponseError for PublicationError {
 }
 
 // TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<i64, PublicationError> {
+fn extract_tenant_id(req: &HttpRequest) -> Result<&str, PublicationError> {
     let headers = req.headers();
     let tenant_id = headers
         .get("tenant_id")
         .ok_or(PublicationError::TenantIdMissing)?;
     let tenant_id = tenant_id
         .to_str()
-        .map_err(|_| PublicationError::TenantIdIllFormed)?;
-    let tenant_id: i64 = tenant_id
-        .parse()
         .map_err(|_| PublicationError::TenantIdIllFormed)?;
     Ok(tenant_id)
 }
@@ -102,6 +99,7 @@ pub struct UpdatePublicationRequest {
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = CreatePublicationRequest,
     responses(
         (status = 200, description = "Create new publication"),
@@ -136,6 +134,7 @@ pub async fn create_publication(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
         ("publication_name" = i64, Path, description = "Name of the publication"),
@@ -170,6 +169,7 @@ pub async fn read_publication(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     request_body = UpdatePublicationRequest,
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
@@ -209,6 +209,7 @@ pub async fn update_publication(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
         ("publication_name" = i64, Path, description = "Name of the publication"),
@@ -241,6 +242,7 @@ pub async fn delete_publication(
 }
 
 #[utoipa::path(
+    context_path = "/v1",
     params(
         ("source_id" = i64, Path, description = "Id of the source"),
     ),

@@ -53,35 +53,35 @@ pub struct Secrets {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum Request {
     CreateOrUpdateSecrets {
-        tenant_id: i64,
+        tenant_id: String,
         replicator_id: i64,
         secrets: Secrets,
     },
     CreateOrUpdateConfig {
-        tenant_id: i64,
+        tenant_id: String,
         replicator_id: i64,
         config: replicator_config::Config,
     },
     CreateOrUpdateReplicator {
-        tenant_id: i64,
+        tenant_id: String,
         replicator_id: i64,
         replicator_image: String,
     },
     DeleteSecrets {
-        tenant_id: i64,
+        tenant_id: String,
         replicator_id: i64,
     },
     DeleteConfig {
-        tenant_id: i64,
+        tenant_id: String,
         replicator_id: i64,
     },
     DeleteReplicator {
-        tenant_id: i64,
+        tenant_id: String,
         replicator_id: i64,
     },
 }
 
-fn create_prefix(tenant_id: i64, replicator_id: i64) -> String {
+fn create_prefix(tenant_id: &str, replicator_id: i64) -> String {
     format!("{tenant_id}-{replicator_id}")
 }
 
@@ -107,7 +107,7 @@ pub async fn try_execute_task<C: K8sClient>(
                 postgres_password,
                 bigquery_service_account_key,
             } = secrets;
-            let prefix = create_prefix(tenant_id, replicator_id);
+            let prefix = create_prefix(&tenant_id, replicator_id);
             k8s_client
                 .create_or_update_postgres_secret(&prefix, &postgres_password)
                 .await?;
@@ -123,7 +123,7 @@ pub async fn try_execute_task<C: K8sClient>(
             info!("creating config map for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
             let base_config = "";
             let prod_config = serde_json::to_string(&config)?;
-            let prefix = create_prefix(tenant_id, replicator_id);
+            let prefix = create_prefix(&tenant_id, replicator_id);
             k8s_client
                 .create_or_update_config_map(&prefix, base_config, &prod_config)
                 .await?;
@@ -137,7 +137,7 @@ pub async fn try_execute_task<C: K8sClient>(
                 "creating or updating stateful set for tenant_id: {tenant_id}, replicator_id: {replicator_id}"
             );
 
-            let prefix = create_prefix(tenant_id, replicator_id);
+            let prefix = create_prefix(&tenant_id, replicator_id);
             k8s_client
                 .create_or_update_stateful_set(&prefix, &replicator_image)
                 .await?;
@@ -147,7 +147,7 @@ pub async fn try_execute_task<C: K8sClient>(
             replicator_id,
         } => {
             info!("deleting secrets for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
-            let prefix = create_prefix(tenant_id, replicator_id);
+            let prefix = create_prefix(&tenant_id, replicator_id);
             k8s_client.delete_postgres_secret(&prefix).await?;
             k8s_client.delete_bq_secret(&prefix).await?;
         }
@@ -156,7 +156,7 @@ pub async fn try_execute_task<C: K8sClient>(
             replicator_id,
         } => {
             info!("deleting config map for tenant_id: {tenant_id}, replicator_id: {replicator_id}");
-            let prefix = create_prefix(tenant_id, replicator_id);
+            let prefix = create_prefix(&tenant_id, replicator_id);
             k8s_client.delete_config_map(&prefix).await?;
         }
         Request::DeleteReplicator {
@@ -166,7 +166,7 @@ pub async fn try_execute_task<C: K8sClient>(
             info!(
                 "deleting stateful set for tenant_id: {tenant_id}, replicator_id: {replicator_id}"
             );
-            let prefix = create_prefix(tenant_id, replicator_id);
+            let prefix = create_prefix(&tenant_id, replicator_id);
             k8s_client.delete_stateful_set(&prefix).await?;
         }
     }

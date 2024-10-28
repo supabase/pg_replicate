@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        update app.sinks\n        set config = $1\n        where tenant_id = $2 and id = $3\n        returning id\n        ",
+  "query": "\n        update app.sinks\n        set config = $1, name = $2\n        where tenant_id = $3 and id = $4\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -12,7 +12,8 @@
     "parameters": {
       "Left": [
         "Jsonb",
-        "Int8",
+        "Text",
+        "Text",
         "Int8"
       ]
     },
@@ -20,5 +21,5 @@
       false
     ]
   },
-  "hash": "2a9043b2604069c6fa6811296d42717b40183cd308f913071c991affa16f9109"
+  "hash": "f983ba0445a3d79ed34cbbfa4da50f33371e331f7bf52856d637769fed56ffc1"
 }
