@@ -32,6 +32,28 @@ impl TryFrom<Cell> for bool {
     }
 }
 
+impl TryFrom<Cell> for i32 {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::I32(i) => Ok(i),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
+impl TryFrom<Cell> for u32 {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::I32(i) => Ok(i as u32),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
 impl TryFrom<Cell> for i64 {
     type Error = CellConversionError;
 
@@ -87,7 +109,7 @@ impl TryFrom<Cell> for DateTime<Utc> {
     }
 }
 
-#[trait_gen(T -> bool, i64, u64, String, DateTime<Utc>)]
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, DateTime<Utc>)]
 impl TryFrom<Cell> for Option<T> {
     type Error = CellConversionError;
 
