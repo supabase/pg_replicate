@@ -116,8 +116,8 @@ impl CdcEventConverter {
             Type::TIMESTAMPTZ => {
                 let val = from_utf8(bytes)?;
                 let val: DateTime<FixedOffset> =
-                    DateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f%z")?;
-                let val = val.format("%Y-%m-%d %H:%M:%S%.f%z").to_string();
+                    DateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f%:z")?;
+                let val = val.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
                 // CR alee: not quite correct I think, need to test
                 Ok(Cell::TimeStamp(val))
             }
