@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::{
     db::{self, sources::SourcesDbError},
     encryption::EncryptionKey,
-    routes::ErrorMessage,
+    routes::{extract_tenant_id, ErrorMessage, TenantIdError},
 };
 
 #[derive(Debug, Error)]
@@ -21,11 +21,8 @@ enum TableError {
     #[error("source with id {0} not found")]
     SourceNotFound(i64),
 
-    #[error("tenant id missing in request")]
-    TenantIdMissing,
-
-    #[error("tenant id ill formed in request")]
-    TenantIdIllFormed,
+    #[error("tenant id error: {0}")]
+    TenantId(#[from] TenantIdError),
 
     #[error("sources db error: {0}")]
     SourcesDb(#[from] SourcesDbError),
@@ -49,7 +46,7 @@ impl ResponseError for TableError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             TableError::SourceNotFound(_) => StatusCode::NOT_FOUND,
-            TableError::TenantIdMissing | TableError::TenantIdIllFormed => StatusCode::BAD_REQUEST,
+            TableError::TenantId(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -63,18 +60,6 @@ impl ResponseError for TableError {
             .insert_header(ContentType::json())
             .body(body)
     }
-}
-
-// TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<&str, TableError> {
-    let headers = req.headers();
-    let tenant_id = headers
-        .get("tenant_id")
-        .ok_or(TableError::TenantIdMissing)?;
-    let tenant_id = tenant_id
-        .to_str()
-        .map_err(|_| TableError::TenantIdIllFormed)?;
-    Ok(tenant_id)
 }
 
 #[utoipa::path(

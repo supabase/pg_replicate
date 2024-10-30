@@ -24,9 +24,10 @@ use crate::{
     encryption::EncryptionKey,
     k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase},
     replicator_config,
+    routes::extract_tenant_id,
 };
 
-use super::ErrorMessage;
+use super::{ErrorMessage, TenantIdError};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Secrets {
@@ -57,11 +58,8 @@ enum PipelineError {
     #[error("no default image found")]
     NoDefaultImageFound,
 
-    #[error("tenant id missing in request")]
-    TenantIdMissing,
-
-    #[error("tenant id ill formed in request")]
-    TenantIdIllFormed,
+    #[error("tenant id error: {0}")]
+    TenantId(#[from] TenantIdError),
 
     #[error("invalid sink config")]
     InvalidConfig(#[from] serde_json::Error),
@@ -99,8 +97,7 @@ impl ResponseError for PipelineError {
             | PipelineError::SinksDb(_)
             | PipelineError::K8sError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
-            PipelineError::TenantIdMissing
-            | PipelineError::TenantIdIllFormed
+            PipelineError::TenantId(_)
             | PipelineError::SourceNotFound(_)
             | PipelineError::SinkNotFound(_) => StatusCode::BAD_REQUEST,
         }
@@ -142,18 +139,6 @@ pub struct GetPipelineResponse {
     replicator_id: i64,
     publication_name: String,
     config: PipelineConfig,
-}
-
-// TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<&str, PipelineError> {
-    let headers = req.headers();
-    let tenant_id = headers
-        .get("tenant_id")
-        .ok_or(PipelineError::TenantIdMissing)?;
-    let tenant_id = tenant_id
-        .to_str()
-        .map_err(|_| PipelineError::TenantIdIllFormed)?;
-    Ok(tenant_id)
 }
 
 #[utoipa::path(

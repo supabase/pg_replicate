@@ -16,9 +16,10 @@ use crate::{
         sinks::{SinkConfig, SinksDbError},
     },
     encryption::EncryptionKey,
+    routes::extract_tenant_id,
 };
 
-use super::ErrorMessage;
+use super::{ErrorMessage, TenantIdError};
 
 #[derive(Debug, Error)]
 enum SinkError {
@@ -28,11 +29,8 @@ enum SinkError {
     #[error("sink with id {0} not found")]
     SinkNotFound(i64),
 
-    #[error("tenant id missing in request")]
-    TenantIdMissing,
-
-    #[error("tenant id ill formed in request")]
-    TenantIdIllFormed,
+    #[error("tenant id error: {0}")]
+    TenantId(#[from] TenantIdError),
 
     #[error("sinks db error: {0}")]
     SinksDb(#[from] SinksDbError),
@@ -56,7 +54,7 @@ impl ResponseError for SinkError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             SinkError::SinkNotFound(_) => StatusCode::NOT_FOUND,
-            SinkError::TenantIdMissing | SinkError::TenantIdIllFormed => StatusCode::BAD_REQUEST,
+            SinkError::TenantId(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -93,16 +91,6 @@ pub struct GetSinkResponse {
     #[schema(example = "BigQuery Sink")]
     name: String,
     config: SinkConfig,
-}
-
-// TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<&str, SinkError> {
-    let headers = req.headers();
-    let tenant_id = headers.get("tenant_id").ok_or(SinkError::TenantIdMissing)?;
-    let tenant_id = tenant_id
-        .to_str()
-        .map_err(|_| SinkError::TenantIdIllFormed)?;
-    Ok(tenant_id)
 }
 
 #[utoipa::path(

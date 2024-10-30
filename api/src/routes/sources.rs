@@ -10,13 +10,14 @@ use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use super::ErrorMessage;
+use super::{ErrorMessage, TenantIdError};
 use crate::{
     db::{
         self,
         sources::{SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
+    routes::extract_tenant_id,
 };
 
 pub mod publications;
@@ -30,11 +31,8 @@ enum SourceError {
     #[error("source with id {0} not found")]
     SourceNotFound(i64),
 
-    #[error("tenant id missing in request")]
-    TenantIdMissing,
-
-    #[error("tenant id ill formed in request")]
-    TenantIdIllFormed,
+    #[error("tenant id error: {0}")]
+    TenantId(#[from] TenantIdError),
 
     #[error("sources db error: {0}")]
     SourcesDb(#[from] SourcesDbError),
@@ -58,9 +56,7 @@ impl ResponseError for SourceError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             SourceError::SourceNotFound(_) => StatusCode::NOT_FOUND,
-            SourceError::TenantIdMissing | SourceError::TenantIdIllFormed => {
-                StatusCode::BAD_REQUEST
-            }
+            SourceError::TenantId(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -97,18 +93,6 @@ pub struct GetSourceResponse {
     #[schema(example = "Postgres Source")]
     name: String,
     config: SourceConfig,
-}
-
-// TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<&str, SourceError> {
-    let headers = req.headers();
-    let tenant_id = headers
-        .get("tenant_id")
-        .ok_or(SourceError::TenantIdMissing)?;
-    let tenant_id = tenant_id
-        .to_str()
-        .map_err(|_| SourceError::TenantIdIllFormed)?;
-    Ok(tenant_id)
 }
 
 #[utoipa::path(

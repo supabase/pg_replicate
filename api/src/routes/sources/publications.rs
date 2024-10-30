@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 use crate::{
     db::{self, publications::Publication, sources::SourcesDbError, tables::Table},
     encryption::EncryptionKey,
-    routes::ErrorMessage,
+    routes::{extract_tenant_id, ErrorMessage, TenantIdError},
 };
 
 #[derive(Debug, Error)]
@@ -27,11 +27,8 @@ enum PublicationError {
     #[error("publication with name {0} not found")]
     PublicationNotFound(String),
 
-    #[error("tenant id missing in request")]
-    TenantIdMissing,
-
-    #[error("tenant id ill formed in request")]
-    TenantIdIllFormed,
+    #[error("tenant id error: {0}")]
+    TenantId(#[from] TenantIdError),
 
     #[error("sources db error: {0}")]
     SourcesDb(#[from] SourcesDbError),
@@ -57,9 +54,7 @@ impl ResponseError for PublicationError {
             PublicationError::SourceNotFound(_) | PublicationError::PublicationNotFound(_) => {
                 StatusCode::NOT_FOUND
             }
-            PublicationError::TenantIdMissing | PublicationError::TenantIdIllFormed => {
-                StatusCode::BAD_REQUEST
-            }
+            PublicationError::TenantId(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -73,18 +68,6 @@ impl ResponseError for PublicationError {
             .insert_header(ContentType::json())
             .body(body)
     }
-}
-
-// TODO: read tenant_id from a jwt
-fn extract_tenant_id(req: &HttpRequest) -> Result<&str, PublicationError> {
-    let headers = req.headers();
-    let tenant_id = headers
-        .get("tenant_id")
-        .ok_or(PublicationError::TenantIdMissing)?;
-    let tenant_id = tenant_id
-        .to_str()
-        .map_err(|_| PublicationError::TenantIdIllFormed)?;
-    Ok(tenant_id)
 }
 
 #[derive(Deserialize, ToSchema)]
