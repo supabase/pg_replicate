@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        insert into app.task_queue (name, data)\n        values($1, $2) returning id\n        ",
+  "query": "\n        insert into app.replicators (tenant_id, image_id)\n        values ($1, $2)\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -12,12 +12,12 @@
     "parameters": {
       "Left": [
         "Text",
-        "Jsonb"
+        "Int8"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "ee10a565cf45a6ed6122cabefa46c297648653b9aaf11399149fff1f9a779182"
+  "hash": "c76d3e7cbd7f1d47acef03ffcdcd3e505581e1b595ffc84d1ef1e824d49d7bb5"
 }
