@@ -24,10 +24,15 @@ use crate::{
     encryption::EncryptionKey,
     k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase},
     replicator_config,
-    worker::Secrets,
 };
 
 use super::ErrorMessage;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct Secrets {
+    pub postgres_password: String,
+    pub bigquery_service_account_key: String,
+}
 
 #[derive(Debug, Error)]
 enum PipelineError {
