@@ -17,8 +17,9 @@ use prost::Message;
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
 
+use crate::conversions::Cell;
 use crate::{
-    conversions::table_row::{Cell, TableRow},
+    conversions::table_row::TableRow,
     table::{ColumnSchema, TableId, TableSchema},
 };
 

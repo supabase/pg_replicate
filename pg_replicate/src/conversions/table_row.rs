@@ -8,17 +8,7 @@ use tokio_postgres::{
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
-#[derive(Debug)]
-pub enum Cell {
-    Null,
-    Bool(bool),
-    String(String),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-    TimeStamp(String),
-    Bytes(Vec<u8>),
-}
+use super::Cell;
 
 #[derive(Debug)]
 pub struct TableRow {

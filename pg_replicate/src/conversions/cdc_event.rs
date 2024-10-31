@@ -17,7 +17,7 @@ use crate::{
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::table_row::{Cell, TableRow};
+use super::{table_row::TableRow, Cell};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {

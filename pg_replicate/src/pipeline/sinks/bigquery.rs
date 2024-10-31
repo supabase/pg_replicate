@@ -8,10 +8,7 @@ use tracing::info;
 
 use crate::{
     clients::bigquery::BigQueryClient,
-    conversions::{
-        cdc_event::CdcEvent,
-        table_row::{Cell, TableRow},
-    },
+    conversions::{cdc_event::CdcEvent, table_row::TableRow, Cell},
     pipeline::PipelineResumptionState,
     table::{ColumnSchema, TableId, TableSchema},
 };

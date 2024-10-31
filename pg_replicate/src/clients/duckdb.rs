@@ -8,7 +8,7 @@ use duckdb::{
 use tokio_postgres::types::{PgLsn, Type};
 
 use crate::{
-    conversions::table_row::{Cell, TableRow},
+    conversions::{table_row::TableRow, Cell},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
