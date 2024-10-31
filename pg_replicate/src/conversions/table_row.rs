@@ -179,6 +179,25 @@ impl TableRowConverter {
                 };
                 Ok(val)
             }
+            Type::TIMESTAMPTZ => {
+                let val = if column_schema.nullable {
+                    match row.try_get::<DateTime<Utc>>(i) {
+                        Ok(time) => {
+                            let val = time.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                            Cell::TimeStampTz(val)
+                        }
+                        Err(_) => {
+                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
+                            Cell::Null
+                        }
+                    }
+                } else {
+                    let time = row.get::<DateTime<Utc>>(i);
+                    let val = time.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                    Cell::TimeStampTz(val)
+                };
+                Ok(val)
+            }
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
             #[cfg(feature = "unknown_types_to_bytes")]
