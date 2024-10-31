@@ -1,10 +1,10 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
+#[cfg(feature = "unknown_types_to_bytes")]
 use postgres_protocol::types;
 use thiserror::Error;
-use tokio_postgres::{
-    binary_copy::BinaryCopyOutRow,
-    types::{FromSql, Type},
-};
+#[cfg(feature = "unknown_types_to_bytes")]
+use tokio_postgres::types::FromSql;
+use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
@@ -39,8 +39,10 @@ pub struct TableRowConverter;
 ///
 /// This type is useful in retriveing bytes from the Postgres wire
 /// protocol for the fallback case of unsupported type.
+#[cfg(feature = "unknown_types_to_bytes")]
 struct VecWrapper(Vec<u8>);
 
+#[cfg(feature = "unknown_types_to_bytes")]
 impl<'a> FromSql<'a> for VecWrapper {
     fn from_sql(
         _: &Type,
@@ -177,6 +179,9 @@ impl TableRowConverter {
                 };
                 Ok(val)
             }
+            #[cfg(not(feature = "unknown_types_to_bytes"))]
+            ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
+            #[cfg(feature = "unknown_types_to_bytes")]
             _ => {
                 let val = if column_schema.nullable {
                     match row.try_get::<VecWrapper>(i) {

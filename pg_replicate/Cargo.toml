@@ -51,4 +51,6 @@ tracing-subscriber = { workspace = true, default-features = true, features = [
 bigquery = ["dep:gcp-bigquery-client", "dep:prost"]
 duckdb = ["dep:duckdb"]
 stdout = []
-default = []
+# When enabled converts unknown types to bytes
+unknown_types_to_bytes = []
+default = ["unknown_types_to_bytes"]
