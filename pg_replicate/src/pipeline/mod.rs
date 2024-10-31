@@ -12,6 +12,7 @@ pub mod data_pipeline;
 pub mod sinks;
 pub mod sources;
 
+#[derive(Debug)]
 pub enum PipelineAction {
     TableCopiesOnly,
     CdcOnly,
