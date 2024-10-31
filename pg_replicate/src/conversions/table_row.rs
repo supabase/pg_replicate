@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Local, NaiveDateTime, Utc};
 #[cfg(feature = "unknown_types_to_bytes")]
 use postgres_protocol::types;
 use thiserror::Error;
@@ -181,9 +181,9 @@ impl TableRowConverter {
             }
             Type::TIMESTAMPTZ => {
                 let val = if column_schema.nullable {
-                    match row.try_get::<DateTime<Utc>>(i) {
+                    match row.try_get::<DateTime<Local>>(i) {
                         Ok(time) => {
-                            let val = time.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                            let val = time.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
                             Cell::TimeStampTz(val)
                         }
                         Err(_) => {
@@ -192,8 +192,8 @@ impl TableRowConverter {
                         }
                     }
                 } else {
-                    let time = row.get::<DateTime<Utc>>(i);
-                    let val = time.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                    let time = row.get::<DateTime<Local>>(i);
+                    let val = time.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
                     Cell::TimeStampTz(val)
                 };
                 Ok(val)
