@@ -67,6 +67,7 @@ pub enum CdcEventConversionError {
 pub struct CdcEventConverter;
 
 impl CdcEventConverter {
+    // Make sure any changes here are also done in TableRowConverter::get_cell_value
     fn from_tuple_data(typ: &Type, val: &TupleData) -> Result<Cell, CdcEventConversionError> {
         let bytes = match val {
             TupleData::Null => {

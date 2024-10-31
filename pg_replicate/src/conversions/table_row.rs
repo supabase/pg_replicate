@@ -71,6 +71,7 @@ impl<'a> FromSql<'a> for VecWrapper {
 }
 
 impl TableRowConverter {
+    // Make sure any changes here are also done in CdcEventConverter::from_tuple_data
     fn get_cell_value(
         row: &BinaryCopyOutRow,
         column_schema: &ColumnSchema,
