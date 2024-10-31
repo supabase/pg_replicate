@@ -1,6 +1,7 @@
 use std::{collections::HashSet, fs};
 
 use bytes::{Buf, BufMut};
+use chrono::{DateTime, Local, NaiveDateTime};
 use futures::StreamExt;
 use gcp_bigquery_client::yup_oauth2::parse_service_account_key;
 use gcp_bigquery_client::{
@@ -537,13 +538,15 @@ impl Message for TableRow {
                     }
                 }
                 Cell::TimeStamp(t) => {
-                    if !t.is_empty() {
-                        ::prost::encoding::string::encode(tag, t, buf);
+                    let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                    if !s.is_empty() {
+                        ::prost::encoding::string::encode(tag, &s, buf);
                     }
                 }
                 Cell::TimeStampTz(t) => {
-                    if !t.is_empty() {
-                        ::prost::encoding::string::encode(tag, t, buf);
+                    let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
+                    if !s.is_empty() {
+                        ::prost::encoding::string::encode(tag, &s, buf);
                     }
                 }
                 Cell::Bytes(b) => {
@@ -612,15 +615,17 @@ impl Message for TableRow {
                     }
                 }
                 Cell::TimeStamp(t) => {
-                    if !t.is_empty() {
-                        ::prost::encoding::string::encoded_len(tag, t)
+                    let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                    if !s.is_empty() {
+                        ::prost::encoding::string::encoded_len(tag, &s)
                     } else {
                         0
                     }
                 }
                 Cell::TimeStampTz(t) => {
-                    if !t.is_empty() {
-                        ::prost::encoding::string::encoded_len(tag, t)
+                    let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
+                    if !s.is_empty() {
+                        ::prost::encoding::string::encoded_len(tag, &s)
                     } else {
                         0
                     }
@@ -647,8 +652,8 @@ impl Message for TableRow {
                 Cell::I16(i) => *i = 0,
                 Cell::I32(i) => *i = 0,
                 Cell::I64(i) => *i = 0,
-                Cell::TimeStamp(t) => t.clear(),
-                Cell::TimeStampTz(t) => t.clear(),
+                Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
+                Cell::TimeStampTz(t) => *t = DateTime::<Local>::default(),
                 Cell::Bytes(b) => b.clear(),
             }
         }

@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::Path};
 
 use duckdb::{
     params_from_iter,
-    types::{Null, ToSqlOutput},
+    types::{Null, ToSqlOutput, Value},
     Config, Connection, ToSql,
 };
 use tokio_postgres::types::{PgLsn, Type};
@@ -359,8 +359,14 @@ impl ToSql for Cell {
             Cell::I16(i) => i.to_sql(),
             Cell::I32(i) => i.to_sql(),
             Cell::I64(i) => i.to_sql(),
-            Cell::TimeStamp(t) => t.to_sql(),
-            Cell::TimeStampTz(t) => t.to_sql(),
+            Cell::TimeStamp(t) => {
+                let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                Ok(ToSqlOutput::Owned(Value::Text(s)))
+            }
+            Cell::TimeStampTz(t) => {
+                let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
+                Ok(ToSqlOutput::Owned(Value::Text(s)))
+            }
             Cell::Null => Null.to_sql(),
             Cell::Bytes(b) => b.to_sql(),
         }

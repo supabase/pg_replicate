@@ -163,10 +163,7 @@ impl TableRowConverter {
             Type::TIMESTAMP => {
                 let val = if column_schema.nullable {
                     match row.try_get::<NaiveDateTime>(i) {
-                        Ok(s) => {
-                            let s = s.format("%Y-%m-%d %H:%M:%S%.f").to_string();
-                            Cell::TimeStamp(s.to_string())
-                        }
+                        Ok(s) => Cell::TimeStamp(s),
                         Err(_) => {
                             //TODO: Only return null if the error is WasNull from tokio_postgres crate
                             Cell::Null
@@ -174,7 +171,6 @@ impl TableRowConverter {
                     }
                 } else {
                     let val = row.get::<NaiveDateTime>(i);
-                    let val = val.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     Cell::TimeStamp(val)
                 };
                 Ok(val)
@@ -182,18 +178,14 @@ impl TableRowConverter {
             Type::TIMESTAMPTZ => {
                 let val = if column_schema.nullable {
                     match row.try_get::<DateTime<Local>>(i) {
-                        Ok(time) => {
-                            let val = time.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
-                            Cell::TimeStampTz(val)
-                        }
+                        Ok(val) => Cell::TimeStampTz(val),
                         Err(_) => {
                             //TODO: Only return null if the error is WasNull from tokio_postgres crate
                             Cell::Null
                         }
                     }
                 } else {
-                    let time = row.get::<DateTime<Local>>(i);
-                    let val = time.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
+                    let val = row.get::<DateTime<Local>>(i);
                     Cell::TimeStampTz(val)
                 };
                 Ok(val)

@@ -4,6 +4,7 @@ use std::{
     str::{from_utf8, ParseBoolError, Utf8Error},
 };
 
+use chrono::{Local, NaiveDateTime, TimeZone};
 use postgres_protocol::message::backend::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
     ReplicationMessage, TupleData, UpdateBody,
@@ -109,11 +110,14 @@ impl CdcEventConverter {
             }
             Type::TIMESTAMP => {
                 let val = from_utf8(bytes)?;
-                Ok(Cell::TimeStamp(val.to_string()))
+                let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")?;
+                Ok(Cell::TimeStamp(val))
             }
             Type::TIMESTAMPTZ => {
                 let val = from_utf8(bytes)?;
-                Ok(Cell::TimeStamp(val.to_string()))
+                let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f%:z")?;
+                let val = Local.from_utc_datetime(&val);
+                Ok(Cell::TimeStampTz(val))
             }
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => Ok(Cell::Bytes(bytes.to_vec())),

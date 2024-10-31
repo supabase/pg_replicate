@@ -1,3 +1,5 @@
+use chrono::{DateTime, Local, NaiveDateTime};
+
 pub mod cdc_event;
 pub mod table_row;
 
@@ -9,7 +11,7 @@ pub enum Cell {
     I16(i16),
     I32(i32),
     I64(i64),
-    TimeStamp(String),
-    TimeStampTz(String),
+    TimeStamp(NaiveDateTime),
+    TimeStampTz(DateTime<Local>),
     Bytes(Vec<u8>),
 }
