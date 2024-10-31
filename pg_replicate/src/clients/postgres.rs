@@ -32,6 +32,9 @@ pub enum ReplicationClientError {
     #[error("column {0} is missing from table {1}")]
     MissingColumn(String, String),
 
+    #[error("publication {0} doesn't exist")]
+    MissingPublication(String),
+
     #[error("oid column is not a valid u32")]
     OidColumnNotU32,
 
@@ -389,6 +392,26 @@ impl ReplicationClient {
         }
 
         Ok(table_names)
+    }
+
+    pub async fn publication_exists(
+        &self,
+        publication: &str,
+    ) -> Result<bool, ReplicationClientError> {
+        let publication_exists_query = format!(
+            "select 1 as exists from pg_publication where pubname = {};",
+            quote_literal(publication)
+        );
+        for msg in self
+            .postgres_client
+            .simple_query(&publication_exists_query)
+            .await?
+        {
+            if let SimpleQueryMessage::Row(_) = msg {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub async fn get_logical_replication_stream(

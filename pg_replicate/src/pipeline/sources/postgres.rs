@@ -92,12 +92,19 @@ impl PostgresSource {
     ) -> Result<(Vec<TableName>, Option<String>), ReplicationClientError> {
         Ok(match table_names_from {
             TableNamesFrom::Vec(table_names) => (table_names, None),
-            TableNamesFrom::Publication(publication) => (
-                replication_client
-                    .get_publication_table_names(&publication)
-                    .await?,
-                Some(publication),
-            ),
+            TableNamesFrom::Publication(publication) => {
+                if !replication_client.publication_exists(&publication).await? {
+                    return Err(ReplicationClientError::MissingPublication(
+                        publication.to_string(),
+                    ));
+                }
+                (
+                    replication_client
+                        .get_publication_table_names(&publication)
+                        .await?,
+                    Some(publication),
+                )
+            }
         })
     }
 }
