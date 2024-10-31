@@ -114,6 +114,10 @@ impl CdcEventConverter {
                 let val = val.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                 Ok(Cell::TimeStamp(val))
             }
+            Type::TIMESTAMPTZ => {
+                let val = from_utf8(bytes)?;
+                Ok(Cell::TimeStamp(val.to_string()))
+            }
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => Ok(Cell::Bytes(bytes.to_vec())),
             #[cfg(not(feature = "unknown_types_to_bytes"))]
