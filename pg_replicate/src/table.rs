@@ -1,8 +1,7 @@
 use std::fmt::Display;
 
+use pg_escape::quote_identifier;
 use tokio_postgres::types::Type;
-
-use crate::escape::quote_identifier;
 
 #[derive(Debug, Clone)]
 pub struct TableName {

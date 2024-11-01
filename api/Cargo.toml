@@ -27,6 +27,7 @@ kube = { workspace = true, features = [
     "client",
     "rustls-tls",
 ] }
+pg_escape = { workspace = true }
 rand = { workspace = true, features = ["std"] }
 reqwest = { workspace = true, features = ["json"] }
 secrecy = { workspace = true, features = ["serde", "alloc"] }

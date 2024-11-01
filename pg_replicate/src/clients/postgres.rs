@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use pg_escape::{quote_identifier, quote_literal};
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutStream,
@@ -10,10 +11,7 @@ use tokio_postgres::{
 };
 use tracing::{info, warn};
 
-use crate::{
-    escape::{quote_identifier, quote_literal},
-    table::{ColumnSchema, TableId, TableName, TableSchema},
-};
+use crate::table::{ColumnSchema, TableId, TableName, TableSchema};
 
 pub struct SlotInfo {
     pub confirmed_flush_lsn: PgLsn,
