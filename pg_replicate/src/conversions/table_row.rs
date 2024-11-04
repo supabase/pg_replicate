@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime};
 #[cfg(feature = "unknown_types_to_bytes")]
 use postgres_protocol::types;
 use thiserror::Error;
@@ -25,9 +25,6 @@ impl BatchBoundary for TableRow {
 pub enum TableRowConversionError {
     #[error("unsupported type {0}")]
     UnsupportedType(Type),
-
-    #[error("failed to get timestamp nanos from {0}")]
-    NoTimestampNanos(DateTime<Utc>),
 }
 
 pub struct TableRowConverter;
@@ -177,16 +174,16 @@ impl TableRowConverter {
             }
             Type::TIMESTAMPTZ => {
                 let val = if column_schema.nullable {
-                    match row.try_get::<DateTime<Local>>(i) {
-                        Ok(val) => Cell::TimeStampTz(val),
+                    match row.try_get::<DateTime<FixedOffset>>(i) {
+                        Ok(val) => Cell::TimeStampTz(val.into()),
                         Err(_) => {
                             //TODO: Only return null if the error is WasNull from tokio_postgres crate
                             Cell::Null
                         }
                     }
                 } else {
-                    let val = row.get::<DateTime<Local>>(i);
-                    Cell::TimeStampTz(val)
+                    let val = row.get::<DateTime<FixedOffset>>(i);
+                    Cell::TimeStampTz(val.into())
                 };
                 Ok(val)
             }
