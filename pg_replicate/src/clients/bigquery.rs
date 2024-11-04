@@ -512,47 +512,31 @@ impl Message for TableRow {
             match cell {
                 Cell::Null => {}
                 Cell::Bool(b) => {
-                    if *b {
-                        ::prost::encoding::bool::encode(tag, b, buf);
-                    }
+                    ::prost::encoding::bool::encode(tag, b, buf);
                 }
                 Cell::String(s) => {
-                    if !s.is_empty() {
-                        ::prost::encoding::string::encode(tag, s, buf);
-                    }
+                    ::prost::encoding::string::encode(tag, s, buf);
                 }
                 Cell::I16(i) => {
                     let val = *i as i32;
-                    if val != 0 {
-                        ::prost::encoding::int32::encode(tag, &val, buf);
-                    }
+                    ::prost::encoding::int32::encode(tag, &val, buf);
                 }
                 Cell::I32(i) => {
-                    if *i != 0 {
-                        ::prost::encoding::int32::encode(tag, i, buf);
-                    }
+                    ::prost::encoding::int32::encode(tag, i, buf);
                 }
                 Cell::I64(i) => {
-                    if *i != 0 {
-                        ::prost::encoding::int64::encode(tag, i, buf);
-                    }
+                    ::prost::encoding::int64::encode(tag, i, buf);
                 }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
-                    if !s.is_empty() {
-                        ::prost::encoding::string::encode(tag, &s, buf);
-                    }
+                    ::prost::encoding::string::encode(tag, &s, buf);
                 }
                 Cell::TimeStampTz(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
-                    if !s.is_empty() {
-                        ::prost::encoding::string::encode(tag, &s, buf);
-                    }
+                    ::prost::encoding::string::encode(tag, &s, buf);
                 }
                 Cell::Bytes(b) => {
-                    if !b.is_empty() {
-                        ::prost::encoding::bytes::encode(tag, b, buf);
-                    }
+                    ::prost::encoding::bytes::encode(tag, b, buf);
                 }
             }
             tag += 1;
@@ -578,65 +562,23 @@ impl Message for TableRow {
         for cell in &self.values {
             len += match cell {
                 Cell::Null => 0,
-                Cell::Bool(b) => {
-                    if *b {
-                        ::prost::encoding::bool::encoded_len(tag, b)
-                    } else {
-                        0
-                    }
-                }
-                Cell::String(s) => {
-                    if !s.is_empty() {
-                        ::prost::encoding::string::encoded_len(tag, s)
-                    } else {
-                        0
-                    }
-                }
+                Cell::Bool(b) => ::prost::encoding::bool::encoded_len(tag, b),
+                Cell::String(s) => ::prost::encoding::string::encoded_len(tag, s),
                 Cell::I16(i) => {
                     let val = *i as i32;
-                    if val != 0 {
-                        ::prost::encoding::sint32::encoded_len(tag, &val)
-                    } else {
-                        0
-                    }
+                    ::prost::encoding::sint32::encoded_len(tag, &val)
                 }
-                Cell::I32(i) => {
-                    if *i != 0 {
-                        ::prost::encoding::sint32::encoded_len(tag, i)
-                    } else {
-                        0
-                    }
-                }
-                Cell::I64(i) => {
-                    if *i != 0 {
-                        ::prost::encoding::sint64::encoded_len(tag, i)
-                    } else {
-                        0
-                    }
-                }
+                Cell::I32(i) => ::prost::encoding::sint32::encoded_len(tag, i),
+                Cell::I64(i) => ::prost::encoding::sint64::encoded_len(tag, i),
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
-                    if !s.is_empty() {
-                        ::prost::encoding::string::encoded_len(tag, &s)
-                    } else {
-                        0
-                    }
+                    ::prost::encoding::string::encoded_len(tag, &s)
                 }
                 Cell::TimeStampTz(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
-                    if !s.is_empty() {
-                        ::prost::encoding::string::encoded_len(tag, &s)
-                    } else {
-                        0
-                    }
+                    ::prost::encoding::string::encoded_len(tag, &s)
                 }
-                Cell::Bytes(b) => {
-                    if !b.is_empty() {
-                        ::prost::encoding::bytes::encoded_len(tag, b)
-                    } else {
-                        0
-                    }
-                }
+                Cell::Bytes(b) => ::prost::encoding::bytes::encoded_len(tag, b),
             };
             tag += 1;
         }
