@@ -73,7 +73,7 @@ impl BigQueryClient {
             &Type::BOOL => "bool",
             &Type::BYTEA => "bytes",
             &Type::VARCHAR | &Type::BPCHAR | &Type::TEXT => "string",
-            &Type::TIMESTAMP => "timestamp",
+            &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
             _ => "bytes",
         }
     }
@@ -616,6 +616,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::INT4 => ColumnType::Int64,
                 Type::INT8 => ColumnType::Int64,
                 Type::TIMESTAMP => ColumnType::String,
+                Type::TIMESTAMPTZ => ColumnType::String,
                 _ => ColumnType::Bytes,
             };
             field_descriptors.push(FieldDescriptor {
