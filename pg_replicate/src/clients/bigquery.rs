@@ -628,7 +628,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::INT2 => ColumnType::Int64,
                 Type::INT4 => ColumnType::Int64,
                 Type::INT8 => ColumnType::Int64,
-                Type::FLOAT4 => ColumnType::Float64,
+                Type::FLOAT4 => ColumnType::Float32,
                 Type::FLOAT8 => ColumnType::Float64,
                 Type::TIMESTAMP => ColumnType::String,
                 Type::TIMESTAMPTZ => ColumnType::String,
