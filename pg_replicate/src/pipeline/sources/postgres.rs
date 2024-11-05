@@ -78,10 +78,6 @@ impl PostgresSource {
         })
     }
 
-    pub fn replication_client(&self) -> &ReplicationClient {
-        &self.replication_client
-    }
-
     fn publication(&self) -> Option<&String> {
         self.publication.as_ref()
     }
