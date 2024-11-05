@@ -501,7 +501,7 @@ impl BigQueryClient {
             .job()
             .query(&self.project_id, QueryRequest::new(query))
             .await?;
-        Ok(query_response)
+        Ok(ResultSet::new_from_query_response(query_response))
     }
 }
 
