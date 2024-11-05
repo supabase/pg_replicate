@@ -4,7 +4,11 @@ use postgres_protocol::types;
 use thiserror::Error;
 #[cfg(feature = "unknown_types_to_bytes")]
 use tokio_postgres::types::FromSql;
-use tokio_postgres::{binary_copy::BinaryCopyOutRow, types::Type};
+use tokio_postgres::{
+    binary_copy::BinaryCopyOutRow,
+    error::Error,
+    types::{Type, WasNull},
+};
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
@@ -25,6 +29,9 @@ impl BatchBoundary for TableRow {
 pub enum TableRowConversionError {
     #[error("unsupported type {0}")]
     UnsupportedType(Type),
+
+    #[error("row get error: {0:?}")]
+    RowGetError(Option<Box<dyn std::error::Error + Sync + Send>>),
 }
 
 pub struct TableRowConverter;
@@ -78,133 +85,66 @@ impl TableRowConverter {
     ) -> Result<Cell, TableRowConversionError> {
         match column_schema.typ {
             Type::BOOL => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<bool>(i) {
-                        Ok(b) => Cell::Bool(b),
-                        //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                        Err(_) => Cell::Null,
-                    }
-                } else {
-                    let val = row.get::<bool>(i);
-                    Cell::Bool(val)
-                };
-                Ok(val)
+                Self::get_from_row(row, i, column_schema.nullable, |val: bool| Cell::Bool(val))
             }
-            // Type::BYTEA => {
-            //     let bytes = row.get(i);
-            //     Ok(Value::Bytes(bytes))
-            // }
             Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<&str>(i) {
-                        Ok(s) => Cell::String(s.to_string()),
-                        //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                        Err(_) => Cell::Null,
-                    }
-                } else {
-                    let val = row.get::<&str>(i);
+                Self::get_from_row(row, i, column_schema.nullable, |val: &str| {
                     Cell::String(val.to_string())
-                };
-                Ok(val)
+                })
             }
-            // Type::JSON | Type::JSONB => {
-            //     let val = row.get::<serde_json::Value>(i);
-            //     let val = json_to_cbor_value(&val);
-            //     Ok(val)
-            // }
             Type::INT2 => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<i16>(i) {
-                        Ok(i) => Cell::I16(i),
-                        Err(_) => {
-                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                            Cell::Null
-                        }
-                    }
-                } else {
-                    let val = row.get::<i16>(i);
-                    Cell::I16(val)
-                };
-                Ok(val)
+                Self::get_from_row(row, i, column_schema.nullable, |val: i16| Cell::I16(val))
             }
             Type::INT4 => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<i32>(i) {
-                        Ok(i) => Cell::I32(i),
-                        Err(_) => {
-                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                            Cell::Null
-                        }
-                    }
-                } else {
-                    let val = row.get::<i32>(i);
-                    Cell::I32(val)
-                };
-                Ok(val)
+                Self::get_from_row(row, i, column_schema.nullable, |val: i32| Cell::I32(val))
             }
             Type::INT8 => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<i64>(i) {
-                        Ok(i) => Cell::I64(i),
-                        Err(_) => {
-                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                            Cell::Null
-                        }
-                    }
-                } else {
-                    let val = row.get::<i64>(i);
-                    Cell::I64(val)
-                };
-                Ok(val)
+                Self::get_from_row(row, i, column_schema.nullable, |val: i64| Cell::I64(val))
             }
             Type::TIMESTAMP => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<NaiveDateTime>(i) {
-                        Ok(s) => Cell::TimeStamp(s),
-                        Err(_) => {
-                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                            Cell::Null
-                        }
-                    }
-                } else {
-                    let val = row.get::<NaiveDateTime>(i);
+                Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDateTime| {
                     Cell::TimeStamp(val)
-                };
-                Ok(val)
+                })
             }
-            Type::TIMESTAMPTZ => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<DateTime<FixedOffset>>(i) {
-                        Ok(val) => Cell::TimeStampTz(val.into()),
-                        Err(_) => {
-                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                            Cell::Null
-                        }
-                    }
-                } else {
-                    let val = row.get::<DateTime<FixedOffset>>(i);
-                    Cell::TimeStampTz(val.into())
-                };
-                Ok(val)
-            }
+            Type::TIMESTAMPTZ => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: DateTime<FixedOffset>| Cell::TimeStampTz(val.into()),
+            ),
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
             #[cfg(feature = "unknown_types_to_bytes")]
-            _ => {
-                let val = if column_schema.nullable {
-                    match row.try_get::<VecWrapper>(i) {
-                        Ok(v) => Cell::Bytes(v.0),
-                        Err(_) => {
-                            //TODO: Only return null if the error is WasNull from tokio_postgres crate
-                            Cell::Null
-                        }
-                    }
-                } else {
-                    let val = row.get::<VecWrapper>(i);
-                    Cell::Bytes(val.0)
-                };
-                Ok(val)
-            }
+            _ => Self::get_from_row(row, i, column_schema.nullable, |val: VecWrapper| {
+                Cell::Bytes(val.0)
+            }),
+        }
+    }
+
+    fn get_from_row<'a, T: FromSql<'a>, F>(
+        row: &'a BinaryCopyOutRow,
+        i: usize,
+        nullable: bool,
+        f: F,
+    ) -> Result<Cell, TableRowConversionError>
+    where
+        F: FnOnce(T) -> Cell,
+    {
+        match row.try_get::<T>(i) {
+            Ok(val) => Ok(f(val)),
+            Err(e) => Self::error_or_null(e, nullable),
+        }
+    }
+
+    fn error_or_null(e: Error, nullable: bool) -> Result<Cell, TableRowConversionError> {
+        let source_error = e.into_source();
+        let was_null = source_error
+            .as_ref()
+            .and_then(|e| e.downcast_ref::<WasNull>());
+        if was_null.is_some() && nullable {
+            Ok(Cell::Null)
+        } else {
+            Err(TableRowConversionError::RowGetError(source_error))
         }
     }
 
