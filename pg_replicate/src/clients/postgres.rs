@@ -425,3 +425,11 @@ impl ReplicationClient {
         Ok(stream)
     }
 }
+
+impl std::ops::Deref for ReplicationClient {
+    type Target = PostgresClient;
+
+    fn deref(&self) -> &Self::Target {
+        &self.postgres_client
+    }
+}
