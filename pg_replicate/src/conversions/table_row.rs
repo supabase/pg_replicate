@@ -101,6 +101,12 @@ impl TableRowConverter {
             Type::INT8 => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: i64| Cell::I64(val))
             }
+            Type::FLOAT4 => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: f32| Cell::F32(val))
+            }
+            Type::FLOAT8 => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: f64| Cell::F64(val))
+            }
             Type::TIMESTAMP => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDateTime| {
                     Cell::TimeStamp(val)

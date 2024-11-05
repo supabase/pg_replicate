@@ -359,6 +359,8 @@ impl ToSql for Cell {
             Cell::I16(i) => i.to_sql(),
             Cell::I32(i) => i.to_sql(),
             Cell::I64(i) => i.to_sql(),
+            Cell::F32(i) => i.to_sql(),
+            Cell::F64(i) => i.to_sql(),
             Cell::TimeStamp(t) => {
                 let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                 Ok(ToSqlOutput::Owned(Value::Text(s)))

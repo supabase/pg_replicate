@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    num::ParseIntError,
+    num::{ParseFloatError, ParseIntError},
     str::{from_utf8, ParseBoolError, Utf8Error},
 };
 
@@ -38,6 +38,9 @@ pub enum CdcEventConversionError {
 
     #[error("invalid int value")]
     InvalidInt(#[from] ParseIntError),
+
+    #[error("invalid float value")]
+    InvalidFloat(#[from] ParseFloatError),
 
     #[error("invalid timestamp value")]
     InvalidTimestamp(#[from] chrono::ParseError),
@@ -107,6 +110,16 @@ impl CdcEventConverter {
                 let val = from_utf8(bytes)?;
                 let val: i64 = val.parse()?;
                 Ok(Cell::I64(val))
+            }
+            Type::FLOAT4 => {
+                let val = from_utf8(bytes)?;
+                let val: f32 = val.parse()?;
+                Ok(Cell::F32(val))
+            }
+            Type::FLOAT8 => {
+                let val = from_utf8(bytes)?;
+                let val: f64 = val.parse()?;
+                Ok(Cell::F64(val))
             }
             Type::TIMESTAMP => {
                 let val = from_utf8(bytes)?;

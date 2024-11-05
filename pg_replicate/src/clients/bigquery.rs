@@ -70,6 +70,7 @@ impl BigQueryClient {
     fn postgres_type_to_bigquery_type(typ: &Type) -> &'static str {
         match typ {
             &Type::INT2 | &Type::INT4 | &Type::INT8 => "int64",
+            &Type::FLOAT4 | &Type::FLOAT8 => "float64",
             &Type::BOOL => "bool",
             &Type::BYTEA => "bytes",
             &Type::VARCHAR | &Type::BPCHAR | &Type::TEXT => "string",
@@ -345,6 +346,8 @@ impl BigQueryClient {
             Cell::I16(i) => s.push_str(&format!("{i}")),
             Cell::I32(i) => s.push_str(&format!("{i}")),
             Cell::I64(i) => s.push_str(&format!("{i}")),
+            Cell::F32(i) => s.push_str(&format!("{i}")),
+            Cell::F64(i) => s.push_str(&format!("{i}")),
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStampTz(t) => s.push_str(&format!("'{t}'")),
             Cell::Bytes(b) => {
@@ -527,6 +530,12 @@ impl Message for TableRow {
                 Cell::I64(i) => {
                     ::prost::encoding::int64::encode(tag, i, buf);
                 }
+                Cell::F32(i) => {
+                    ::prost::encoding::float::encode(tag, i, buf);
+                }
+                Cell::F64(i) => {
+                    ::prost::encoding::double::encode(tag, i, buf);
+                }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encode(tag, &s, buf);
@@ -570,6 +579,8 @@ impl Message for TableRow {
                 }
                 Cell::I32(i) => ::prost::encoding::sint32::encoded_len(tag, i),
                 Cell::I64(i) => ::prost::encoding::sint64::encoded_len(tag, i),
+                Cell::F32(i) => ::prost::encoding::float::encoded_len(tag, i),
+                Cell::F64(i) => ::prost::encoding::double::encoded_len(tag, i),
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
@@ -594,6 +605,8 @@ impl Message for TableRow {
                 Cell::I16(i) => *i = 0,
                 Cell::I32(i) => *i = 0,
                 Cell::I64(i) => *i = 0,
+                Cell::F32(i) => *i = 0.,
+                Cell::F64(i) => *i = 0.,
                 Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
                 Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
                 Cell::Bytes(b) => b.clear(),
@@ -615,6 +628,8 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::INT2 => ColumnType::Int64,
                 Type::INT4 => ColumnType::Int64,
                 Type::INT8 => ColumnType::Int64,
+                Type::FLOAT4 => ColumnType::Float64,
+                Type::FLOAT8 => ColumnType::Float64,
                 Type::TIMESTAMP => ColumnType::String,
                 Type::TIMESTAMPTZ => ColumnType::String,
                 _ => ColumnType::Bytes,
