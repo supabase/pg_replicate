@@ -12,7 +12,7 @@ use tokio_postgres::{
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
-use super::Cell;
+use super::{numeric::PgNumeric, Cell};
 
 #[derive(Debug)]
 pub struct TableRow {
@@ -110,6 +110,11 @@ impl TableRowConverter {
             Type::TIMESTAMP => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDateTime| {
                     Cell::TimeStamp(val)
+                })
+            }
+            Type::NUMERIC => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: PgNumeric| {
+                    Cell::Numeric(val)
                 })
             }
             Type::TIMESTAMPTZ => Self::get_from_row(

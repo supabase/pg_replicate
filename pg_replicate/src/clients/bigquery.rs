@@ -18,6 +18,7 @@ use prost::Message;
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
 
+use crate::conversions::numeric::PgNumeric;
 use crate::conversions::Cell;
 use crate::{
     conversions::table_row::TableRow,
@@ -71,6 +72,7 @@ impl BigQueryClient {
         match typ {
             &Type::INT2 | &Type::INT4 | &Type::INT8 => "int64",
             &Type::FLOAT4 | &Type::FLOAT8 => "float64",
+            &Type::NUMERIC => "numeric",
             &Type::BOOL => "bool",
             &Type::BYTEA => "bytes",
             &Type::VARCHAR | &Type::BPCHAR | &Type::TEXT => "string",
@@ -348,6 +350,7 @@ impl BigQueryClient {
             Cell::I64(i) => s.push_str(&format!("{i}")),
             Cell::F32(i) => s.push_str(&format!("{i}")),
             Cell::F64(i) => s.push_str(&format!("{i}")),
+            Cell::Numeric(n) => s.push_str(&format!("{n}")),
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStampTz(t) => s.push_str(&format!("'{t}'")),
             Cell::Bytes(b) => {
@@ -536,6 +539,10 @@ impl Message for TableRow {
                 Cell::F64(i) => {
                     ::prost::encoding::double::encode(tag, i, buf);
                 }
+                Cell::Numeric(n) => {
+                    let s = n.to_string();
+                    ::prost::encoding::string::encode(tag, &s, buf);
+                }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encode(tag, &s, buf);
@@ -581,6 +588,10 @@ impl Message for TableRow {
                 Cell::I64(i) => ::prost::encoding::sint64::encoded_len(tag, i),
                 Cell::F32(i) => ::prost::encoding::float::encoded_len(tag, i),
                 Cell::F64(i) => ::prost::encoding::double::encoded_len(tag, i),
+                Cell::Numeric(n) => {
+                    let s = n.to_string();
+                    ::prost::encoding::string::encoded_len(tag, &s)
+                }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
@@ -607,6 +618,7 @@ impl Message for TableRow {
                 Cell::I64(i) => *i = 0,
                 Cell::F32(i) => *i = 0.,
                 Cell::F64(i) => *i = 0.,
+                Cell::Numeric(n) => *n = PgNumeric::default(),
                 Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
                 Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
                 Cell::Bytes(b) => b.clear(),
@@ -630,6 +642,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::INT8 => ColumnType::Int64,
                 Type::FLOAT4 => ColumnType::Float32,
                 Type::FLOAT8 => ColumnType::Float64,
+                Type::NUMERIC => ColumnType::String,
                 Type::TIMESTAMP => ColumnType::String,
                 Type::TIMESTAMPTZ => ColumnType::String,
                 _ => ColumnType::Bytes,

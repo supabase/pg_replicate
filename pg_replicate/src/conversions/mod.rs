@@ -1,6 +1,8 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
+use numeric::PgNumeric;
 
 pub mod cdc_event;
+pub mod numeric;
 pub mod table_row;
 
 #[derive(Debug)]
@@ -13,6 +15,7 @@ pub enum Cell {
     I64(i64),
     F32(f32),
     F64(f64),
+    Numeric(PgNumeric),
     TimeStamp(NaiveDateTime),
     TimeStampTz(DateTime<Utc>),
     Bytes(Vec<u8>),

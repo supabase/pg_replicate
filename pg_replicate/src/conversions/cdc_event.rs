@@ -1,9 +1,10 @@
 use std::{
     collections::HashMap,
     num::{ParseFloatError, ParseIntError},
-    str::{from_utf8, ParseBoolError, Utf8Error},
+    str::{from_utf8, FromStr, ParseBoolError, Utf8Error},
 };
 
+use bigdecimal::{BigDecimal, ParseBigDecimalError};
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use postgres_protocol::message::backend::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
@@ -17,7 +18,7 @@ use crate::{
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::{table_row::TableRow, Cell};
+use super::{numeric::PgNumeric, table_row::TableRow, Cell};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -41,6 +42,9 @@ pub enum CdcEventConversionError {
 
     #[error("invalid float value")]
     InvalidFloat(#[from] ParseFloatError),
+
+    #[error("invalid numeric: {0}")]
+    InvalidNumeric(#[from] ParseBigDecimalError),
 
     #[error("invalid timestamp value")]
     InvalidTimestamp(#[from] chrono::ParseError),
@@ -120,6 +124,12 @@ impl CdcEventConverter {
                 let val = from_utf8(bytes)?;
                 let val: f64 = val.parse()?;
                 Ok(Cell::F64(val))
+            }
+            Type::NUMERIC => {
+                let val = from_utf8(bytes)?;
+                let val = BigDecimal::from_str(val)?;
+                let val = PgNumeric::new(Some(val));
+                Ok(Cell::Numeric(val))
             }
             Type::TIMESTAMP => {
                 let val = from_utf8(bytes)?;
