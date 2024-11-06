@@ -100,16 +100,17 @@ impl DuckDbClient {
 
     fn postgres_typ_to_duckdb_typ(typ: &Type) -> &'static str {
         match typ {
+            &Type::BOOL => "bool",
+            &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "text",
             &Type::INT2 | &Type::INT4 | &Type::INT8 => "integer",
-            &Type::NUMERIC => "numeric",
             &Type::FLOAT4 => "float",
             &Type::FLOAT8 => "double",
-            &Type::BOOL => "bool",
-            &Type::BYTEA => "bytea",
-            &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "text",
+            &Type::NUMERIC => "numeric",
+            &Type::DATE => "date",
+            &Type::TIME => "time",
             &Type::TIMESTAMP => "timestamp",
             &Type::TIMESTAMPTZ => "timestamptz",
-            &Type::DATE => "date",
+            &Type::BYTEA => "bytea",
             typ => panic!("duckdb doesn't yet support type {typ}"),
         }
     }
@@ -372,6 +373,10 @@ impl ToSql for Cell {
             }
             Cell::Date(t) => {
                 let s = t.format("%Y-%m-%d").to_string();
+                Ok(ToSqlOutput::Owned(Value::Text(s)))
+            }
+            Cell::Time(t) => {
+                let s = t.format("%H-%M-%S%.f").to_string();
                 Ok(ToSqlOutput::Owned(Value::Text(s)))
             }
             Cell::TimeStamp(t) => {

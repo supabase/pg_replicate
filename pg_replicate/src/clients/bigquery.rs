@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fs};
 
 use bytes::{Buf, BufMut};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use futures::StreamExt;
 use gcp_bigquery_client::yup_oauth2::parse_service_account_key;
 use gcp_bigquery_client::{
@@ -70,14 +70,15 @@ impl BigQueryClient {
 
     fn postgres_type_to_bigquery_type(typ: &Type) -> &'static str {
         match typ {
+            &Type::BOOL => "bool",
+            &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "string",
             &Type::INT2 | &Type::INT4 | &Type::INT8 => "int64",
             &Type::FLOAT4 | &Type::FLOAT8 => "float64",
             &Type::NUMERIC => "bignumeric",
-            &Type::BOOL => "bool",
-            &Type::BYTEA => "bytes",
-            &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "string",
-            &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
             &Type::DATE => "date",
+            &Type::TIME => "time",
+            &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
+            &Type::BYTEA => "bytes",
             _ => "bytes",
         }
     }
@@ -353,6 +354,7 @@ impl BigQueryClient {
             Cell::F64(i) => s.push_str(&format!("{i}")),
             Cell::Numeric(n) => s.push_str(&format!("{n}")),
             Cell::Date(t) => s.push_str(&format!("'{t}'")),
+            Cell::Time(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStampTz(t) => s.push_str(&format!("'{t}'")),
             Cell::Bytes(b) => {
@@ -549,6 +551,10 @@ impl Message for TableRow {
                     let s = t.format("%Y-%m-%d").to_string();
                     ::prost::encoding::string::encode(tag, &s, buf);
                 }
+                Cell::Time(t) => {
+                    let s = t.format("%H:%M:%S%.f").to_string();
+                    ::prost::encoding::string::encode(tag, &s, buf);
+                }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encode(tag, &s, buf);
@@ -602,6 +608,10 @@ impl Message for TableRow {
                     let s = t.format("%Y-%m-%d").to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
                 }
+                Cell::Time(t) => {
+                    let s = t.format("%H:%M:%S%.f").to_string();
+                    ::prost::encoding::string::encoded_len(tag, &s)
+                }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
@@ -630,6 +640,7 @@ impl Message for TableRow {
                 Cell::F64(i) => *i = 0.,
                 Cell::Numeric(n) => *n = PgNumeric::default(),
                 Cell::Date(t) => *t = NaiveDate::default(),
+                Cell::Time(t) => *t = NaiveTime::default(),
                 Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
                 Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
                 Cell::Bytes(b) => b.clear(),
@@ -654,9 +665,11 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::FLOAT4 => ColumnType::Float32,
                 Type::FLOAT8 => ColumnType::Float64,
                 Type::NUMERIC => ColumnType::String,
-                Type::BYTEA => ColumnType::Bytes,
+                Type::DATE => ColumnType::String,
+                Type::TIME => ColumnType::String,
                 Type::TIMESTAMP => ColumnType::String,
                 Type::TIMESTAMPTZ => ColumnType::String,
+                Type::BYTEA => ColumnType::Bytes,
                 _ => ColumnType::Bytes,
             };
             field_descriptors.push(FieldDescriptor {

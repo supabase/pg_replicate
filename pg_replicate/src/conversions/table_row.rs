@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(feature = "unknown_types_to_bytes")]
 use postgres_protocol::types;
 use thiserror::Error;
@@ -107,11 +107,6 @@ impl TableRowConverter {
             Type::FLOAT8 => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: f64| Cell::F64(val))
             }
-            Type::TIMESTAMP => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDateTime| {
-                    Cell::TimeStamp(val)
-                })
-            }
             Type::NUMERIC => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: PgNumeric| {
                     Cell::Numeric(val)
@@ -123,6 +118,14 @@ impl TableRowConverter {
             Type::DATE => Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDate| {
                 Cell::Date(val)
             }),
+            Type::TIME => Self::get_from_row(row, i, column_schema.nullable, |val: NaiveTime| {
+                Cell::Time(val)
+            }),
+            Type::TIMESTAMP => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDateTime| {
+                    Cell::TimeStamp(val)
+                })
+            }
             Type::TIMESTAMPTZ => Self::get_from_row(
                 row,
                 i,
