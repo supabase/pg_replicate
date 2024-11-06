@@ -2,9 +2,9 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use numeric::PgNumeric;
 
 pub mod cdc_event;
+pub mod hex;
 pub mod numeric;
 pub mod table_row;
-pub mod hex;
 
 #[derive(Debug)]
 pub enum Cell {
