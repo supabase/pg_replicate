@@ -14,11 +14,12 @@ use thiserror::Error;
 use tokio_postgres::types::Type;
 
 use crate::{
+    conversions::hex::from_bytea_hex,
     pipeline::batching::BatchBoundary,
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::{numeric::PgNumeric, table_row::TableRow, Cell};
+use super::{hex::ByteaHexParseError, numeric::PgNumeric, table_row::TableRow, Cell};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -45,6 +46,9 @@ pub enum CdcEventConversionError {
 
     #[error("invalid numeric: {0}")]
     InvalidNumeric(#[from] ParseBigDecimalError),
+
+    #[error("invalid bytea: {0}")]
+    InvalidBytea(#[from] ByteaHexParseError),
 
     #[error("invalid timestamp value")]
     InvalidTimestamp(#[from] chrono::ParseError),
@@ -130,6 +134,11 @@ impl CdcEventConverter {
                 let val = BigDecimal::from_str(val)?;
                 let val = PgNumeric::new(Some(val));
                 Ok(Cell::Numeric(val))
+            }
+            Type::BYTEA => {
+                let val = from_utf8(bytes)?;
+                let val = from_bytea_hex(val)?;
+                Ok(Cell::Bytes(val))
             }
             Type::TIMESTAMP => {
                 let val = from_utf8(bytes)?;

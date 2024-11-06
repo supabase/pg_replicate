@@ -117,6 +117,9 @@ impl TableRowConverter {
                     Cell::Numeric(val)
                 })
             }
+            Type::BYTEA => Self::get_from_row(row, i, column_schema.nullable, |val: Vec<u8>| {
+                Cell::Bytes(val)
+            }),
             Type::TIMESTAMPTZ => Self::get_from_row(
                 row,
                 i,

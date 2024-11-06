@@ -4,6 +4,7 @@ use numeric::PgNumeric;
 pub mod cdc_event;
 pub mod numeric;
 pub mod table_row;
+pub mod hex;
 
 #[derive(Debug)]
 pub enum Cell {

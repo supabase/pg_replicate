@@ -643,6 +643,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::FLOAT4 => ColumnType::Float32,
                 Type::FLOAT8 => ColumnType::Float64,
                 Type::NUMERIC => ColumnType::String,
+                Type::BYTEA => ColumnType::Bytes,
                 Type::TIMESTAMP => ColumnType::String,
                 Type::TIMESTAMPTZ => ColumnType::String,
                 _ => ColumnType::Bytes,
