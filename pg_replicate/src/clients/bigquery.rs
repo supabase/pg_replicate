@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fs};
 
 use bytes::{Buf, BufMut};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use futures::StreamExt;
 use gcp_bigquery_client::yup_oauth2::parse_service_account_key;
 use gcp_bigquery_client::{
@@ -75,8 +75,9 @@ impl BigQueryClient {
             &Type::NUMERIC => "bignumeric",
             &Type::BOOL => "bool",
             &Type::BYTEA => "bytes",
-            &Type::VARCHAR | &Type::BPCHAR | &Type::TEXT => "string",
+            &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "string",
             &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
+            &Type::DATE => "date",
             _ => "bytes",
         }
     }
@@ -351,6 +352,7 @@ impl BigQueryClient {
             Cell::F32(i) => s.push_str(&format!("{i}")),
             Cell::F64(i) => s.push_str(&format!("{i}")),
             Cell::Numeric(n) => s.push_str(&format!("{n}")),
+            Cell::Date(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStampTz(t) => s.push_str(&format!("'{t}'")),
             Cell::Bytes(b) => {
@@ -543,6 +545,10 @@ impl Message for TableRow {
                     let s = n.to_string();
                     ::prost::encoding::string::encode(tag, &s, buf);
                 }
+                Cell::Date(t) => {
+                    let s = t.format("%Y-%m-%d").to_string();
+                    ::prost::encoding::string::encode(tag, &s, buf);
+                }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encode(tag, &s, buf);
@@ -592,6 +598,10 @@ impl Message for TableRow {
                     let s = n.to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
                 }
+                Cell::Date(t) => {
+                    let s = t.format("%Y-%m-%d").to_string();
+                    ::prost::encoding::string::encoded_len(tag, &s)
+                }
                 Cell::TimeStamp(t) => {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
@@ -619,6 +629,7 @@ impl Message for TableRow {
                 Cell::F32(i) => *i = 0.,
                 Cell::F64(i) => *i = 0.,
                 Cell::Numeric(n) => *n = PgNumeric::default(),
+                Cell::Date(t) => *t = NaiveDate::default(),
                 Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
                 Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
                 Cell::Bytes(b) => b.clear(),

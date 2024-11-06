@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 #[cfg(feature = "unknown_types_to_bytes")]
 use postgres_protocol::types;
 use thiserror::Error;
@@ -119,6 +119,9 @@ impl TableRowConverter {
             }
             Type::BYTEA => Self::get_from_row(row, i, column_schema.nullable, |val: Vec<u8>| {
                 Cell::Bytes(val)
+            }),
+            Type::DATE => Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDate| {
+                Cell::Date(val)
             }),
             Type::TIMESTAMPTZ => Self::get_from_row(
                 row,

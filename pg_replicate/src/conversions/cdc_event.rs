@@ -5,7 +5,7 @@ use std::{
 };
 
 use bigdecimal::{BigDecimal, ParseBigDecimalError};
-use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use postgres_protocol::message::backend::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
     ReplicationMessage, TupleData, UpdateBody,
@@ -139,6 +139,11 @@ impl CdcEventConverter {
                 let val = from_utf8(bytes)?;
                 let val = from_bytea_hex(val)?;
                 Ok(Cell::Bytes(val))
+            }
+            Type::DATE => {
+                let val = from_utf8(bytes)?;
+                let val = NaiveDate::parse_from_str(val, "%Y-%m-%d")?;
+                Ok(Cell::Date(val))
             }
             Type::TIMESTAMP => {
                 let val = from_utf8(bytes)?;
