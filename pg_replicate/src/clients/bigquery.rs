@@ -72,7 +72,7 @@ impl BigQueryClient {
         match typ {
             &Type::INT2 | &Type::INT4 | &Type::INT8 => "int64",
             &Type::FLOAT4 | &Type::FLOAT8 => "float64",
-            &Type::NUMERIC => "numeric",
+            &Type::NUMERIC => "bignumeric",
             &Type::BOOL => "bool",
             &Type::BYTEA => "bytes",
             &Type::VARCHAR | &Type::BPCHAR | &Type::TEXT => "string",
