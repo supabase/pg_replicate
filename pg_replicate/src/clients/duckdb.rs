@@ -376,7 +376,7 @@ impl ToSql for Cell {
                 Ok(ToSqlOutput::Owned(Value::Text(s)))
             }
             Cell::Time(t) => {
-                let s = t.format("%H-%M-%S%.f").to_string();
+                let s = t.format("%H:%M:%S%.f").to_string();
                 Ok(ToSqlOutput::Owned(Value::Text(s)))
             }
             Cell::TimeStamp(t) => {
