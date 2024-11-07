@@ -111,6 +111,7 @@ impl DuckDbClient {
             &Type::TIMESTAMP => "timestamp",
             &Type::TIMESTAMPTZ => "timestamptz",
             &Type::UUID => "uuid",
+            &Type::JSON => "json",
             &Type::BYTEA => "bytea",
             typ => panic!("duckdb doesn't yet support type {typ}"),
         }
@@ -390,6 +391,10 @@ impl ToSql for Cell {
             }
             Cell::Uuid(u) => {
                 let s = u.to_string();
+                Ok(ToSqlOutput::Owned(Value::Text(s)))
+            }
+            Cell::Json(j) => {
+                let s = j.to_string();
                 Ok(ToSqlOutput::Owned(Value::Text(s)))
             }
             Cell::Null => Null.to_sql(),

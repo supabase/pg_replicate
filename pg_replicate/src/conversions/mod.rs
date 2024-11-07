@@ -23,5 +23,6 @@ pub enum Cell {
     TimeStamp(NaiveDateTime),
     TimeStampTz(DateTime<Utc>),
     Uuid(Uuid),
+    Json(serde_json::Value),
     Bytes(Vec<u8>),
 }

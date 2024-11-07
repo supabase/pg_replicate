@@ -51,6 +51,9 @@ pub enum CdcEventConversionError {
     #[error("invalid uuid: {0}")]
     InvalidUuid(#[from] uuid::Error),
 
+    #[error("invalid json: {0}")]
+    InvalidJson(#[from] serde_json::Error),
+
     #[error("invalid bytea: {0}")]
     InvalidBytea(#[from] ByteaHexParseError),
 
@@ -168,6 +171,11 @@ impl CdcEventConverter {
                 let val = from_utf8(bytes)?;
                 let val = Uuid::parse_str(val)?;
                 Ok(Cell::Uuid(val))
+            }
+            Type::JSON => {
+                let val = from_utf8(bytes)?;
+                let val = serde_json::from_str(val)?;
+                Ok(Cell::Json(val))
             }
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => Ok(Cell::Bytes(bytes.to_vec())),

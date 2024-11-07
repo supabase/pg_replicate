@@ -80,6 +80,7 @@ impl BigQueryClient {
             &Type::TIME => "time",
             &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
             &Type::UUID => "string",
+            &Type::JSON => "json",
             &Type::BYTEA => "bytes",
             _ => "bytes",
         }
@@ -360,6 +361,7 @@ impl BigQueryClient {
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStampTz(t) => s.push_str(&format!("'{t}'")),
             Cell::Uuid(t) => s.push_str(&format!("'{t}'")),
+            Cell::Json(j) => s.push_str(&format!("'{j}'")),
             Cell::Bytes(b) => {
                 let bytes: String = b.iter().map(|b| *b as char).collect();
                 s.push_str(&format!("b'{bytes}'"))
@@ -570,6 +572,10 @@ impl Message for TableRow {
                     let s = u.to_string();
                     ::prost::encoding::string::encode(tag, &s, buf)
                 }
+                Cell::Json(j) => {
+                    let s = j.to_string();
+                    ::prost::encoding::string::encode(tag, &s, buf)
+                }
                 Cell::Bytes(b) => {
                     ::prost::encoding::bytes::encode(tag, b, buf);
                 }
@@ -631,6 +637,10 @@ impl Message for TableRow {
                     let s = u.to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
                 }
+                Cell::Json(j) => {
+                    let s = j.to_string();
+                    ::prost::encoding::string::encoded_len(tag, &s)
+                }
                 Cell::Bytes(b) => ::prost::encoding::bytes::encoded_len(tag, b),
             };
             tag += 1;
@@ -655,6 +665,7 @@ impl Message for TableRow {
                 Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
                 Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
                 Cell::Uuid(u) => *u = Uuid::default(),
+                Cell::Json(j) => *j = serde_json::Value::default(),
                 Cell::Bytes(b) => b.clear(),
             }
         }
@@ -682,6 +693,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::TIMESTAMP => ColumnType::String,
                 Type::TIMESTAMPTZ => ColumnType::String,
                 Type::UUID => ColumnType::String,
+                Type::JSON => ColumnType::String,
                 Type::BYTEA => ColumnType::Bytes,
                 _ => ColumnType::Bytes,
             };
