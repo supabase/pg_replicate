@@ -136,7 +136,7 @@ impl TableRowConverter {
             Type::UUID => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: Uuid| Cell::Uuid(val))
             }
-            Type::JSON => {
+            Type::JSON | Type::JSONB => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: serde_json::Value| {
                     Cell::Json(val)
                 })

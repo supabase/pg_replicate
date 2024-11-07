@@ -172,7 +172,7 @@ impl CdcEventConverter {
                 let val = Uuid::parse_str(val)?;
                 Ok(Cell::Uuid(val))
             }
-            Type::JSON => {
+            Type::JSON | Type::JSONB => {
                 let val = from_utf8(bytes)?;
                 let val = serde_json::from_str(val)?;
                 Ok(Cell::Json(val))

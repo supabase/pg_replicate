@@ -80,7 +80,7 @@ impl BigQueryClient {
             &Type::TIME => "time",
             &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
             &Type::UUID => "string",
-            &Type::JSON => "json",
+            &Type::JSON | &Type::JSONB => "json",
             &Type::BYTEA => "bytes",
             _ => "bytes",
         }
@@ -694,6 +694,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::TIMESTAMPTZ => ColumnType::String,
                 Type::UUID => ColumnType::String,
                 Type::JSON => ColumnType::String,
+                Type::JSONB => ColumnType::String,
                 Type::BYTEA => ColumnType::Bytes,
                 _ => ColumnType::Bytes,
             };
