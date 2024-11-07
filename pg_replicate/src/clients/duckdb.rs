@@ -110,6 +110,7 @@ impl DuckDbClient {
             &Type::TIME => "time",
             &Type::TIMESTAMP => "timestamp",
             &Type::TIMESTAMPTZ => "timestamptz",
+            &Type::UUID => "uuid",
             &Type::BYTEA => "bytea",
             typ => panic!("duckdb doesn't yet support type {typ}"),
         }
@@ -385,6 +386,10 @@ impl ToSql for Cell {
             }
             Cell::TimeStampTz(t) => {
                 let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
+                Ok(ToSqlOutput::Owned(Value::Text(s)))
+            }
+            Cell::Uuid(u) => {
+                let s = u.to_string();
                 Ok(ToSqlOutput::Owned(Value::Text(s)))
             }
             Cell::Null => Null.to_sql(),

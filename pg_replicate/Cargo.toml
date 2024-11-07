@@ -38,8 +38,13 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-tokio-postgres = { workspace = true, features = ["runtime", "with-chrono-0_4"] }
+tokio-postgres = { workspace = true, features = [
+    "runtime",
+    "with-chrono-0_4",
+    "with-uuid-1",
+] }
 tracing = { workspace = true, default-features = true }
+uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
 clap = { workspace = true, default-features = true, features = [

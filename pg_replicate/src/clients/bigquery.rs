@@ -17,6 +17,7 @@ use gcp_bigquery_client::{
 use prost::Message;
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
+use uuid::Uuid;
 
 use crate::conversions::numeric::PgNumeric;
 use crate::conversions::Cell;
@@ -78,6 +79,7 @@ impl BigQueryClient {
             &Type::DATE => "date",
             &Type::TIME => "time",
             &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
+            &Type::UUID => "string",
             &Type::BYTEA => "bytes",
             _ => "bytes",
         }
@@ -357,6 +359,7 @@ impl BigQueryClient {
             Cell::Time(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
             Cell::TimeStampTz(t) => s.push_str(&format!("'{t}'")),
+            Cell::Uuid(t) => s.push_str(&format!("'{t}'")),
             Cell::Bytes(b) => {
                 let bytes: String = b.iter().map(|b| *b as char).collect();
                 s.push_str(&format!("b'{bytes}'"))
@@ -563,6 +566,10 @@ impl Message for TableRow {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
                     ::prost::encoding::string::encode(tag, &s, buf);
                 }
+                Cell::Uuid(u) => {
+                    let s = u.to_string();
+                    ::prost::encoding::string::encode(tag, &s, buf)
+                }
                 Cell::Bytes(b) => {
                     ::prost::encoding::bytes::encode(tag, b, buf);
                 }
@@ -620,6 +627,10 @@ impl Message for TableRow {
                     let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
                 }
+                Cell::Uuid(u) => {
+                    let s = u.to_string();
+                    ::prost::encoding::string::encoded_len(tag, &s)
+                }
                 Cell::Bytes(b) => ::prost::encoding::bytes::encoded_len(tag, b),
             };
             tag += 1;
@@ -643,6 +654,7 @@ impl Message for TableRow {
                 Cell::Time(t) => *t = NaiveTime::default(),
                 Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
                 Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
+                Cell::Uuid(u) => *u = Uuid::default(),
                 Cell::Bytes(b) => b.clear(),
             }
         }
@@ -669,6 +681,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::TIME => ColumnType::String,
                 Type::TIMESTAMP => ColumnType::String,
                 Type::TIMESTAMPTZ => ColumnType::String,
+                Type::UUID => ColumnType::String,
                 Type::BYTEA => ColumnType::Bytes,
                 _ => ColumnType::Bytes,
             };

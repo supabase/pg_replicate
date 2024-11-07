@@ -9,6 +9,7 @@ use tokio_postgres::{
     error::Error,
     types::{Type, WasNull},
 };
+use uuid::Uuid;
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
@@ -132,6 +133,9 @@ impl TableRowConverter {
                 column_schema.nullable,
                 |val: DateTime<FixedOffset>| Cell::TimeStampTz(val.into()),
             ),
+            Type::UUID => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Uuid| Cell::Uuid(val))
+            }
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
             #[cfg(feature = "unknown_types_to_bytes")]

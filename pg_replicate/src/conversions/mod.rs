@@ -1,5 +1,6 @@
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use numeric::PgNumeric;
+use uuid::Uuid;
 
 pub mod cdc_event;
 pub mod hex;
@@ -21,5 +22,6 @@ pub enum Cell {
     Time(NaiveTime),
     TimeStamp(NaiveDateTime),
     TimeStampTz(DateTime<Utc>),
+    Uuid(Uuid),
     Bytes(Vec<u8>),
 }

@@ -12,6 +12,7 @@ use postgres_protocol::message::backend::{
 };
 use thiserror::Error;
 use tokio_postgres::types::Type;
+use uuid::Uuid;
 
 use crate::{
     conversions::hex::from_bytea_hex,
@@ -46,6 +47,9 @@ pub enum CdcEventConversionError {
 
     #[error("invalid numeric: {0}")]
     InvalidNumeric(#[from] ParseBigDecimalError),
+
+    #[error("invalid uuid: {0}")]
+    InvalidUuid(#[from] uuid::Error),
 
     #[error("invalid bytea: {0}")]
     InvalidBytea(#[from] ByteaHexParseError),
@@ -159,6 +163,11 @@ impl CdcEventConverter {
                 let val = from_utf8(bytes)?;
                 let val = DateTime::<FixedOffset>::parse_from_rfc3339(val)?;
                 Ok(Cell::TimeStampTz(val.into()))
+            }
+            Type::UUID => {
+                let val = from_utf8(bytes)?;
+                let val = Uuid::parse_str(val)?;
+                Ok(Cell::Uuid(val))
             }
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => Ok(Cell::Bytes(bytes.to_vec())),
