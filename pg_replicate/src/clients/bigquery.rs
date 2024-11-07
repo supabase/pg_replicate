@@ -81,6 +81,7 @@ impl BigQueryClient {
             &Type::TIMESTAMP | &Type::TIMESTAMPTZ => "timestamp",
             &Type::UUID => "string",
             &Type::JSON | &Type::JSONB => "json",
+            &Type::OID => "int64",
             &Type::BYTEA => "bytes",
             _ => "bytes",
         }
@@ -362,6 +363,7 @@ impl BigQueryClient {
             Cell::TimeStampTz(t) => s.push_str(&format!("'{t}'")),
             Cell::Uuid(t) => s.push_str(&format!("'{t}'")),
             Cell::Json(j) => s.push_str(&format!("'{j}'")),
+            Cell::U32(u) => s.push_str(&format!("{u}")),
             Cell::Bytes(b) => {
                 let bytes: String = b.iter().map(|b| *b as char).collect();
                 s.push_str(&format!("b'{bytes}'"))
@@ -576,6 +578,9 @@ impl Message for TableRow {
                     let s = j.to_string();
                     ::prost::encoding::string::encode(tag, &s, buf)
                 }
+                Cell::U32(i) => {
+                    ::prost::encoding::uint32::encode(tag, i, buf);
+                }
                 Cell::Bytes(b) => {
                     ::prost::encoding::bytes::encode(tag, b, buf);
                 }
@@ -641,6 +646,7 @@ impl Message for TableRow {
                     let s = j.to_string();
                     ::prost::encoding::string::encoded_len(tag, &s)
                 }
+                Cell::U32(i) => ::prost::encoding::uint32::encoded_len(tag, i),
                 Cell::Bytes(b) => ::prost::encoding::bytes::encoded_len(tag, b),
             };
             tag += 1;
@@ -666,6 +672,7 @@ impl Message for TableRow {
                 Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
                 Cell::Uuid(u) => *u = Uuid::default(),
                 Cell::Json(j) => *j = serde_json::Value::default(),
+                Cell::U32(u) => *u = 0,
                 Cell::Bytes(b) => b.clear(),
             }
         }
@@ -695,6 +702,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::UUID => ColumnType::String,
                 Type::JSON => ColumnType::String,
                 Type::JSONB => ColumnType::String,
+                Type::OID => ColumnType::Int64,
                 Type::BYTEA => ColumnType::Bytes,
                 _ => ColumnType::Bytes,
             };

@@ -102,7 +102,9 @@ impl DuckDbClient {
         match typ {
             &Type::BOOL => "bool",
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "text",
-            &Type::INT2 | &Type::INT4 | &Type::INT8 => "integer",
+            &Type::INT2 => "int2",
+            &Type::INT4 => "int4",
+            &Type::INT8 => "int8",
             &Type::FLOAT4 => "float",
             &Type::FLOAT8 => "double",
             &Type::NUMERIC => "numeric",
@@ -112,6 +114,7 @@ impl DuckDbClient {
             &Type::TIMESTAMPTZ => "timestamptz",
             &Type::UUID => "uuid",
             &Type::JSON => "json",
+            &Type::OID => "int8",
             &Type::BYTEA => "bytea",
             typ => panic!("duckdb doesn't yet support type {typ}"),
         }
@@ -362,6 +365,7 @@ impl DuckDbClient {
 impl ToSql for Cell {
     fn to_sql(&self) -> duckdb::Result<ToSqlOutput<'_>> {
         match self {
+            Cell::Null => Null.to_sql(),
             Cell::Bool(b) => b.to_sql(),
             Cell::String(s) => s.to_sql(),
             Cell::I16(i) => i.to_sql(),
@@ -397,7 +401,7 @@ impl ToSql for Cell {
                 let s = j.to_string();
                 Ok(ToSqlOutput::Owned(Value::Text(s)))
             }
-            Cell::Null => Null.to_sql(),
+            Cell::U32(u) => u.to_sql(),
             Cell::Bytes(b) => b.to_sql(),
         }
     }

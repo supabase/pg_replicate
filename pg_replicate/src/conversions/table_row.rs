@@ -141,6 +141,9 @@ impl TableRowConverter {
                     Cell::Json(val)
                 })
             }
+            Type::OID => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: u32| Cell::U32(val))
+            }
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
             #[cfg(feature = "unknown_types_to_bytes")]

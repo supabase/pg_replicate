@@ -177,6 +177,11 @@ impl CdcEventConverter {
                 let val = serde_json::from_str(val)?;
                 Ok(Cell::Json(val))
             }
+            Type::OID => {
+                let val = from_utf8(bytes)?;
+                let val: u32 = val.parse()?;
+                Ok(Cell::U32(val))
+            }
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => Ok(Cell::Bytes(bytes.to_vec())),
             #[cfg(not(feature = "unknown_types_to_bytes"))]
