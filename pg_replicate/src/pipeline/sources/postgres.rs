@@ -8,10 +8,10 @@ use std::{
 use async_trait::async_trait;
 use futures::{ready, Stream};
 use pin_project_lite::pin_project;
+use postgres_replication::LogicalReplicationStream;
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutStream,
-    replication::LogicalReplicationStream,
     types::{PgLsn, Type},
 };
 use tracing::info;

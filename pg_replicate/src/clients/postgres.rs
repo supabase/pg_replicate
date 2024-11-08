@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use pg_escape::{quote_identifier, quote_literal};
+use postgres_replication::LogicalReplicationStream;
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutStream,
     config::ReplicationMode,
-    replication::LogicalReplicationStream,
     types::{Kind, PgLsn, Type},
     Client as PostgresClient, Config, NoTls, SimpleQueryMessage,
 };

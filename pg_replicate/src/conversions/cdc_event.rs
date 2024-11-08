@@ -7,7 +7,7 @@ use std::{
 
 use bigdecimal::{BigDecimal, ParseBigDecimalError};
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
-use postgres_protocol::message::backend::{
+use postgres_replication::protocol::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
     ReplicationMessage, TupleData, TypeBody, UpdateBody,
 };

@@ -32,6 +32,7 @@ gcp-bigquery-client = { workspace = true, optional = true, features = [
 pg_escape = { workspace = true }
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }
+postgres-replication = { workspace = true }
 prost = { workspace = true, optional = true }
 rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 serde = { workspace = true, features = ["derive"] }
