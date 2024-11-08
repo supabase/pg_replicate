@@ -1,22 +1,22 @@
 use std::{
     collections::HashMap,
     num::{ParseFloatError, ParseIntError},
-    str::{from_utf8, FromStr, ParseBoolError, Utf8Error},
+    str::{ParseBoolError, Utf8Error},
     string::FromUtf8Error,
 };
 
-use bigdecimal::{BigDecimal, ParseBigDecimalError};
+use bigdecimal::ParseBigDecimalError;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 use postgres_replication::protocol::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
     ReplicationMessage, TupleData, TypeBody, UpdateBody,
 };
 use thiserror::Error;
+use tokio_postgres::types::FromSql;
 use tokio_postgres::types::Type;
 use uuid::Uuid;
 
 use crate::{
-    conversions::hex::from_bytea_hex,
     pipeline::batching::BatchBoundary,
     table::{ColumnSchema, TableId, TableSchema},
 };
@@ -33,6 +33,9 @@ pub enum CdcEventConversionError {
 
     #[error("unchanged toast not yet supported")]
     UnchangedToastNotSupported,
+
+    #[error("text format is not supported")]
+    TextFormatNotSupported,
 
     #[error("invalid string value")]
     InvalidStr(#[from] Utf8Error),
@@ -84,6 +87,9 @@ pub enum CdcEventConversionError {
 
     #[error("invalid column name: {0}")]
     InvalidColumnName(String),
+
+    #[error("row get error: {0:?}")]
+    RowGetError(#[from] Box<dyn std::error::Error + Sync + Send>),
 }
 
 pub struct CdcEventConverter;
@@ -98,98 +104,78 @@ impl CdcEventConverter {
             TupleData::UnchangedToast => {
                 return Err(CdcEventConversionError::UnchangedToastNotSupported)
             }
-            TupleData::Text(bytes) => &bytes[..],
+            TupleData::Text(_) => return Err(CdcEventConversionError::TextFormatNotSupported),
+            TupleData::Binary(bytes) => &bytes[..],
         };
         match *typ {
             Type::BOOL => {
-                let val = from_utf8(bytes)?;
-                let val = match val {
-                    "t" => true,
-                    "f" => false,
-                    _ => val.parse()?,
-                };
+                let val = bool::from_sql(typ, bytes)?;
                 Ok(Cell::Bool(val))
             }
-            // Type::BYTEA => Ok(Value::Bytes(bytes.to_vec())),
             Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
-                let val = from_utf8(bytes)?;
+                let val = String::from_sql(typ, bytes)?;
                 Ok(Cell::String(val.to_string()))
             }
             Type::INT2 => {
-                let val = from_utf8(bytes)?;
-                let val: i16 = val.parse()?;
+                let val = i16::from_sql(typ, bytes)?;
                 Ok(Cell::I16(val))
             }
             Type::INT4 => {
-                let val = from_utf8(bytes)?;
-                let val: i32 = val.parse()?;
+                let val = i32::from_sql(typ, bytes)?;
                 Ok(Cell::I32(val))
             }
             Type::INT8 => {
-                let val = from_utf8(bytes)?;
-                let val: i64 = val.parse()?;
+                let val = i64::from_sql(typ, bytes)?;
                 Ok(Cell::I64(val))
             }
             Type::FLOAT4 => {
-                let val = from_utf8(bytes)?;
-                let val: f32 = val.parse()?;
+                let val = f32::from_sql(typ, bytes)?;
                 Ok(Cell::F32(val))
             }
             Type::FLOAT8 => {
-                let val = from_utf8(bytes)?;
-                let val: f64 = val.parse()?;
+                let val = f64::from_sql(typ, bytes)?;
                 Ok(Cell::F64(val))
             }
             Type::NUMERIC => {
-                let val = from_utf8(bytes)?;
-                let val = BigDecimal::from_str(val)?;
-                let val = PgNumeric::new(Some(val));
+                let val = PgNumeric::from_sql(typ, bytes)?;
                 Ok(Cell::Numeric(val))
             }
             Type::BYTEA => {
-                let val = from_utf8(bytes)?;
-                let val = from_bytea_hex(val)?;
+                let val = Vec::<u8>::from_sql(typ, bytes)?;
                 Ok(Cell::Bytes(val))
             }
             Type::DATE => {
-                let val = from_utf8(bytes)?;
-                let val = NaiveDate::parse_from_str(val, "%Y-%m-%d")?;
+                let val = NaiveDate::from_sql(typ, bytes)?;
                 Ok(Cell::Date(val))
             }
             Type::TIME => {
-                let val = from_utf8(bytes)?;
-                let val = NaiveTime::parse_from_str(val, "%H:%M:%S%.f")?;
+                let val = NaiveTime::from_sql(typ, bytes)?;
                 Ok(Cell::Time(val))
             }
             Type::TIMESTAMP => {
-                let val = from_utf8(bytes)?;
-                let val = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f")?;
+                let val = NaiveDateTime::from_sql(typ, bytes)?;
                 Ok(Cell::TimeStamp(val))
             }
             Type::TIMESTAMPTZ => {
-                let val = from_utf8(bytes)?;
-                let val = DateTime::<FixedOffset>::parse_from_rfc3339(val)?;
+                let val = DateTime::<FixedOffset>::from_sql(typ, bytes)?;
                 Ok(Cell::TimeStampTz(val.into()))
             }
             Type::UUID => {
-                let val = from_utf8(bytes)?;
-                let val = Uuid::parse_str(val)?;
+                let val = Uuid::from_sql(typ, bytes)?;
                 Ok(Cell::Uuid(val))
             }
             Type::JSON | Type::JSONB => {
-                let val = from_utf8(bytes)?;
-                let val = serde_json::from_str(val)?;
+                let val = serde_json::Value::from_sql(typ, bytes)?;
                 Ok(Cell::Json(val))
             }
             Type::OID => {
-                let val = from_utf8(bytes)?;
-                let val: u32 = val.parse()?;
+                let val = u32::from_sql(typ, bytes)?;
                 Ok(Cell::U32(val))
             }
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => {
-                let s = String::from_utf8(bytes.to_vec())?;
-                Ok(Cell::String(s))
+                let val = String::from_sql(typ, bytes)?;
+                Ok(Cell::String(val.to_string()))
             }
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             _ => Err(CdcEventConversionError::UnsupportedType(

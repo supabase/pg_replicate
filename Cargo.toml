@@ -51,3 +51,8 @@ uuid = { version = "1.10.0", default-features = false }
 
 # [patch.crates-io]
 # gcp-bigquery-client = { path = "../gcp-bigquery-client" }
+
+[patch."https://github.com/MaterializeInc/rust-postgres"]
+postgres-replication = { path = "../rust-postgres/postgres-replication" }
+postgres-protocol = { path = "../rust-postgres/postgres-protocol" }
+tokio-postgres = { path = "../rust-postgres/tokio-postgres" }

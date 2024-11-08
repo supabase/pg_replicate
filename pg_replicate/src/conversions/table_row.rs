@@ -153,6 +153,7 @@ impl TableRowConverter {
             ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => Self::get_from_row(row, i, column_schema.nullable, |val: VecWrapper| {
+                //TODO: remove VecWrapper and use String directly
                 let s = String::from_utf8(val.0)?;
                 Ok(Cell::String(s))
             }),
