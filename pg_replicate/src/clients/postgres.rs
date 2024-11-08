@@ -423,7 +423,7 @@ impl ReplicationClient {
         start_lsn: PgLsn,
     ) -> Result<LogicalReplicationStream, ReplicationClientError> {
         let options = format!(
-            "(\"proto_version\" '1', \"publication_names\" {})",
+            r#"("proto_version" '1', "publication_names" {})"#,
             quote_literal(publication)
         );
 
