@@ -116,7 +116,7 @@ impl DuckDbClient {
             &Type::JSON => "json",
             &Type::OID => "int8",
             &Type::BYTEA => "bytea",
-            typ => panic!("duckdb doesn't yet support type {typ}"),
+            _ => "string",
         }
     }
 

@@ -1,3 +1,5 @@
+use std::string::FromUtf8Error;
+
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(feature = "unknown_types_to_bytes")]
 use postgres_protocol::types;
@@ -30,6 +32,9 @@ impl BatchBoundary for TableRow {
 pub enum TableRowConversionError {
     #[error("unsupported type {0}")]
     UnsupportedType(Type),
+
+    #[error("invalid string: {0}")]
+    InvalidString(#[from] FromUtf8Error),
 
     #[error("row get error: {0:?}")]
     RowGetError(Option<Box<dyn std::error::Error + Sync + Send>>),
@@ -85,70 +90,71 @@ impl TableRowConverter {
         i: usize,
     ) -> Result<Cell, TableRowConversionError> {
         match column_schema.typ {
-            Type::BOOL => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: bool| Cell::Bool(val))
-            }
+            Type::BOOL => Self::get_from_row(row, i, column_schema.nullable, |val: bool| {
+                Ok(Cell::Bool(val))
+            }),
             Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: &str| {
-                    Cell::String(val.to_string())
+                    Ok(Cell::String(val.to_string()))
                 })
             }
-            Type::INT2 => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: i16| Cell::I16(val))
-            }
-            Type::INT4 => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: i32| Cell::I32(val))
-            }
-            Type::INT8 => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: i64| Cell::I64(val))
-            }
-            Type::FLOAT4 => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: f32| Cell::F32(val))
-            }
-            Type::FLOAT8 => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: f64| Cell::F64(val))
-            }
+            Type::INT2 => Self::get_from_row(row, i, column_schema.nullable, |val: i16| {
+                Ok(Cell::I16(val))
+            }),
+            Type::INT4 => Self::get_from_row(row, i, column_schema.nullable, |val: i32| {
+                Ok(Cell::I32(val))
+            }),
+            Type::INT8 => Self::get_from_row(row, i, column_schema.nullable, |val: i64| {
+                Ok(Cell::I64(val))
+            }),
+            Type::FLOAT4 => Self::get_from_row(row, i, column_schema.nullable, |val: f32| {
+                Ok(Cell::F32(val))
+            }),
+            Type::FLOAT8 => Self::get_from_row(row, i, column_schema.nullable, |val: f64| {
+                Ok(Cell::F64(val))
+            }),
             Type::NUMERIC => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: PgNumeric| {
-                    Cell::Numeric(val)
+                    Ok(Cell::Numeric(val))
                 })
             }
             Type::BYTEA => Self::get_from_row(row, i, column_schema.nullable, |val: Vec<u8>| {
-                Cell::Bytes(val)
+                Ok(Cell::Bytes(val))
             }),
             Type::DATE => Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDate| {
-                Cell::Date(val)
+                Ok(Cell::Date(val))
             }),
             Type::TIME => Self::get_from_row(row, i, column_schema.nullable, |val: NaiveTime| {
-                Cell::Time(val)
+                Ok(Cell::Time(val))
             }),
             Type::TIMESTAMP => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: NaiveDateTime| {
-                    Cell::TimeStamp(val)
+                    Ok(Cell::TimeStamp(val))
                 })
             }
             Type::TIMESTAMPTZ => Self::get_from_row(
                 row,
                 i,
                 column_schema.nullable,
-                |val: DateTime<FixedOffset>| Cell::TimeStampTz(val.into()),
+                |val: DateTime<FixedOffset>| Ok(Cell::TimeStampTz(val.into())),
             ),
-            Type::UUID => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: Uuid| Cell::Uuid(val))
-            }
+            Type::UUID => Self::get_from_row(row, i, column_schema.nullable, |val: Uuid| {
+                Ok(Cell::Uuid(val))
+            }),
             Type::JSON | Type::JSONB => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: serde_json::Value| {
-                    Cell::Json(val)
+                    Ok(Cell::Json(val))
                 })
             }
-            Type::OID => {
-                Self::get_from_row(row, i, column_schema.nullable, |val: u32| Cell::U32(val))
-            }
+            Type::OID => Self::get_from_row(row, i, column_schema.nullable, |val: u32| {
+                Ok(Cell::U32(val))
+            }),
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => Self::get_from_row(row, i, column_schema.nullable, |val: VecWrapper| {
-                Cell::Bytes(val.0)
+                let s = String::from_utf8(val.0)?;
+                Ok(Cell::String(s))
             }),
         }
     }
@@ -160,10 +166,10 @@ impl TableRowConverter {
         f: F,
     ) -> Result<Cell, TableRowConversionError>
     where
-        F: FnOnce(T) -> Cell,
+        F: FnOnce(T) -> Result<Cell, TableRowConversionError>,
     {
         match row.try_get::<T>(i) {
-            Ok(val) => Ok(f(val)),
+            Ok(val) => Ok(f(val)?),
             Err(e) => Self::error_or_null(e, nullable),
         }
     }

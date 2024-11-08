@@ -215,6 +215,7 @@ impl BatchSink for BigQueryBatchSink {
                 }
                 CdcEvent::Relation(_) => {}
                 CdcEvent::KeepAliveRequested { reply: _ } => {}
+                CdcEvent::Type(_) => {}
             }
         }
 

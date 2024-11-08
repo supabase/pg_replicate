@@ -2,13 +2,14 @@ use std::{
     collections::HashMap,
     num::{ParseFloatError, ParseIntError},
     str::{from_utf8, FromStr, ParseBoolError, Utf8Error},
+    string::FromUtf8Error,
 };
 
 use bigdecimal::{BigDecimal, ParseBigDecimalError};
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 use postgres_protocol::message::backend::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
-    ReplicationMessage, TupleData, UpdateBody,
+    ReplicationMessage, TupleData, TypeBody, UpdateBody,
 };
 use thiserror::Error;
 use tokio_postgres::types::Type;
@@ -57,8 +58,11 @@ pub enum CdcEventConversionError {
     #[error("invalid bytea: {0}")]
     InvalidBytea(#[from] ByteaHexParseError),
 
-    #[error("invalid timestamp value")]
+    #[error("invalid timestamp: {0} ")]
     InvalidTimestamp(#[from] chrono::ParseError),
+
+    #[error("invalid string: {0}")]
+    InvalidString(#[from] FromUtf8Error),
 
     #[error("unsupported type: {0}")]
     UnsupportedType(String),
@@ -183,7 +187,10 @@ impl CdcEventConverter {
                 Ok(Cell::U32(val))
             }
             #[cfg(feature = "unknown_types_to_bytes")]
-            _ => Ok(Cell::Bytes(bytes.to_vec())),
+            _ => {
+                let s = String::from_utf8(bytes.to_vec())?;
+                Ok(Cell::String(s))
+            }
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             _ => Err(CdcEventConversionError::UnsupportedType(
                 typ.name().to_string(),
@@ -256,9 +263,7 @@ impl CdcEventConverter {
                 LogicalReplicationMessage::Relation(relation_body) => {
                     Ok(CdcEvent::Relation(relation_body))
                 }
-                LogicalReplicationMessage::Type(_) => {
-                    Err(CdcEventConversionError::MessageNotSupported)
-                }
+                LogicalReplicationMessage::Type(type_body) => Ok(CdcEvent::Type(type_body)),
                 LogicalReplicationMessage::Insert(insert_body) => {
                     let table_id = insert_body.rel_id();
                     let column_schemas = &table_schemas
@@ -316,6 +321,7 @@ pub enum CdcEvent {
     Update((TableId, TableRow)),
     Delete((TableId, TableRow)),
     Relation(RelationBody),
+    Type(TypeBody),
     KeepAliveRequested { reply: bool },
 }
 

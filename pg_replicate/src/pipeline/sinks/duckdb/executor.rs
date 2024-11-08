@@ -116,6 +116,7 @@ impl DuckDbExecutor {
                             }
                             CdcEvent::Relation(_) => Ok(()),
                             CdcEvent::KeepAliveRequested { reply: _ } => Ok(()),
+                            CdcEvent::Type(_) => Ok(()),
                         };
 
                         let committed_lsn = self.committed_lsn.expect("committed lsn is none");

@@ -83,7 +83,7 @@ impl BigQueryClient {
             &Type::JSON | &Type::JSONB => "json",
             &Type::OID => "int64",
             &Type::BYTEA => "bytes",
-            _ => "bytes",
+            _ => "string",
         }
     }
 
@@ -704,7 +704,7 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::JSONB => ColumnType::String,
                 Type::OID => ColumnType::Int64,
                 Type::BYTEA => ColumnType::Bytes,
-                _ => ColumnType::Bytes,
+                _ => ColumnType::String,
             };
             field_descriptors.push(FieldDescriptor {
                 number,
