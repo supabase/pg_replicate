@@ -291,22 +291,24 @@ impl ReplicationClient {
 
         let query_result = self.postgres_client.simple_query(&query).await?;
 
-        if let SimpleQueryMessage::Row(row) = &query_result[0] {
-            let confirmed_flush_lsn = row
-                .get("confirmed_flush_lsn")
-                .ok_or(ReplicationClientError::MissingColumn(
-                    "confirmed_flush_lsn".to_string(),
-                    "pg_replication_slots".to_string(),
-                ))?
-                .parse()
-                .map_err(|_| ReplicationClientError::InvalidPgLsn)?;
+        for res in &query_result {
+            if let SimpleQueryMessage::Row(row) = res {
+                let confirmed_flush_lsn = row
+                    .get("confirmed_flush_lsn")
+                    .ok_or(ReplicationClientError::MissingColumn(
+                        "confirmed_flush_lsn".to_string(),
+                        "pg_replication_slots".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| ReplicationClientError::InvalidPgLsn)?;
 
-            Ok(Some(SlotInfo {
-                confirmed_flush_lsn,
-            }))
-        } else {
-            Ok(None)
+                return Ok(Some(SlotInfo {
+                    confirmed_flush_lsn,
+                }));
+            }
         }
+
+        Ok(None)
     }
 
     /// Creates a logical replication slot. This will only succeed if the postgres connection
@@ -319,22 +321,24 @@ impl ReplicationClient {
             r#"CREATE_REPLICATION_SLOT {} LOGICAL pgoutput USE_SNAPSHOT"#,
             quote_identifier(slot_name)
         );
-        let slot_query = self.postgres_client.simple_query(&query).await?;
-        if let SimpleQueryMessage::Row(row) = &slot_query[0] {
-            let consistent_point: PgLsn = row
-                .get("consistent_point")
-                .ok_or(ReplicationClientError::MissingColumn(
-                    "consistent_point".to_string(),
-                    "create_replication_slot".to_string(),
-                ))?
-                .parse()
-                .map_err(|_| ReplicationClientError::InvalidPgLsn)?;
-            Ok(SlotInfo {
-                confirmed_flush_lsn: consistent_point,
-            })
-        } else {
-            Err(ReplicationClientError::FailedToCreateSlot)
+        let results = self.postgres_client.simple_query(&query).await?;
+
+        for result in results {
+            if let SimpleQueryMessage::Row(row) = result {
+                let consistent_point: PgLsn = row
+                    .get("consistent_point")
+                    .ok_or(ReplicationClientError::MissingColumn(
+                        "consistent_point".to_string(),
+                        "create_replication_slot".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| ReplicationClientError::InvalidPgLsn)?;
+                return Ok(SlotInfo {
+                    confirmed_flush_lsn: consistent_point,
+                });
+            }
         }
+        Err(ReplicationClientError::FailedToCreateSlot)
     }
 
     /// Either return the slot info of an existing slot or creates a new
