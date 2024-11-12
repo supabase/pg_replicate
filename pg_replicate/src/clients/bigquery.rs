@@ -3,6 +3,7 @@ use std::{collections::HashSet, fs};
 use bytes::{Buf, BufMut};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use futures::StreamExt;
+use gcp_bigquery_client::storage::ColumnMode;
 use gcp_bigquery_client::yup_oauth2::parse_service_account_key;
 use gcp_bigquery_client::{
     error::BQError,
@@ -680,10 +681,10 @@ impl Message for TableRow {
 }
 
 impl From<&TableSchema> for TableDescriptor {
-    fn from(value: &TableSchema) -> Self {
-        let mut field_descriptors = Vec::with_capacity(value.column_schemas.len());
+    fn from(table_schema: &TableSchema) -> Self {
+        let mut field_descriptors = Vec::with_capacity(table_schema.column_schemas.len());
         let mut number = 1;
-        for column_schema in &value.column_schemas {
+        for column_schema in &table_schema.column_schemas {
             let typ = match column_schema.typ {
                 Type::BOOL => ColumnType::Bool,
                 Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
@@ -706,10 +707,16 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::BYTEA => ColumnType::Bytes,
                 _ => ColumnType::String,
             };
+            let mode = if column_schema.nullable {
+                ColumnMode::Nullable
+            } else {
+                ColumnMode::Required
+            };
             field_descriptors.push(FieldDescriptor {
                 number,
                 name: column_schema.name.clone(),
                 typ,
+                mode,
             });
             number += 1;
         }
@@ -718,6 +725,7 @@ impl From<&TableSchema> for TableDescriptor {
             number,
             name: "_CHANGE_TYPE".to_string(),
             typ: ColumnType::String,
+            mode: ColumnMode::Required,
         });
 
         TableDescriptor { field_descriptors }
