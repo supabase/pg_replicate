@@ -51,18 +51,3 @@ pub enum ArrayCell {
     Json(Vec<Option<serde_json::Value>>),
     Bytes(Vec<Option<Vec<u8>>>),
 }
-
-// #[derive(Debug, Clone)]
-// pub enum ArrayCellValue<T> {
-//     Null,
-//     NotNull(T),
-// }
-
-// impl<T> ArrayCellValue<T> {
-//     pub fn get_not_null_value(self) -> T {
-//         match self {
-//             ArrayCellValue::Null => panic!("get_not_null_value called on null value"),
-//             ArrayCellValue::NotNull(t) => t,
-//         }
-//     }
-// }
