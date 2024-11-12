@@ -6,7 +6,7 @@ use std::{
 };
 
 use bigdecimal::ParseBigDecimalError;
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use postgres_replication::protocol::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
     ReplicationMessage, TupleData, TypeBody, UpdateBody,
@@ -20,7 +20,7 @@ use crate::{
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::{numeric::PgNumeric, table_row::TableRow, Cell};
+use super::{numeric::PgNumeric, table_row::TableRow, ArrayCell, Cell};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -109,65 +109,135 @@ impl CdcEventConverter {
                 let val = bool::from_sql(typ, bytes)?;
                 Ok(Cell::Bool(val))
             }
+            Type::BOOL_ARRAY => {
+                let val = Vec::<Option<bool>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::Bool(val)))
+            }
             Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
                 let val = String::from_sql(typ, bytes)?;
                 Ok(Cell::String(val.to_string()))
+            }
+            Type::CHAR_ARRAY
+            | Type::BPCHAR_ARRAY
+            | Type::VARCHAR_ARRAY
+            | Type::NAME_ARRAY
+            | Type::TEXT_ARRAY => {
+                let val = Vec::<Option<String>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::String(val)))
             }
             Type::INT2 => {
                 let val = i16::from_sql(typ, bytes)?;
                 Ok(Cell::I16(val))
             }
+            Type::INT2_ARRAY => {
+                let val = Vec::<Option<i16>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::I16(val)))
+            }
             Type::INT4 => {
                 let val = i32::from_sql(typ, bytes)?;
                 Ok(Cell::I32(val))
+            }
+            Type::INT4_ARRAY => {
+                let val = Vec::<Option<i32>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::I32(val)))
             }
             Type::INT8 => {
                 let val = i64::from_sql(typ, bytes)?;
                 Ok(Cell::I64(val))
             }
+            Type::INT8_ARRAY => {
+                let val = Vec::<Option<i64>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::I64(val)))
+            }
             Type::FLOAT4 => {
                 let val = f32::from_sql(typ, bytes)?;
                 Ok(Cell::F32(val))
+            }
+            Type::FLOAT4_ARRAY => {
+                let val = Vec::<Option<f32>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::F32(val)))
             }
             Type::FLOAT8 => {
                 let val = f64::from_sql(typ, bytes)?;
                 Ok(Cell::F64(val))
             }
+            Type::FLOAT8_ARRAY => {
+                let val = Vec::<Option<f64>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::F64(val)))
+            }
             Type::NUMERIC => {
                 let val = PgNumeric::from_sql(typ, bytes)?;
                 Ok(Cell::Numeric(val))
+            }
+            Type::NUMERIC_ARRAY => {
+                let val = Vec::<Option<PgNumeric>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::Numeric(val)))
             }
             Type::BYTEA => {
                 let val = Vec::<u8>::from_sql(typ, bytes)?;
                 Ok(Cell::Bytes(val))
             }
+            Type::BYTEA_ARRAY => {
+                let val = Vec::<Option<Vec<u8>>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::Bytes(val)))
+            }
             Type::DATE => {
                 let val = NaiveDate::from_sql(typ, bytes)?;
                 Ok(Cell::Date(val))
+            }
+            Type::DATE_ARRAY => {
+                let val = Vec::<Option<NaiveDate>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::Date(val)))
             }
             Type::TIME => {
                 let val = NaiveTime::from_sql(typ, bytes)?;
                 Ok(Cell::Time(val))
             }
+            Type::TIME_ARRAY => {
+                let val = Vec::<Option<NaiveTime>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::Time(val)))
+            }
             Type::TIMESTAMP => {
                 let val = NaiveDateTime::from_sql(typ, bytes)?;
                 Ok(Cell::TimeStamp(val))
+            }
+            Type::TIMESTAMP_ARRAY => {
+                let val = Vec::<Option<NaiveDateTime>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::TimeStamp(val)))
             }
             Type::TIMESTAMPTZ => {
                 let val = DateTime::<FixedOffset>::from_sql(typ, bytes)?;
                 Ok(Cell::TimeStampTz(val.into()))
             }
+            Type::TIMESTAMPTZ_ARRAY => {
+                let mut val = Vec::<Option<DateTime<FixedOffset>>>::from_sql(typ, bytes)?;
+                let val: Vec<Option<DateTime<Utc>>> =
+                    val.drain(..).map(|v| v.map(|v| v.into())).collect();
+                Ok(Cell::Array(ArrayCell::TimeStampTz(val)))
+            }
             Type::UUID => {
                 let val = Uuid::from_sql(typ, bytes)?;
                 Ok(Cell::Uuid(val))
+            }
+            Type::UUID_ARRAY => {
+                let val = Vec::<Option<Uuid>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::Uuid(val)))
             }
             Type::JSON | Type::JSONB => {
                 let val = serde_json::Value::from_sql(typ, bytes)?;
                 Ok(Cell::Json(val))
             }
+            Type::JSON_ARRAY | Type::JSONB_ARRAY => {
+                let val = Vec::<Option<serde_json::Value>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::Json(val)))
+            }
             Type::OID => {
                 let val = u32::from_sql(typ, bytes)?;
                 Ok(Cell::U32(val))
+            }
+            Type::OID_ARRAY => {
+                let val = Vec::<Option<u32>>::from_sql(typ, bytes)?;
+                Ok(Cell::Array(ArrayCell::U32(val)))
             }
             #[cfg(feature = "unknown_types_to_bytes")]
             _ => {
