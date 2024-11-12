@@ -149,6 +149,11 @@ impl TableRowConverter {
             Type::OID => Self::get_from_row(row, i, column_schema.nullable, |val: u32| {
                 Ok(Cell::U32(val))
             }),
+            Type::INT4_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<i32>>| {
+                    Ok(Cell::Array(super::ArrayCell::I32(val)))
+                })
+            }
             #[cfg(not(feature = "unknown_types_to_bytes"))]
             ref t => Err(TableRowConversionError::UnsupportedType(t.clone())),
             #[cfg(feature = "unknown_types_to_bytes")]

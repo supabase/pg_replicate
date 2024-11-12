@@ -2,13 +2,13 @@ use std::{collections::HashSet, path::Path};
 
 use duckdb::{
     params_from_iter,
-    types::{Null, ToSqlOutput, Value},
+    types::{ToSqlOutput, Value},
     Config, Connection, ToSql,
 };
 use tokio_postgres::types::{PgLsn, Type};
 
 use crate::{
-    conversions::{table_row::TableRow, Cell},
+    conversions::{table_row::TableRow, ArrayCell, Cell},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
@@ -116,6 +116,23 @@ impl DuckDbClient {
             &Type::JSON => "json",
             &Type::OID => "int8",
             &Type::BYTEA => "bytea",
+            &Type::BOOL_ARRAY => "bool[]",
+            &Type::CHAR_ARRAY
+            | &Type::BPCHAR_ARRAY
+            | &Type::VARCHAR_ARRAY
+            | &Type::NAME_ARRAY
+            | &Type::TEXT_ARRAY => "text[]",
+            &Type::INT2_ARRAY => "int2[]",
+            &Type::INT4_ARRAY => "int4[]",
+            &Type::INT8_ARRAY => "int8[]",
+            &Type::NUMERIC_ARRAY => "numeric[]",
+            &Type::DATE_ARRAY => "date[]",
+            &Type::TIME_ARRAY => "time[]",
+            &Type::TIMESTAMP_ARRAY => "timestamp[]",
+            &Type::UUID_ARRAY => "uuid[]",
+            &Type::JSON_ARRAY => "json[]",
+            &Type::OID_ARRAY => "oid[]",
+            &Type::BYTEA_ARRAY => "bytea[]",
             _ => "string",
         }
     }
@@ -362,47 +379,223 @@ impl DuckDbClient {
     }
 }
 
-impl ToSql for Cell {
-    fn to_sql(&self) -> duckdb::Result<ToSqlOutput<'_>> {
-        match self {
-            Cell::Null => Null.to_sql(),
-            Cell::Bool(b) => b.to_sql(),
-            Cell::String(s) => s.to_sql(),
-            Cell::I16(i) => i.to_sql(),
-            Cell::I32(i) => i.to_sql(),
-            Cell::I64(i) => i.to_sql(),
-            Cell::F32(i) => i.to_sql(),
-            Cell::F64(i) => i.to_sql(),
+impl From<Cell> for Value {
+    fn from(value: Cell) -> Self {
+        match value {
+            Cell::Null => Value::Null,
+            Cell::Bool(b) => Value::Boolean(b),
+            Cell::String(s) => Value::Text(s),
+            Cell::I16(i) => Value::SmallInt(i),
+            Cell::I32(i) => Value::Int(i),
+            Cell::U32(u) => Value::UInt(u),
+            Cell::I64(i) => Value::BigInt(i),
+            Cell::F32(f) => Value::Float(f),
+            Cell::F64(f) => Value::Double(f),
             Cell::Numeric(n) => {
                 let s = n.to_string();
-                Ok(ToSqlOutput::Owned(Value::Text(s)))
+                Value::Text(s)
             }
-            Cell::Date(t) => {
-                let s = t.format("%Y-%m-%d").to_string();
-                Ok(ToSqlOutput::Owned(Value::Text(s)))
+            Cell::Date(d) => {
+                let s = d.format("%Y-%m-%d").to_string();
+                Value::Text(s)
             }
             Cell::Time(t) => {
                 let s = t.format("%H:%M:%S%.f").to_string();
-                Ok(ToSqlOutput::Owned(Value::Text(s)))
+                Value::Text(s)
             }
             Cell::TimeStamp(t) => {
                 let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
-                Ok(ToSqlOutput::Owned(Value::Text(s)))
+                Value::Text(s)
             }
             Cell::TimeStampTz(t) => {
                 let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
-                Ok(ToSqlOutput::Owned(Value::Text(s)))
+                Value::Text(s)
             }
             Cell::Uuid(u) => {
                 let s = u.to_string();
-                Ok(ToSqlOutput::Owned(Value::Text(s)))
+                Value::Text(s)
             }
             Cell::Json(j) => {
                 let s = j.to_string();
-                Ok(ToSqlOutput::Owned(Value::Text(s)))
+                Value::Text(s)
             }
-            Cell::U32(u) => u.to_sql(),
-            Cell::Bytes(b) => b.to_sql(),
+            Cell::Bytes(b) => Value::Blob(b),
+            Cell::Array(a) => a.into(),
         }
+    }
+}
+
+impl From<ArrayCell> for Value {
+    fn from(value: ArrayCell) -> Self {
+        match value {
+            ArrayCell::Null => Value::Null,
+            ArrayCell::Bool(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(b) => Value::Boolean(b),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::String(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(s) => Value::Text(s),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::I16(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(i) => Value::SmallInt(i),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::I32(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(i) => Value::Int(i),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::U32(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(u) => Value::UInt(u),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::I64(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(i) => Value::BigInt(i),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::F32(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(f) => Value::Float(f),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::F64(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(f) => Value::Double(f),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::Numeric(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(b) => Value::Text(b.to_string()),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::Date(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(d) => Value::Text(d.format("%Y-%m-%d").to_string()),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::Time(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(t) => Value::Text(t.format("%H:%M:%S%.f").to_string()),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::TimeStamp(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(t) => Value::Text(t.format("%Y-%m-%d %H:%M:%S%.f").to_string()),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::TimeStampTz(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(t) => Value::Text(t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string()),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::Uuid(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(u) => Value::Text(u.to_string()),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::Json(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(j) => Value::Text(j.to_string()),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+            ArrayCell::Bytes(mut vec) => {
+                let v = vec
+                    .drain(..)
+                    .map(|v| match v {
+                        None => Value::Null,
+                        Some(b) => Value::Blob(b),
+                    })
+                    .collect();
+                Value::Array(v)
+            }
+        }
+    }
+}
+
+impl ToSql for Cell {
+    fn to_sql(&self) -> duckdb::Result<ToSqlOutput<'_>> {
+        let value: Value = self.clone().into();
+        Ok(ToSqlOutput::Owned(value))
     }
 }

@@ -21,7 +21,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::conversions::numeric::PgNumeric;
-use crate::conversions::Cell;
+use crate::conversions::{ArrayCell, Cell};
 use crate::{
     conversions::table_row::TableRow,
     table::{ColumnSchema, TableId, TableSchema},
@@ -84,8 +84,51 @@ impl BigQueryClient {
             &Type::JSON | &Type::JSONB => "json",
             &Type::OID => "int64",
             &Type::BYTEA => "bytes",
+            &Type::BOOL_ARRAY => "array<bool>",
+            &Type::CHAR_ARRAY
+            | &Type::BPCHAR_ARRAY
+            | &Type::VARCHAR_ARRAY
+            | &Type::NAME_ARRAY
+            | &Type::TEXT_ARRAY => "array<string>",
+            &Type::INT2_ARRAY | &Type::INT4_ARRAY | &Type::INT8_ARRAY => "array<int64>",
+            &Type::FLOAT4_ARRAY | &Type::FLOAT8_ARRAY => "array<float64>",
+            &Type::NUMERIC_ARRAY => "array<bignumeric>",
+            &Type::DATE_ARRAY => "array<date>",
+            &Type::TIME_ARRAY => "array<time>",
+            &Type::TIMESTAMP_ARRAY | &Type::TIMESTAMPTZ_ARRAY => "array<timestamp>",
+            &Type::UUID_ARRAY => "array<string>",
+            &Type::JSON_ARRAY | &Type::JSONB_ARRAY => "array<json>",
+            &Type::OID_ARRAY => "array>int64>",
+            &Type::BYTEA_ARRAY => "array<bytes>",
             _ => "string",
         }
+    }
+
+    fn is_array_type(typ: &Type) -> bool {
+        matches!(
+            typ,
+            &Type::BOOL_ARRAY
+                | &Type::CHAR_ARRAY
+                | &Type::BPCHAR_ARRAY
+                | &Type::VARCHAR_ARRAY
+                | &Type::NAME_ARRAY
+                | &Type::TEXT_ARRAY
+                | &Type::INT2_ARRAY
+                | &Type::INT4_ARRAY
+                | &Type::INT8_ARRAY
+                | &Type::FLOAT4_ARRAY
+                | &Type::FLOAT8_ARRAY
+                | &Type::NUMERIC_ARRAY
+                | &Type::DATE_ARRAY
+                | &Type::TIME_ARRAY
+                | &Type::TIMESTAMP_ARRAY
+                | &Type::TIMESTAMPTZ_ARRAY
+                | &Type::UUID_ARRAY
+                | &Type::JSON_ARRAY
+                | &Type::JSONB_ARRAY
+                | &Type::OID_ARRAY
+                | &Type::BYTEA_ARRAY
+        )
     }
 
     fn column_spec(column_schema: &ColumnSchema, s: &mut String) {
@@ -93,7 +136,7 @@ impl BigQueryClient {
         s.push(' ');
         let typ = Self::postgres_type_to_bigquery_type(&column_schema.typ);
         s.push_str(typ);
-        if !column_schema.nullable {
+        if !column_schema.nullable && !Self::is_array_type(&column_schema.typ) {
             s.push_str(" not null");
         };
     }
@@ -369,6 +412,7 @@ impl BigQueryClient {
                 let bytes: String = b.iter().map(|b| *b as char).collect();
                 s.push_str(&format!("b'{bytes}'"))
             }
+            Cell::Array(_) => unreachable!(),
         }
     }
 
@@ -527,65 +571,7 @@ impl Message for TableRow {
     {
         let mut tag = 1;
         for cell in &self.values {
-            match cell {
-                Cell::Null => {}
-                Cell::Bool(b) => {
-                    ::prost::encoding::bool::encode(tag, b, buf);
-                }
-                Cell::String(s) => {
-                    ::prost::encoding::string::encode(tag, s, buf);
-                }
-                Cell::I16(i) => {
-                    let val = *i as i32;
-                    ::prost::encoding::int32::encode(tag, &val, buf);
-                }
-                Cell::I32(i) => {
-                    ::prost::encoding::int32::encode(tag, i, buf);
-                }
-                Cell::I64(i) => {
-                    ::prost::encoding::int64::encode(tag, i, buf);
-                }
-                Cell::F32(i) => {
-                    ::prost::encoding::float::encode(tag, i, buf);
-                }
-                Cell::F64(i) => {
-                    ::prost::encoding::double::encode(tag, i, buf);
-                }
-                Cell::Numeric(n) => {
-                    let s = n.to_string();
-                    ::prost::encoding::string::encode(tag, &s, buf);
-                }
-                Cell::Date(t) => {
-                    let s = t.format("%Y-%m-%d").to_string();
-                    ::prost::encoding::string::encode(tag, &s, buf);
-                }
-                Cell::Time(t) => {
-                    let s = t.format("%H:%M:%S%.f").to_string();
-                    ::prost::encoding::string::encode(tag, &s, buf);
-                }
-                Cell::TimeStamp(t) => {
-                    let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
-                    ::prost::encoding::string::encode(tag, &s, buf);
-                }
-                Cell::TimeStampTz(t) => {
-                    let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
-                    ::prost::encoding::string::encode(tag, &s, buf);
-                }
-                Cell::Uuid(u) => {
-                    let s = u.to_string();
-                    ::prost::encoding::string::encode(tag, &s, buf)
-                }
-                Cell::Json(j) => {
-                    let s = j.to_string();
-                    ::prost::encoding::string::encode(tag, &s, buf)
-                }
-                Cell::U32(i) => {
-                    ::prost::encoding::uint32::encode(tag, i, buf);
-                }
-                Cell::Bytes(b) => {
-                    ::prost::encoding::bytes::encode(tag, b, buf);
-                }
-            }
+            cell.encode_raw(tag, buf);
             tag += 1;
         }
     }
@@ -607,49 +593,7 @@ impl Message for TableRow {
         let mut len = 0;
         let mut tag = 1;
         for cell in &self.values {
-            len += match cell {
-                Cell::Null => 0,
-                Cell::Bool(b) => ::prost::encoding::bool::encoded_len(tag, b),
-                Cell::String(s) => ::prost::encoding::string::encoded_len(tag, s),
-                Cell::I16(i) => {
-                    let val = *i as i32;
-                    ::prost::encoding::sint32::encoded_len(tag, &val)
-                }
-                Cell::I32(i) => ::prost::encoding::sint32::encoded_len(tag, i),
-                Cell::I64(i) => ::prost::encoding::sint64::encoded_len(tag, i),
-                Cell::F32(i) => ::prost::encoding::float::encoded_len(tag, i),
-                Cell::F64(i) => ::prost::encoding::double::encoded_len(tag, i),
-                Cell::Numeric(n) => {
-                    let s = n.to_string();
-                    ::prost::encoding::string::encoded_len(tag, &s)
-                }
-                Cell::Date(t) => {
-                    let s = t.format("%Y-%m-%d").to_string();
-                    ::prost::encoding::string::encoded_len(tag, &s)
-                }
-                Cell::Time(t) => {
-                    let s = t.format("%H:%M:%S%.f").to_string();
-                    ::prost::encoding::string::encoded_len(tag, &s)
-                }
-                Cell::TimeStamp(t) => {
-                    let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
-                    ::prost::encoding::string::encoded_len(tag, &s)
-                }
-                Cell::TimeStampTz(t) => {
-                    let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
-                    ::prost::encoding::string::encoded_len(tag, &s)
-                }
-                Cell::Uuid(u) => {
-                    let s = u.to_string();
-                    ::prost::encoding::string::encoded_len(tag, &s)
-                }
-                Cell::Json(j) => {
-                    let s = j.to_string();
-                    ::prost::encoding::string::encoded_len(tag, &s)
-                }
-                Cell::U32(i) => ::prost::encoding::uint32::encoded_len(tag, i),
-                Cell::Bytes(b) => ::prost::encoding::bytes::encoded_len(tag, b),
-            };
+            len += cell.encoded_len(tag);
             tag += 1;
         }
         len
@@ -657,25 +601,374 @@ impl Message for TableRow {
 
     fn clear(&mut self) {
         for cell in &mut self.values {
-            match cell {
-                Cell::Null => {}
-                Cell::Bool(b) => *b = false,
-                Cell::String(s) => s.clear(),
-                Cell::I16(i) => *i = 0,
-                Cell::I32(i) => *i = 0,
-                Cell::I64(i) => *i = 0,
-                Cell::F32(i) => *i = 0.,
-                Cell::F64(i) => *i = 0.,
-                Cell::Numeric(n) => *n = PgNumeric::default(),
-                Cell::Date(t) => *t = NaiveDate::default(),
-                Cell::Time(t) => *t = NaiveTime::default(),
-                Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
-                Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
-                Cell::Uuid(u) => *u = Uuid::default(),
-                Cell::Json(j) => *j = serde_json::Value::default(),
-                Cell::U32(u) => *u = 0,
-                Cell::Bytes(b) => b.clear(),
+            cell.clear();
+        }
+    }
+}
+
+impl Cell {
+    fn encode_raw(&self, tag: u32, buf: &mut impl BufMut) {
+        match self {
+            Cell::Null => {}
+            Cell::Bool(b) => {
+                ::prost::encoding::bool::encode(tag, b, buf);
             }
+            Cell::String(s) => {
+                ::prost::encoding::string::encode(tag, s, buf);
+            }
+            Cell::I16(i) => {
+                let val = *i as i32;
+                ::prost::encoding::int32::encode(tag, &val, buf);
+            }
+            Cell::I32(i) => {
+                ::prost::encoding::int32::encode(tag, i, buf);
+            }
+            Cell::I64(i) => {
+                ::prost::encoding::int64::encode(tag, i, buf);
+            }
+            Cell::F32(i) => {
+                ::prost::encoding::float::encode(tag, i, buf);
+            }
+            Cell::F64(i) => {
+                ::prost::encoding::double::encode(tag, i, buf);
+            }
+            Cell::Numeric(n) => {
+                let s = n.to_string();
+                ::prost::encoding::string::encode(tag, &s, buf);
+            }
+            Cell::Date(t) => {
+                let s = t.format("%Y-%m-%d").to_string();
+                ::prost::encoding::string::encode(tag, &s, buf);
+            }
+            Cell::Time(t) => {
+                let s = t.format("%H:%M:%S%.f").to_string();
+                ::prost::encoding::string::encode(tag, &s, buf);
+            }
+            Cell::TimeStamp(t) => {
+                let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                ::prost::encoding::string::encode(tag, &s, buf);
+            }
+            Cell::TimeStampTz(t) => {
+                let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
+                ::prost::encoding::string::encode(tag, &s, buf);
+            }
+            Cell::Uuid(u) => {
+                let s = u.to_string();
+                ::prost::encoding::string::encode(tag, &s, buf)
+            }
+            Cell::Json(j) => {
+                let s = j.to_string();
+                ::prost::encoding::string::encode(tag, &s, buf)
+            }
+            Cell::U32(i) => {
+                ::prost::encoding::uint32::encode(tag, i, buf);
+            }
+            Cell::Bytes(b) => {
+                ::prost::encoding::bytes::encode(tag, b, buf);
+            }
+            Cell::Array(a) => {
+                a.clone().encode_raw(tag, buf);
+            }
+        }
+    }
+
+    fn encoded_len(&self, tag: u32) -> usize {
+        match self {
+            Cell::Null => 0,
+            Cell::Bool(b) => ::prost::encoding::bool::encoded_len(tag, b),
+            Cell::String(s) => ::prost::encoding::string::encoded_len(tag, s),
+            Cell::I16(i) => {
+                let val = *i as i32;
+                ::prost::encoding::int32::encoded_len(tag, &val)
+            }
+            Cell::I32(i) => ::prost::encoding::int32::encoded_len(tag, i),
+            Cell::I64(i) => ::prost::encoding::int64::encoded_len(tag, i),
+            Cell::F32(i) => ::prost::encoding::float::encoded_len(tag, i),
+            Cell::F64(i) => ::prost::encoding::double::encoded_len(tag, i),
+            Cell::Numeric(n) => {
+                let s = n.to_string();
+                ::prost::encoding::string::encoded_len(tag, &s)
+            }
+            Cell::Date(t) => {
+                let s = t.format("%Y-%m-%d").to_string();
+                ::prost::encoding::string::encoded_len(tag, &s)
+            }
+            Cell::Time(t) => {
+                let s = t.format("%H:%M:%S%.f").to_string();
+                ::prost::encoding::string::encoded_len(tag, &s)
+            }
+            Cell::TimeStamp(t) => {
+                let s = t.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+                ::prost::encoding::string::encoded_len(tag, &s)
+            }
+            Cell::TimeStampTz(t) => {
+                let s = t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
+                ::prost::encoding::string::encoded_len(tag, &s)
+            }
+            Cell::Uuid(u) => {
+                let s = u.to_string();
+                ::prost::encoding::string::encoded_len(tag, &s)
+            }
+            Cell::Json(j) => {
+                let s = j.to_string();
+                ::prost::encoding::string::encoded_len(tag, &s)
+            }
+            Cell::U32(i) => ::prost::encoding::uint32::encoded_len(tag, i),
+            Cell::Bytes(b) => ::prost::encoding::bytes::encoded_len(tag, b),
+            Cell::Array(array_cell) => array_cell.clone().encoded_len(tag),
+        }
+    }
+
+    fn clear(&mut self) {
+        match self {
+            Cell::Null => {}
+            Cell::Bool(b) => *b = false,
+            Cell::String(s) => s.clear(),
+            Cell::I16(i) => *i = 0,
+            Cell::I32(i) => *i = 0,
+            Cell::I64(i) => *i = 0,
+            Cell::F32(i) => *i = 0.,
+            Cell::F64(i) => *i = 0.,
+            Cell::Numeric(n) => *n = PgNumeric::default(),
+            Cell::Date(t) => *t = NaiveDate::default(),
+            Cell::Time(t) => *t = NaiveTime::default(),
+            Cell::TimeStamp(t) => *t = NaiveDateTime::default(),
+            Cell::TimeStampTz(t) => *t = DateTime::<Utc>::default(),
+            Cell::Uuid(u) => *u = Uuid::default(),
+            Cell::Json(j) => *j = serde_json::Value::default(),
+            Cell::U32(u) => *u = 0,
+            Cell::Bytes(b) => b.clear(),
+            Cell::Array(vec) => {
+                vec.clear();
+            }
+        }
+    }
+}
+
+impl ArrayCell {
+    fn encode_raw(self, tag: u32, buf: &mut impl BufMut) {
+        match self {
+            ArrayCell::Null => {}
+            ArrayCell::Bool(mut vec) => {
+                let vec: Vec<bool> = vec.drain(..).flatten().collect();
+                ::prost::encoding::bool::encode_packed(tag, &vec, buf);
+            }
+            ArrayCell::String(mut vec) => {
+                let vec: Vec<String> = vec.drain(..).flatten().collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::I16(mut vec) => {
+                let vec: Vec<i32> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap() as i32)
+                    .collect();
+                ::prost::encoding::int32::encode_packed(tag, &vec, buf);
+            }
+            ArrayCell::I32(mut vec) => {
+                let vec: Vec<i32> = vec.drain(..).flatten().collect();
+                ::prost::encoding::int32::encode_packed(tag, &vec, buf);
+            }
+            ArrayCell::U32(mut vec) => {
+                let vec: Vec<u32> = vec.drain(..).flatten().collect();
+                ::prost::encoding::uint32::encode_packed(tag, &vec, buf);
+            }
+            ArrayCell::I64(mut vec) => {
+                let vec: Vec<i64> = vec.drain(..).flatten().collect();
+                ::prost::encoding::int64::encode_packed(tag, &vec, buf);
+            }
+            ArrayCell::F32(mut vec) => {
+                let vec: Vec<f32> = vec.drain(..).flatten().collect();
+                ::prost::encoding::float::encode_packed(tag, &vec, buf);
+            }
+            ArrayCell::F64(mut vec) => {
+                let vec: Vec<f64> = vec.drain(..).flatten().collect();
+                ::prost::encoding::double::encode_packed(tag, &vec, buf);
+            }
+            ArrayCell::Numeric(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().to_string())
+                    .collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::Date(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%Y-%m-%d").to_string())
+                    .collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::Time(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%H:%M:%S%.f").to_string())
+                    .collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::TimeStamp(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%Y-%m-%d %H:%M:%S%.f").to_string())
+                    .collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::TimeStampTz(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%Y-%m-%d %H:%M:%S%.f%:z").to_string())
+                    .collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::Uuid(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().to_string())
+                    .collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::Json(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().to_string())
+                    .collect();
+                ::prost::encoding::string::encode_repeated(tag, &vec, buf);
+            }
+            ArrayCell::Bytes(mut vec) => {
+                let vec: Vec<Vec<u8>> = vec.drain(..).flatten().collect();
+                ::prost::encoding::bytes::encode_repeated(tag, &vec, buf);
+            }
+        }
+    }
+
+    fn encoded_len(self, tag: u32) -> usize {
+        match self {
+            ArrayCell::Null => 0,
+            ArrayCell::Bool(mut vec) => {
+                let vec: Vec<bool> = vec.drain(..).flatten().collect();
+                ::prost::encoding::bool::encoded_len_packed(tag, &vec)
+            }
+            ArrayCell::String(mut vec) => {
+                let vec: Vec<String> = vec.drain(..).flatten().collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::I16(mut vec) => {
+                let vec: Vec<i32> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap() as i32)
+                    .collect();
+                ::prost::encoding::int32::encoded_len_packed(tag, &vec)
+            }
+            ArrayCell::I32(mut vec) => {
+                let vec: Vec<i32> = vec.drain(..).flatten().collect();
+                ::prost::encoding::int32::encoded_len_packed(tag, &vec)
+            }
+            ArrayCell::U32(mut vec) => {
+                let vec: Vec<u32> = vec.drain(..).flatten().collect();
+                ::prost::encoding::uint32::encoded_len_packed(tag, &vec)
+            }
+            ArrayCell::I64(mut vec) => {
+                let vec: Vec<i64> = vec.drain(..).flatten().collect();
+                ::prost::encoding::int64::encoded_len_packed(tag, &vec)
+            }
+            ArrayCell::F32(mut vec) => {
+                let vec: Vec<f32> = vec.drain(..).flatten().collect();
+                ::prost::encoding::float::encoded_len_packed(tag, &vec)
+            }
+            ArrayCell::F64(mut vec) => {
+                let vec: Vec<f64> = vec.drain(..).flatten().collect();
+                ::prost::encoding::double::encoded_len_packed(tag, &vec)
+            }
+            ArrayCell::Numeric(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().to_string())
+                    .collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::Date(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%Y-%m-%d").to_string())
+                    .collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::Time(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%H:%M:%S%.f").to_string())
+                    .collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::TimeStamp(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%Y-%m-%d %H:%M:%S%.f").to_string())
+                    .collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::TimeStampTz(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().format("%Y-%m-%d %H:%M:%S%.f%:z").to_string())
+                    .collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::Uuid(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().to_string())
+                    .collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::Json(mut vec) => {
+                let vec: Vec<String> = vec
+                    .drain(..)
+                    .filter(|v| v.is_some())
+                    .map(|v| v.unwrap().to_string())
+                    .collect();
+                ::prost::encoding::string::encoded_len_repeated(tag, &vec)
+            }
+            ArrayCell::Bytes(mut vec) => {
+                let vec: Vec<Vec<u8>> = vec.drain(..).flatten().collect();
+                ::prost::encoding::bytes::encoded_len_repeated(tag, &vec)
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        match self {
+            ArrayCell::Null => {}
+            ArrayCell::Bool(vec) => vec.clear(),
+            ArrayCell::String(vec) => vec.clear(),
+            ArrayCell::I16(vec) => vec.clear(),
+            ArrayCell::I32(vec) => vec.clear(),
+            ArrayCell::U32(vec) => vec.clear(),
+            ArrayCell::I64(vec) => vec.clear(),
+            ArrayCell::F32(vec) => vec.clear(),
+            ArrayCell::F64(vec) => vec.clear(),
+            ArrayCell::Numeric(vec) => vec.clear(),
+            ArrayCell::Date(vec) => vec.clear(),
+            ArrayCell::Time(vec) => vec.clear(),
+            ArrayCell::TimeStamp(vec) => vec.clear(),
+            ArrayCell::TimeStampTz(vec) => vec.clear(),
+            ArrayCell::Uuid(vec) => vec.clear(),
+            ArrayCell::Json(vec) => vec.clear(),
+            ArrayCell::Bytes(vec) => vec.clear(),
         }
     }
 }
@@ -690,8 +983,8 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
                     ColumnType::String
                 }
-                Type::INT2 => ColumnType::Int64,
-                Type::INT4 => ColumnType::Int64,
+                Type::INT2 => ColumnType::Int32,
+                Type::INT4 => ColumnType::Int32,
                 Type::INT8 => ColumnType::Int64,
                 Type::FLOAT4 => ColumnType::Float,
                 Type::FLOAT8 => ColumnType::Double,
@@ -703,15 +996,63 @@ impl From<&TableSchema> for TableDescriptor {
                 Type::UUID => ColumnType::String,
                 Type::JSON => ColumnType::String,
                 Type::JSONB => ColumnType::String,
-                Type::OID => ColumnType::Int64,
+                Type::OID => ColumnType::Int32,
                 Type::BYTEA => ColumnType::Bytes,
+                Type::BOOL_ARRAY => ColumnType::Bool,
+                Type::CHAR_ARRAY
+                | Type::BPCHAR_ARRAY
+                | Type::VARCHAR_ARRAY
+                | Type::NAME_ARRAY
+                | Type::TEXT_ARRAY => ColumnType::String,
+                Type::INT2_ARRAY => ColumnType::Int32,
+                Type::INT4_ARRAY => ColumnType::Int32,
+                Type::INT8_ARRAY => ColumnType::Int64,
+                Type::FLOAT4_ARRAY => ColumnType::Float,
+                Type::FLOAT8_ARRAY => ColumnType::Double,
+                Type::NUMERIC_ARRAY => ColumnType::String,
+                Type::DATE_ARRAY => ColumnType::String,
+                Type::TIME_ARRAY => ColumnType::String,
+                Type::TIMESTAMP_ARRAY => ColumnType::String,
+                Type::TIMESTAMPTZ_ARRAY => ColumnType::String,
+                Type::UUID_ARRAY => ColumnType::String,
+                Type::JSON_ARRAY => ColumnType::String,
+                Type::JSONB_ARRAY => ColumnType::String,
+                Type::OID_ARRAY => ColumnType::Int32,
+                Type::BYTEA_ARRAY => ColumnType::Bytes,
                 _ => ColumnType::String,
             };
-            let mode = if column_schema.nullable {
-                ColumnMode::Nullable
-            } else {
-                ColumnMode::Required
+
+            let mode = match column_schema.typ {
+                Type::BOOL_ARRAY
+                | Type::CHAR_ARRAY
+                | Type::BPCHAR_ARRAY
+                | Type::VARCHAR_ARRAY
+                | Type::NAME_ARRAY
+                | Type::TEXT_ARRAY
+                | Type::INT2_ARRAY
+                | Type::INT4_ARRAY
+                | Type::INT8_ARRAY
+                | Type::FLOAT4_ARRAY
+                | Type::FLOAT8_ARRAY
+                | Type::NUMERIC_ARRAY
+                | Type::DATE_ARRAY
+                | Type::TIME_ARRAY
+                | Type::TIMESTAMP_ARRAY
+                | Type::TIMESTAMPTZ_ARRAY
+                | Type::UUID_ARRAY
+                | Type::JSON_ARRAY
+                | Type::JSONB_ARRAY
+                | Type::OID_ARRAY
+                | Type::BYTEA_ARRAY => ColumnMode::Repeated,
+                _ => {
+                    if column_schema.nullable {
+                        ColumnMode::Nullable
+                    } else {
+                        ColumnMode::Required
+                    }
+                }
             };
+
             field_descriptors.push(FieldDescriptor {
                 number,
                 name: column_schema.name.clone(),
