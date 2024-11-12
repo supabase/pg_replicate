@@ -5,7 +5,6 @@ use numeric::PgNumeric;
 use uuid::Uuid;
 
 pub mod cdc_event;
-pub mod hex;
 pub mod numeric;
 pub mod table_row;
 

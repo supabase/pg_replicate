@@ -20,7 +20,7 @@ use crate::{
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::{hex::ByteaHexParseError, numeric::PgNumeric, table_row::TableRow, Cell};
+use super::{numeric::PgNumeric, table_row::TableRow, Cell};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -56,9 +56,6 @@ pub enum CdcEventConversionError {
 
     #[error("invalid json: {0}")]
     InvalidJson(#[from] serde_json::Error),
-
-    #[error("invalid bytea: {0}")]
-    InvalidBytea(#[from] ByteaHexParseError),
 
     #[error("invalid timestamp: {0} ")]
     InvalidTimestamp(#[from] chrono::ParseError),
