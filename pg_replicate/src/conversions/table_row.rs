@@ -1,6 +1,6 @@
 use std::string::FromUtf8Error;
 
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 #[cfg(feature = "unknown_types_to_bytes")]
 use postgres_protocol::types;
 use thiserror::Error;
@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
-use super::{numeric::PgNumeric, Cell};
+use super::{numeric::PgNumeric, ArrayCell, Cell};
 
 #[derive(Debug)]
 pub struct TableRow {
@@ -149,9 +149,100 @@ impl TableRowConverter {
             Type::OID => Self::get_from_row(row, i, column_schema.nullable, |val: u32| {
                 Ok(Cell::U32(val))
             }),
+            Type::BOOL_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<bool>>| {
+                    Ok(Cell::Array(ArrayCell::Bool(val)))
+                })
+            }
+            Type::CHAR_ARRAY
+            | Type::BPCHAR_ARRAY
+            | Type::VARCHAR_ARRAY
+            | Type::NAME_ARRAY
+            | Type::TEXT_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: Vec<Option<String>>| Ok(Cell::Array(ArrayCell::String(val))),
+            ),
+            Type::INT2_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<i16>>| {
+                    Ok(Cell::Array(ArrayCell::I16(val)))
+                })
+            }
             Type::INT4_ARRAY => {
                 Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<i32>>| {
-                    Ok(Cell::Array(super::ArrayCell::I32(val)))
+                    Ok(Cell::Array(ArrayCell::I32(val)))
+                })
+            }
+            Type::INT8_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<i64>>| {
+                    Ok(Cell::Array(ArrayCell::I64(val)))
+                })
+            }
+            Type::FLOAT4_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<f32>>| {
+                    Ok(Cell::Array(ArrayCell::F32(val)))
+                })
+            }
+            Type::FLOAT8_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<f64>>| {
+                    Ok(Cell::Array(ArrayCell::F64(val)))
+                })
+            }
+            Type::NUMERIC_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: Vec<Option<PgNumeric>>| Ok(Cell::Array(ArrayCell::Numeric(val))),
+            ),
+            Type::BYTEA_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: Vec<Option<Vec<u8>>>| Ok(Cell::Array(ArrayCell::Bytes(val))),
+            ),
+            Type::DATE_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: Vec<Option<NaiveDate>>| Ok(Cell::Array(ArrayCell::Date(val))),
+            ),
+            Type::TIME_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: Vec<Option<NaiveTime>>| Ok(Cell::Array(ArrayCell::Time(val))),
+            ),
+            Type::TIMESTAMP_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: Vec<Option<NaiveDateTime>>| Ok(Cell::Array(ArrayCell::TimeStamp(val))),
+            ),
+            Type::TIMESTAMPTZ_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |mut val: Vec<Option<DateTime<FixedOffset>>>| {
+                    let val: Vec<Option<DateTime<Utc>>> =
+                        val.drain(..).map(|v| v.map(|v| v.into())).collect();
+                    Ok(Cell::Array(ArrayCell::TimeStampTz(val)))
+                },
+            ),
+            Type::UUID_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<Uuid>>| {
+                    Ok(Cell::Array(ArrayCell::Uuid(val)))
+                })
+            }
+            Type::JSON_ARRAY | Type::JSONB_ARRAY => Self::get_from_row(
+                row,
+                i,
+                column_schema.nullable,
+                |val: Vec<Option<serde_json::Value>>| Ok(Cell::Array(ArrayCell::Json(val))),
+            ),
+            Type::OID_ARRAY => {
+                Self::get_from_row(row, i, column_schema.nullable, |val: Vec<Option<u32>>| {
+                    Ok(Cell::Array(ArrayCell::U32(val)))
                 })
             }
             #[cfg(not(feature = "unknown_types_to_bytes"))]

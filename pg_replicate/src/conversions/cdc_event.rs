@@ -110,7 +110,6 @@ impl CdcEventConverter {
                 };
                 Ok(Cell::Bool(val))
             }
-            // Type::BYTEA => Ok(Value::Bytes(bytes.to_vec())),
             Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
                 let val = from_utf8(bytes)?;
                 Ok(Cell::String(val.to_string()))
