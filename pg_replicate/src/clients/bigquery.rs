@@ -98,7 +98,7 @@ impl BigQueryClient {
             &Type::TIMESTAMP_ARRAY | &Type::TIMESTAMPTZ_ARRAY => "array<timestamp>",
             &Type::UUID_ARRAY => "array<string>",
             &Type::JSON_ARRAY | &Type::JSONB_ARRAY => "array<json>",
-            &Type::OID_ARRAY => "array>int64>",
+            &Type::OID_ARRAY => "array<int64>",
             &Type::BYTEA_ARRAY => "array<bytes>",
             _ => "string",
         }
