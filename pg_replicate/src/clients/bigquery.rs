@@ -70,7 +70,7 @@ impl BigQueryClient {
         }
     }
 
-    fn postgres_type_to_bigquery_type(typ: &Type) -> &'static str {
+    fn postgres_to_bigquery_type(typ: &Type) -> &'static str {
         match typ {
             &Type::BOOL => "bool",
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "string",
@@ -134,7 +134,7 @@ impl BigQueryClient {
     fn column_spec(column_schema: &ColumnSchema, s: &mut String) {
         s.push_str(&column_schema.name);
         s.push(' ');
-        let typ = Self::postgres_type_to_bigquery_type(&column_schema.typ);
+        let typ = Self::postgres_to_bigquery_type(&column_schema.typ);
         s.push_str(typ);
         if !column_schema.nullable && !Self::is_array_type(&column_schema.typ) {
             s.push_str(" not null");
