@@ -98,7 +98,7 @@ impl DuckDbClient {
         }
     }
 
-    fn postgres_typ_to_duckdb_typ(typ: &Type) -> &'static str {
+    fn postgres_to_duckdb_type(typ: &Type) -> &'static str {
         match typ {
             &Type::BOOL => "bool",
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => "text",
@@ -140,7 +140,7 @@ impl DuckDbClient {
     fn duckdb_column_spec(column_schema: &ColumnSchema, s: &mut String) {
         s.push_str(&column_schema.name);
         s.push(' ');
-        let typ = Self::postgres_typ_to_duckdb_typ(&column_schema.typ);
+        let typ = Self::postgres_to_duckdb_type(&column_schema.typ);
         s.push_str(typ);
         if column_schema.identity {
             s.push_str(" primary key");
