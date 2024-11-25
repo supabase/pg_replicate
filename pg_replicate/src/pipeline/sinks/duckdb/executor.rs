@@ -156,7 +156,7 @@ impl DuckDbExecutor {
             typ: Type::INT4,
             modifier: 0,
             nullable: false,
-            identity: true,
+            primary: true,
         }];
         self.client
             .create_schema_if_missing(&copied_tables_table_name.schema)?;
@@ -173,7 +173,7 @@ impl DuckDbExecutor {
             typ: Type::INT8,
             modifier: 0,
             nullable: false,
-            identity: true,
+            primary: true,
         }];
         if self
             .client

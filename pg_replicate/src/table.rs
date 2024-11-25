@@ -31,7 +31,7 @@ pub struct ColumnSchema {
     pub typ: Type,
     pub modifier: TypeModifier,
     pub nullable: bool,
-    pub identity: bool,
+    pub primary: bool,
 }
 
 pub type TableId = u32;

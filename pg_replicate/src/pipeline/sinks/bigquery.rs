@@ -87,7 +87,7 @@ impl BatchSink for BigQueryBatchSink {
             typ: Type::INT4,
             modifier: 0,
             nullable: false,
-            identity: true,
+            primary: true,
         }];
 
         self.client
@@ -104,14 +104,14 @@ impl BatchSink for BigQueryBatchSink {
                 typ: Type::INT8,
                 modifier: 0,
                 nullable: false,
-                identity: true,
+                primary: true,
             },
             ColumnSchema {
                 name: "lsn".to_string(),
                 typ: Type::INT8,
                 modifier: 0,
                 nullable: false,
-                identity: false,
+                primary: false,
             },
         ];
         if self

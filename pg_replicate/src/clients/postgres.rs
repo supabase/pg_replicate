@@ -130,19 +130,19 @@ impl ReplicationClient {
         table_id: TableId,
     ) -> Result<Vec<ColumnSchema>, ReplicationClientError> {
         let column_info_query = format!(
-            "SELECT a.attname,
+            "select a.attname,
                 a.atttypid,
                 a.atttypmod,
                 a.attnotnull,
-                a.attnum = ANY(i.indkey) is_identity
-           FROM pg_catalog.pg_attribute a
-           LEFT JOIN pg_catalog.pg_index i
-                ON (i.indexrelid = pg_get_replica_identity_index({}))
-          WHERE a.attnum > 0::pg_catalog.int2
-            AND NOT a.attisdropped
-            AND a.attrelid = {}
-          ORDER BY a.attnum",
-            table_id, table_id
+                coalesce(i.indisprimary, false) primary
+            from pg_attribute a
+            left join pg_index i
+                on a.attrelid = i.indrelid
+                and a.attnum = any(i.indkey)
+            where a.attnum > 0::int2
+            and not a.attisdropped
+            and a.attrelid = {table_id}
+            ",
         );
 
         let mut column_schemas = vec![];
@@ -195,11 +195,11 @@ impl ReplicationClient {
                         ))?
                         == "f";
 
-                let identity =
-                    row.try_get("is_identity")?
+                let primary =
+                    row.try_get("primary")?
                         .ok_or(ReplicationClientError::MissingColumn(
-                            "attnum".to_string(),
-                            "pg_attribute".to_string(),
+                            "indisprimary".to_string(),
+                            "pg_index".to_string(),
                         ))?
                         == "t";
 
@@ -208,7 +208,7 @@ impl ReplicationClient {
                     typ,
                     modifier,
                     nullable,
-                    identity,
+                    primary,
                 })
             }
         }

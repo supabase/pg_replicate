@@ -142,7 +142,7 @@ impl DuckDbClient {
         s.push(' ');
         let typ = Self::postgres_to_duckdb_type(&column_schema.typ);
         s.push_str(typ);
-        if column_schema.identity {
+        if column_schema.primary {
             s.push_str(" primary key");
         };
     }
@@ -231,12 +231,12 @@ impl DuckDbClient {
         let non_identity_cells = column_schemas
             .iter()
             .zip(table_row.values.iter())
-            .filter(|(s, _)| !s.identity)
+            .filter(|(s, _)| !s.primary)
             .map(|(_, c)| c);
         let identity_cells = column_schemas
             .iter()
             .zip(table_row.values.iter())
-            .filter(|(s, _)| s.identity)
+            .filter(|(s, _)| s.primary)
             .map(|(_, c)| c);
         stmt.execute(params_from_iter(non_identity_cells.chain(identity_cells)))?;
         Ok(())
@@ -250,7 +250,7 @@ impl DuckDbClient {
         s.push_str(" set ");
 
         let mut remove_comma = false;
-        let non_identity_columns = column_schemas.iter().filter(|s| !s.identity);
+        let non_identity_columns = column_schemas.iter().filter(|s| !s.primary);
         for column in non_identity_columns {
             s.push_str(&column.name);
             s.push_str(" = ?,");
@@ -270,7 +270,7 @@ impl DuckDbClient {
         s.push_str(" where ");
 
         let mut remove_and = false;
-        let identity_columns = column_schemas.iter().filter(|s| s.identity);
+        let identity_columns = column_schemas.iter().filter(|s| s.primary);
         for column in identity_columns {
             s.push_str(&column.name);
             s.push_str(" = ? and ");
@@ -298,7 +298,7 @@ impl DuckDbClient {
         let identity_cells = column_schemas
             .iter()
             .zip(table_row.values.iter())
-            .filter(|(s, _)| s.identity)
+            .filter(|(s, _)| s.primary)
             .map(|(_, c)| c);
         stmt.execute(params_from_iter(identity_cells))?;
         Ok(())

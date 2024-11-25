@@ -142,7 +142,7 @@ impl BigQueryClient {
     }
 
     fn add_primary_key_clause(column_schemas: &[ColumnSchema], s: &mut String) {
-        let identity_columns = column_schemas.iter().filter(|s| s.identity);
+        let identity_columns = column_schemas.iter().filter(|s| s.primary);
 
         s.push_str("primary key (");
 
@@ -164,7 +164,7 @@ impl BigQueryClient {
             s.push(',');
         }
 
-        let has_identity_cols = column_schemas.iter().any(|s| s.identity);
+        let has_identity_cols = column_schemas.iter().any(|s| s.primary);
         if has_identity_cols {
             Self::add_primary_key_clause(column_schemas, &mut s);
         } else {
@@ -445,7 +445,7 @@ impl BigQueryClient {
         let mut remove_comma = false;
 
         for (cell, column) in table_row.values.iter().zip(column_schemas) {
-            if !column.identity {
+            if !column.primary {
                 s.push_str(&column.name);
                 s.push_str(" = ");
                 Self::cell_to_query_value(cell, &mut s);
@@ -473,7 +473,7 @@ impl BigQueryClient {
 
         let mut remove_and = false;
         for (cell, column) in table_row.values.iter().zip(column_schemas) {
-            if column.identity {
+            if column.primary {
                 s.push_str(&column.name);
                 s.push_str(" = ");
                 Self::cell_to_query_value(cell, s);
