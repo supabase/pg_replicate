@@ -89,6 +89,7 @@ jobs:
           cargo tarpaulin --verbose --workspace --all-features --exclude api
   docker:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
