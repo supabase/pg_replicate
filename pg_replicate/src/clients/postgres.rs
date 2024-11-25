@@ -36,6 +36,9 @@ pub enum ReplicationClientError {
     #[error("oid column is not a valid u32")]
     OidColumnNotU32,
 
+    #[error("replica identity '{0}' not supported")]
+    ReplicaIdentityNotSupported(String),
+
     #[error("type modifier column is not a valid u32")]
     TypeModifierColumnNotI32,
 
@@ -247,6 +250,8 @@ impl ReplicationClient {
     }
 
     /// Returns the table id (called relation id in Postgres) of a table
+    /// Also checks whether the replica identity is default or full and
+    /// returns an error if not.
     pub async fn get_table_id(
         &self,
         table: &TableName,
@@ -254,27 +259,42 @@ impl ReplicationClient {
         let quoted_schema = quote_literal(&table.schema);
         let quoted_name = quote_literal(&table.name);
 
-        let table_id_query = format!(
-            "SELECT c.oid
-          FROM pg_catalog.pg_class c
-          INNER JOIN pg_catalog.pg_namespace n
-                ON (c.relnamespace = n.oid)
-         WHERE n.nspname = {}
-           AND c.relname = {};",
+        let table_info_query = format!(
+            "select c.oid,
+                c.relreplident
+            from pg_class c
+            join pg_namespace n
+                on (c.relnamespace = n.oid)
+            where n.nspname = {}
+                and c.relname = {}
+            ",
             quoted_schema, quoted_name
         );
 
-        for msg in self.postgres_client.simple_query(&table_id_query).await? {
-            if let SimpleQueryMessage::Row(row) = msg {
-                return Ok(Some(
-                    row.get(0)
+        for message in self.postgres_client.simple_query(&table_info_query).await? {
+            if let SimpleQueryMessage::Row(row) = message {
+                let replica_identity =
+                    row.try_get("relreplident")?
                         .ok_or(ReplicationClientError::MissingColumn(
-                            "oid".to_string(),
-                            "pg_namespace".to_string(),
-                        ))?
-                        .parse::<u32>()
-                        .map_err(|_| ReplicationClientError::OidColumnNotU32)?,
-                ));
+                            "relreplident".to_string(),
+                            "pg_class".to_string(),
+                        ))?;
+
+                if !(replica_identity == "d" || replica_identity == "f") {
+                    return Err(ReplicationClientError::ReplicaIdentityNotSupported(
+                        replica_identity.to_string(),
+                    ));
+                }
+
+                let oid: u32 = row
+                    .try_get("oid")?
+                    .ok_or(ReplicationClientError::MissingColumn(
+                        "oid".to_string(),
+                        "pg_class".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| ReplicationClientError::OidColumnNotU32)?;
+                return Ok(Some(oid));
             }
         }
 
