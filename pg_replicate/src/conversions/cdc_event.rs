@@ -2,7 +2,7 @@ use core::str;
 use std::{
     collections::HashMap,
     num::{ParseFloatError, ParseIntError},
-    str::{ParseBoolError, Utf8Error},
+    str::Utf8Error,
     string::FromUtf8Error,
 };
 
@@ -18,11 +18,12 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
+    conversions::bool::parse_bool,
     pipeline::batching::BatchBoundary,
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::{numeric::PgNumeric, table_row::TableRow, ArrayCell, Cell};
+use super::{bool::ParseBoolError, numeric::PgNumeric, table_row::TableRow, ArrayCell, Cell};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -266,6 +267,7 @@ impl FromTupleData for TextFormatConverter {
             //     let val = bool::from_sql(typ, bytes)?;
             //     Ok(Cell::Bool(val))
             // }
+            Type::BOOL => Ok(Cell::Bool(parse_bool(str)?)),
             // Type::BOOL_ARRAY => {
             //     let val = Vec::<Option<bool>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Bool(val)))
