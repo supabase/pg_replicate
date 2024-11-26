@@ -33,9 +33,6 @@ pub enum CdcEventConversionError {
     #[error("unchanged toast not yet supported")]
     UnchangedToastNotSupported,
 
-    #[error("text format not supported")]
-    TextFormatNotSupported,
-
     #[error("invalid string value")]
     InvalidStr(#[from] Utf8Error),
 
@@ -282,8 +279,7 @@ impl CdcEventConverter {
                 TupleData::UnchangedToast => {
                     return Err(CdcEventConversionError::UnchangedToastNotSupported)
                 }
-                TupleData::Text(_) => return Err(CdcEventConversionError::TextFormatNotSupported),
-                TupleData::Binary(bytes) => self
+                TupleData::Text(bytes) | TupleData::Binary(bytes) => self
                     .tuple_converter
                     .try_from_tuple_data(&column_schema.typ, &bytes[..])?,
             };
