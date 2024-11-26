@@ -151,7 +151,7 @@ impl Source for PostgresSource {
         let slot_name = self
             .slot_name()
             .ok_or(PostgresSourceError::MissingSlotName)?;
-        let stream = self
+        let (stream, binary_format) = self
             .replication_client
             .get_logical_replication_stream(publication, slot_name, start_lsn)
             .await
@@ -164,6 +164,7 @@ impl Source for PostgresSource {
             stream,
             table_schemas: self.table_schemas.clone(),
             postgres_epoch,
+            binary_format,
         })
     }
 }
@@ -221,6 +222,7 @@ pin_project! {
         stream: LogicalReplicationStream,
         table_schemas: HashMap<TableId, TableSchema>,
         postgres_epoch: SystemTime,
+        binary_format: bool,
     }
 }
 
