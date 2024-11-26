@@ -92,7 +92,7 @@ pub trait FromTupleData {
     fn try_from_tuple_data(
         &self,
         typ: &Type,
-        val: &TupleData,
+        bytes: &[u8],
     ) -> Result<Cell, CdcEventConversionError>;
 }
 
@@ -102,19 +102,8 @@ impl FromTupleData for BinaryFormatConverter {
     fn try_from_tuple_data(
         &self,
         typ: &Type,
-        val: &TupleData,
+        bytes: &[u8],
     ) -> Result<Cell, CdcEventConversionError> {
-        let bytes = match val {
-            TupleData::Null => {
-                return Ok(Cell::Null);
-            }
-            TupleData::UnchangedToast => {
-                return Err(CdcEventConversionError::UnchangedToastNotSupported)
-            }
-            TupleData::Text(_) => return Err(CdcEventConversionError::TextFormatNotSupported),
-            TupleData::Binary(bytes) => &bytes[..],
-        };
-
         match *typ {
             Type::BOOL => {
                 let val = bool::from_sql(typ, bytes)?;
@@ -269,19 +258,8 @@ impl FromTupleData for TextFormatConverter {
     fn try_from_tuple_data(
         &self,
         _typ: &Type,
-        val: &TupleData,
+        _bytes: &[u8],
     ) -> Result<Cell, CdcEventConversionError> {
-        let _bytes = match val {
-            TupleData::Null => {
-                return Ok(Cell::Null);
-            }
-            TupleData::UnchangedToast => {
-                return Err(CdcEventConversionError::UnchangedToastNotSupported)
-            }
-            TupleData::Text(_) => return Err(CdcEventConversionError::TextFormatNotSupported),
-            TupleData::Binary(bytes) => &bytes[..],
-        };
-
         todo!();
     }
 }
@@ -299,10 +277,17 @@ impl CdcEventConverter {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         for (i, column_schema) in column_schemas.iter().enumerate() {
-            let val = self
-                .tuple_converter
-                .try_from_tuple_data(&column_schema.typ, &tuple_data[i])?;
-            values.push(val);
+            let cell = match &tuple_data[i] {
+                TupleData::Null => Cell::Null,
+                TupleData::UnchangedToast => {
+                    return Err(CdcEventConversionError::UnchangedToastNotSupported)
+                }
+                TupleData::Text(_) => return Err(CdcEventConversionError::TextFormatNotSupported),
+                TupleData::Binary(bytes) => self
+                    .tuple_converter
+                    .try_from_tuple_data(&column_schema.typ, &bytes[..])?,
+            };
+            values.push(cell);
         }
 
         Ok(TableRow { values })
