@@ -19,7 +19,10 @@ use tracing::info;
 use crate::{
     clients::postgres::{ReplicationClient, ReplicationClientError},
     conversions::{
-        cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
+        cdc_event::{
+            BinaryFormatConverter, CdcEvent, CdcEventConversionError, CdcEventConverter,
+            FromTupleData, TextFormatConverter,
+        },
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
     table::{ColumnSchema, TableId, TableName, TableSchema},
@@ -160,11 +163,17 @@ impl Source for PostgresSource {
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
+        let tuple_converter: Box<dyn FromTupleData> = if binary_format {
+            Box::new(BinaryFormatConverter)
+        } else {
+            Box::new(TextFormatConverter)
+        };
+
         Ok(CdcStream {
             stream,
             table_schemas: self.table_schemas.clone(),
             postgres_epoch,
-            binary_format,
+            converter: CdcEventConverter { tuple_converter },
         })
     }
 }
@@ -222,7 +231,7 @@ pin_project! {
         stream: LogicalReplicationStream,
         table_schemas: HashMap<TableId, TableSchema>,
         postgres_epoch: SystemTime,
-        binary_format: bool,
+        converter: CdcEventConverter
     }
 }
 
@@ -256,7 +265,7 @@ impl Stream for CdcStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
-            Some(Ok(msg)) => match CdcEventConverter::try_from(msg, this.table_schemas) {
+            Some(Ok(msg)) => match this.converter.try_from(msg, this.table_schemas) {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
                 Err(e) => Poll::Ready(Some(Err(e.into()))),
             },

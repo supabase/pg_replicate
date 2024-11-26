@@ -88,11 +88,22 @@ pub enum CdcEventConversionError {
     RowGetError(#[from] Box<dyn std::error::Error + Sync + Send>),
 }
 
-pub struct CdcEventConverter;
+pub trait FromTupleData {
+    fn try_from_tuple_data(
+        &self,
+        typ: &Type,
+        val: &TupleData,
+    ) -> Result<Cell, CdcEventConversionError>;
+}
 
-impl CdcEventConverter {
-    // Make sure any changes here are also done in TableRowConverter::get_cell_value
-    fn from_tuple_data(typ: &Type, val: &TupleData) -> Result<Cell, CdcEventConversionError> {
+pub struct BinaryFormatConverter;
+
+impl FromTupleData for BinaryFormatConverter {
+    fn try_from_tuple_data(
+        &self,
+        typ: &Type,
+        val: &TupleData,
+    ) -> Result<Cell, CdcEventConversionError> {
         let bytes = match val {
             TupleData::Null => {
                 return Ok(Cell::Null);
@@ -250,44 +261,80 @@ impl CdcEventConverter {
             )),
         }
     }
+}
 
-    fn from_tuple_data_slice(
+pub struct TextFormatConverter;
+
+impl FromTupleData for TextFormatConverter {
+    fn try_from_tuple_data(
+        &self,
+        _typ: &Type,
+        val: &TupleData,
+    ) -> Result<Cell, CdcEventConversionError> {
+        let _bytes = match val {
+            TupleData::Null => {
+                return Ok(Cell::Null);
+            }
+            TupleData::UnchangedToast => {
+                return Err(CdcEventConversionError::UnchangedToastNotSupported)
+            }
+            TupleData::Text(_) => return Err(CdcEventConversionError::TextFormatNotSupported),
+            TupleData::Binary(bytes) => &bytes[..],
+        };
+
+        todo!();
+    }
+}
+
+pub struct CdcEventConverter {
+    pub tuple_converter: Box<dyn FromTupleData>,
+}
+
+impl CdcEventConverter {
+    fn try_from_tuple_data_slice(
+        &self,
         column_schemas: &[ColumnSchema],
         tuple_data: &[TupleData],
     ) -> Result<TableRow, CdcEventConversionError> {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         for (i, column_schema) in column_schemas.iter().enumerate() {
-            let val = Self::from_tuple_data(&column_schema.typ, &tuple_data[i])?;
+            let val = self
+                .tuple_converter
+                .try_from_tuple_data(&column_schema.typ, &tuple_data[i])?;
             values.push(val);
         }
 
         Ok(TableRow { values })
     }
 
-    fn from_insert_body(
+    fn try_from_insert_body(
+        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         insert_body: InsertBody,
     ) -> Result<CdcEvent, CdcEventConversionError> {
-        let row = Self::from_tuple_data_slice(column_schemas, insert_body.tuple().tuple_data())?;
+        let row =
+            self.try_from_tuple_data_slice(column_schemas, insert_body.tuple().tuple_data())?;
 
         Ok(CdcEvent::Insert((table_id, row)))
     }
 
     //TODO: handle when identity columns are changed
-    fn from_update_body(
+    fn try_from_update_body(
+        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         update_body: UpdateBody,
     ) -> Result<CdcEvent, CdcEventConversionError> {
         let row =
-            Self::from_tuple_data_slice(column_schemas, update_body.new_tuple().tuple_data())?;
+            self.try_from_tuple_data_slice(column_schemas, update_body.new_tuple().tuple_data())?;
 
         Ok(CdcEvent::Update((table_id, row)))
     }
 
-    fn from_delete_body(
+    fn try_from_delete_body(
+        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         delete_body: DeleteBody,
@@ -297,12 +344,13 @@ impl CdcEventConverter {
             .or(delete_body.old_tuple())
             .ok_or(CdcEventConversionError::MissingTupleInDeleteBody)?;
 
-        let row = Self::from_tuple_data_slice(column_schemas, tuple.tuple_data())?;
+        let row = self.try_from_tuple_data_slice(column_schemas, tuple.tuple_data())?;
 
         Ok(CdcEvent::Delete((table_id, row)))
     }
 
     pub fn try_from(
+        &self,
         value: ReplicationMessage<LogicalReplicationMessage>,
         table_schemas: &HashMap<TableId, TableSchema>,
     ) -> Result<CdcEvent, CdcEventConversionError> {
@@ -323,11 +371,7 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(Self::from_insert_body(
-                        table_id,
-                        column_schemas,
-                        insert_body,
-                    )?)
+                    Ok(self.try_from_insert_body(table_id, column_schemas, insert_body)?)
                 }
                 LogicalReplicationMessage::Update(update_body) => {
                     let table_id = update_body.rel_id();
@@ -335,11 +379,7 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(Self::from_update_body(
-                        table_id,
-                        column_schemas,
-                        update_body,
-                    )?)
+                    Ok(self.try_from_update_body(table_id, column_schemas, update_body)?)
                 }
                 LogicalReplicationMessage::Delete(delete_body) => {
                     let table_id = delete_body.rel_id();
@@ -347,11 +387,7 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(Self::from_delete_body(
-                        table_id,
-                        column_schemas,
-                        delete_body,
-                    )?)
+                    Ok(self.try_from_delete_body(table_id, column_schemas, delete_body)?)
                 }
                 LogicalReplicationMessage::Truncate(_) => {
                     Err(CdcEventConversionError::MessageNotSupported)
