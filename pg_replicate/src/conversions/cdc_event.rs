@@ -272,10 +272,9 @@ impl FromTupleData for TextFormatConverter {
             //     let val = Vec::<Option<bool>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Bool(val)))
             // }
-            // Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
-            //     let val = String::from_sql(typ, bytes)?;
-            //     Ok(Cell::String(val.to_string()))
-            // }
+            Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
+                Ok(Cell::String(str.to_string()))
+            }
             // Type::CHAR_ARRAY
             // | Type::BPCHAR_ARRAY
             // | Type::VARCHAR_ARRAY
