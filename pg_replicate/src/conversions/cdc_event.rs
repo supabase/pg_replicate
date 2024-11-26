@@ -263,10 +263,6 @@ impl FromTupleData for TextFormatConverter {
         let str = str::from_utf8(bytes)?;
         info!("TYP: {typ:#?}, STR: {str:#?}");
         match *typ {
-            // Type::BOOL => {
-            //     let val = bool::from_sql(typ, bytes)?;
-            //     Ok(Cell::Bool(val))
-            // }
             Type::BOOL => Ok(Cell::Bool(parse_bool(str)?)),
             // Type::BOOL_ARRAY => {
             //     let val = Vec::<Option<bool>>::from_sql(typ, bytes)?;
@@ -298,18 +294,12 @@ impl FromTupleData for TextFormatConverter {
             //     let val = Vec::<Option<i64>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::I64(val)))
             // }
-            // Type::FLOAT4 => {
-            //     let val = f32::from_sql(typ, bytes)?;
-            //     Ok(Cell::F32(val))
-            // }
+            Type::FLOAT4 => Ok(Cell::F32(str.parse()?)),
             // Type::FLOAT4_ARRAY => {
             //     let val = Vec::<Option<f32>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::F32(val)))
             // }
-            // Type::FLOAT8 => {
-            //     let val = f64::from_sql(typ, bytes)?;
-            //     Ok(Cell::F64(val))
-            // }
+            Type::FLOAT8 => Ok(Cell::F64(str.parse()?)),
             // Type::FLOAT8_ARRAY => {
             //     let val = Vec::<Option<f64>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::F64(val)))
