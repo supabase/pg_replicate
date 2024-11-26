@@ -1,3 +1,4 @@
+use core::str;
 use std::{
     collections::HashMap,
     num::{ParseFloatError, ParseIntError},
@@ -13,6 +14,7 @@ use postgres_replication::protocol::{
 };
 use thiserror::Error;
 use tokio_postgres::types::{FromSql, Type};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{
@@ -254,10 +256,20 @@ pub struct TextFormatConverter;
 impl FromTupleData for TextFormatConverter {
     fn try_from_tuple_data(
         &self,
-        _typ: &Type,
-        _bytes: &[u8],
+        typ: &Type,
+        bytes: &[u8],
     ) -> Result<Cell, CdcEventConversionError> {
-        todo!();
+        let str = str::from_utf8(bytes)?;
+        info!("TYP: {typ:#?}, STR: {str:#?}");
+        match *typ {
+            Type::INT8 => Ok(Cell::I64(str.parse()?)),
+            #[cfg(feature = "unknown_types_to_bytes")]
+            _ => Ok(Cell::String(str.to_string())),
+            #[cfg(not(feature = "unknown_types_to_bytes"))]
+            _ => Err(CdcEventConversionError::UnsupportedType(
+                typ.name().to_string(),
+            )),
+        }
     }
 }
 
