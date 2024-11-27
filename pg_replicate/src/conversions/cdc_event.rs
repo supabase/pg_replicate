@@ -1,7 +1,8 @@
+use core::str;
 use std::{
     collections::HashMap,
     num::{ParseFloatError, ParseIntError},
-    str::{ParseBoolError, Utf8Error},
+    str::Utf8Error,
     string::FromUtf8Error,
 };
 
@@ -16,11 +17,15 @@ use tokio_postgres::types::{FromSql, Type};
 use uuid::Uuid;
 
 use crate::{
+    conversions::{bool::parse_bool, hex},
     pipeline::batching::BatchBoundary,
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::{numeric::PgNumeric, table_row::TableRow, ArrayCell, Cell};
+use super::{
+    bool::ParseBoolError, hex::ByteaHexParseError, numeric::PgNumeric, table_row::TableRow,
+    ArrayCell, Cell,
+};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -32,9 +37,6 @@ pub enum CdcEventConversionError {
 
     #[error("unchanged toast not yet supported")]
     UnchangedToastNotSupported,
-
-    #[error("text format not supported")]
-    TextFormatNotSupported,
 
     #[error("invalid string value")]
     InvalidStr(#[from] Utf8Error),
@@ -51,6 +53,9 @@ pub enum CdcEventConversionError {
     #[error("invalid numeric: {0}")]
     InvalidNumeric(#[from] ParseBigDecimalError),
 
+    #[error("invalid bytea: {0}")]
+    InvalidBytea(#[from] ByteaHexParseError),
+
     #[error("invalid uuid: {0}")]
     InvalidUuid(#[from] uuid::Error),
 
@@ -62,6 +67,9 @@ pub enum CdcEventConversionError {
 
     #[error("invalid string: {0}")]
     InvalidString(#[from] FromUtf8Error),
+
+    #[error("invalid array: {0}")]
+    InvalidArray(#[from] ArrayParseError),
 
     #[error("unsupported type: {0}")]
     UnsupportedType(String),
@@ -88,22 +96,22 @@ pub enum CdcEventConversionError {
     RowGetError(#[from] Box<dyn std::error::Error + Sync + Send>),
 }
 
-pub struct CdcEventConverter;
+pub trait FromTupleData {
+    fn try_from_tuple_data(
+        &self,
+        typ: &Type,
+        bytes: &[u8],
+    ) -> Result<Cell, CdcEventConversionError>;
+}
 
-impl CdcEventConverter {
-    // Make sure any changes here are also done in TableRowConverter::get_cell_value
-    fn from_tuple_data(typ: &Type, val: &TupleData) -> Result<Cell, CdcEventConversionError> {
-        let bytes = match val {
-            TupleData::Null => {
-                return Ok(Cell::Null);
-            }
-            TupleData::UnchangedToast => {
-                return Err(CdcEventConversionError::UnchangedToastNotSupported)
-            }
-            TupleData::Text(_) => return Err(CdcEventConversionError::TextFormatNotSupported),
-            TupleData::Binary(bytes) => &bytes[..],
-        };
+pub struct BinaryFormatConverter;
 
+impl FromTupleData for BinaryFormatConverter {
+    fn try_from_tuple_data(
+        &self,
+        typ: &Type,
+        bytes: &[u8],
+    ) -> Result<Cell, CdcEventConversionError> {
         match *typ {
             Type::BOOL => {
                 let val = bool::from_sql(typ, bytes)?;
@@ -250,44 +258,270 @@ impl CdcEventConverter {
             )),
         }
     }
+}
 
-    fn from_tuple_data_slice(
+pub struct TextFormatConverter;
+
+#[derive(Debug, Error)]
+pub enum ArrayParseError {
+    #[error("input too short")]
+    InputTooShort,
+
+    #[error("missing brances")]
+    MissingBraces,
+}
+
+impl TextFormatConverter {
+    fn parse_array<P, M, T>(str: &str, mut parse: P, m: M) -> Result<Cell, CdcEventConversionError>
+    where
+        P: FnMut(&str) -> Result<Option<T>, CdcEventConversionError>,
+        M: FnOnce(Vec<Option<T>>) -> ArrayCell,
+    {
+        if str.len() < 2 {
+            return Err(ArrayParseError::InputTooShort.into());
+        }
+
+        if !str.starts_with('{') || !str.ends_with('}') {
+            return Err(ArrayParseError::MissingBraces.into());
+        }
+
+        let mut res = vec![];
+        let str = &str[1..(str.len() - 1)];
+        let mut val_str = String::with_capacity(10);
+        let mut in_quotes = false;
+        let mut in_escape = false;
+        let mut chars = str.chars();
+        let mut done = str.is_empty();
+
+        while !done {
+            loop {
+                match chars.next() {
+                    Some(c) => match c {
+                        c if in_escape => {
+                            val_str.push(c);
+                            in_escape = false;
+                        }
+                        '"' => in_quotes = !in_quotes,
+                        '\\' => in_escape = true,
+                        ',' if !in_quotes => {
+                            break;
+                        }
+                        c => {
+                            val_str.push(c);
+                        }
+                    },
+                    None => {
+                        done = true;
+                        break;
+                    }
+                }
+            }
+            let val = if val_str.to_lowercase() == "null" {
+                None
+            } else {
+                parse(&val_str)?
+            };
+            res.push(val);
+            val_str.clear();
+        }
+
+        Ok(Cell::Array(m(res)))
+    }
+}
+
+impl FromTupleData for TextFormatConverter {
+    fn try_from_tuple_data(
+        &self,
+        typ: &Type,
+        bytes: &[u8],
+    ) -> Result<Cell, CdcEventConversionError> {
+        let str = str::from_utf8(bytes)?;
+        match *typ {
+            Type::BOOL => Ok(Cell::Bool(parse_bool(str)?)),
+            Type::BOOL_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(parse_bool(str)?)),
+                ArrayCell::Bool,
+            ),
+            Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
+                Ok(Cell::String(str.to_string()))
+            }
+            Type::CHAR_ARRAY
+            | Type::BPCHAR_ARRAY
+            | Type::VARCHAR_ARRAY
+            | Type::NAME_ARRAY
+            | Type::TEXT_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(str.to_string())),
+                ArrayCell::String,
+            ),
+            Type::INT2 => Ok(Cell::I16(str.parse()?)),
+            Type::INT2_ARRAY => {
+                TextFormatConverter::parse_array(str, |str| Ok(Some(str.parse()?)), ArrayCell::I16)
+            }
+            Type::INT4 => Ok(Cell::I32(str.parse()?)),
+            Type::INT4_ARRAY => {
+                TextFormatConverter::parse_array(str, |str| Ok(Some(str.parse()?)), ArrayCell::I32)
+            }
+            Type::INT8 => Ok(Cell::I64(str.parse()?)),
+            Type::INT8_ARRAY => {
+                TextFormatConverter::parse_array(str, |str| Ok(Some(str.parse()?)), ArrayCell::I64)
+            }
+            Type::FLOAT4 => Ok(Cell::F32(str.parse()?)),
+            Type::FLOAT4_ARRAY => {
+                TextFormatConverter::parse_array(str, |str| Ok(Some(str.parse()?)), ArrayCell::F32)
+            }
+            Type::FLOAT8 => Ok(Cell::F64(str.parse()?)),
+            Type::FLOAT8_ARRAY => {
+                TextFormatConverter::parse_array(str, |str| Ok(Some(str.parse()?)), ArrayCell::F64)
+            }
+            Type::NUMERIC => Ok(Cell::Numeric(str.parse()?)),
+            Type::NUMERIC_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(str.parse()?)),
+                ArrayCell::Numeric,
+            ),
+            Type::BYTEA => Ok(Cell::Bytes(hex::from_bytea_hex(str)?)),
+            Type::BYTEA_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(hex::from_bytea_hex(str)?)),
+                ArrayCell::Bytes,
+            ),
+            Type::DATE => {
+                let val = NaiveDate::parse_from_str(str, "%Y-%m-%d")?;
+                Ok(Cell::Date(val))
+            }
+            Type::DATE_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(NaiveDate::parse_from_str(str, "%Y-%m-%d")?)),
+                ArrayCell::Date,
+            ),
+            Type::TIME => {
+                let val = NaiveTime::parse_from_str(str, "%H:%M:%S%.f")?;
+                Ok(Cell::Time(val))
+            }
+            Type::TIME_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(NaiveTime::parse_from_str(str, "%H:%M:%S%.f")?)),
+                ArrayCell::Time,
+            ),
+            Type::TIMESTAMP => {
+                let val = NaiveDateTime::parse_from_str(str, "%Y-%m-%d %H:%M:%S%.f")?;
+                Ok(Cell::TimeStamp(val))
+            }
+            Type::TIMESTAMP_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| {
+                    Ok(Some(NaiveDateTime::parse_from_str(
+                        str,
+                        "%Y-%m-%d %H:%M:%S%.f",
+                    )?))
+                },
+                ArrayCell::TimeStamp,
+            ),
+            Type::TIMESTAMPTZ => {
+                let val = DateTime::<FixedOffset>::parse_from_rfc3339(str)?;
+                Ok(Cell::TimeStampTz(val.into()))
+            }
+            Type::TIMESTAMPTZ_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| {
+                    Ok(Some(
+                        DateTime::<FixedOffset>::parse_from_rfc3339(str)?.into(),
+                    ))
+                },
+                ArrayCell::TimeStampTz,
+            ),
+            Type::UUID => {
+                let val = Uuid::parse_str(str)?;
+                Ok(Cell::Uuid(val))
+            }
+            Type::UUID_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(Uuid::parse_str(str)?)),
+                ArrayCell::Uuid,
+            ),
+            Type::JSON | Type::JSONB => {
+                let val = serde_json::from_str(str)?;
+                Ok(Cell::Json(val))
+            }
+            Type::JSON_ARRAY | Type::JSONB_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(serde_json::from_str(str)?)),
+                ArrayCell::Json,
+            ),
+            Type::OID => {
+                let val: u32 = str.parse()?;
+                Ok(Cell::U32(val))
+            }
+            Type::OID_ARRAY => {
+                TextFormatConverter::parse_array(str, |str| Ok(Some(str.parse()?)), ArrayCell::U32)
+            }
+            #[cfg(feature = "unknown_types_to_bytes")]
+            _ => Ok(Cell::String(str.to_string())),
+            #[cfg(not(feature = "unknown_types_to_bytes"))]
+            _ => Err(CdcEventConversionError::UnsupportedType(
+                typ.name().to_string(),
+            )),
+        }
+    }
+}
+
+pub struct CdcEventConverter {
+    pub tuple_converter: Box<dyn FromTupleData>,
+}
+
+impl CdcEventConverter {
+    fn try_from_tuple_data_slice(
+        &self,
         column_schemas: &[ColumnSchema],
         tuple_data: &[TupleData],
     ) -> Result<TableRow, CdcEventConversionError> {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         for (i, column_schema) in column_schemas.iter().enumerate() {
-            let val = Self::from_tuple_data(&column_schema.typ, &tuple_data[i])?;
-            values.push(val);
+            let cell = match &tuple_data[i] {
+                TupleData::Null => Cell::Null,
+                TupleData::UnchangedToast => {
+                    return Err(CdcEventConversionError::UnchangedToastNotSupported)
+                }
+                TupleData::Text(bytes) | TupleData::Binary(bytes) => self
+                    .tuple_converter
+                    .try_from_tuple_data(&column_schema.typ, &bytes[..])?,
+            };
+            values.push(cell);
         }
 
         Ok(TableRow { values })
     }
 
-    fn from_insert_body(
+    fn try_from_insert_body(
+        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         insert_body: InsertBody,
     ) -> Result<CdcEvent, CdcEventConversionError> {
-        let row = Self::from_tuple_data_slice(column_schemas, insert_body.tuple().tuple_data())?;
+        let row =
+            self.try_from_tuple_data_slice(column_schemas, insert_body.tuple().tuple_data())?;
 
         Ok(CdcEvent::Insert((table_id, row)))
     }
 
     //TODO: handle when identity columns are changed
-    fn from_update_body(
+    fn try_from_update_body(
+        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         update_body: UpdateBody,
     ) -> Result<CdcEvent, CdcEventConversionError> {
         let row =
-            Self::from_tuple_data_slice(column_schemas, update_body.new_tuple().tuple_data())?;
+            self.try_from_tuple_data_slice(column_schemas, update_body.new_tuple().tuple_data())?;
 
         Ok(CdcEvent::Update((table_id, row)))
     }
 
-    fn from_delete_body(
+    fn try_from_delete_body(
+        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         delete_body: DeleteBody,
@@ -297,12 +531,13 @@ impl CdcEventConverter {
             .or(delete_body.old_tuple())
             .ok_or(CdcEventConversionError::MissingTupleInDeleteBody)?;
 
-        let row = Self::from_tuple_data_slice(column_schemas, tuple.tuple_data())?;
+        let row = self.try_from_tuple_data_slice(column_schemas, tuple.tuple_data())?;
 
         Ok(CdcEvent::Delete((table_id, row)))
     }
 
     pub fn try_from(
+        &self,
         value: ReplicationMessage<LogicalReplicationMessage>,
         table_schemas: &HashMap<TableId, TableSchema>,
     ) -> Result<CdcEvent, CdcEventConversionError> {
@@ -323,11 +558,7 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(Self::from_insert_body(
-                        table_id,
-                        column_schemas,
-                        insert_body,
-                    )?)
+                    Ok(self.try_from_insert_body(table_id, column_schemas, insert_body)?)
                 }
                 LogicalReplicationMessage::Update(update_body) => {
                     let table_id = update_body.rel_id();
@@ -335,11 +566,7 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(Self::from_update_body(
-                        table_id,
-                        column_schemas,
-                        update_body,
-                    )?)
+                    Ok(self.try_from_update_body(table_id, column_schemas, update_body)?)
                 }
                 LogicalReplicationMessage::Delete(delete_body) => {
                     let table_id = delete_body.rel_id();
@@ -347,11 +574,7 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(Self::from_delete_body(
-                        table_id,
-                        column_schemas,
-                        delete_body,
-                    )?)
+                    Ok(self.try_from_delete_body(table_id, column_schemas, delete_body)?)
                 }
                 LogicalReplicationMessage::Truncate(_) => {
                     Err(CdcEventConversionError::MessageNotSupported)
