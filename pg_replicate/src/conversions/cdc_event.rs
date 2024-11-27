@@ -310,18 +310,10 @@ impl FromTupleData for TextFormatConverter {
             //     let val = Vec::<Option<f64>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::F64(val)))
             // }
-            // Type::NUMERIC => {
-            //     let val = PgNumeric::from_sql(typ, bytes)?;
-            //     Ok(Cell::Numeric(val))
-            // }
             Type::NUMERIC => Ok(Cell::Numeric(str.parse()?)),
             // Type::NUMERIC_ARRAY => {
             //     let val = Vec::<Option<PgNumeric>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Numeric(val)))
-            // }
-            // Type::BYTEA => {
-            //     let val = Vec::<u8>::from_sql(typ, bytes)?;
-            //     Ok(Cell::Bytes(val))
             // }
             Type::BYTEA => Ok(Cell::Bytes(hex::from_bytea_hex(str)?)),
             // Type::BYTEA_ARRAY => {
@@ -332,56 +324,60 @@ impl FromTupleData for TextFormatConverter {
             //     let val = NaiveDate::from_sql(typ, bytes)?;
             //     Ok(Cell::Date(val))
             // }
+            Type::DATE => {
+                let val = NaiveDate::parse_from_str(str, "%Y-%m-%d")?;
+                Ok(Cell::Date(val))
+            }
             // Type::DATE_ARRAY => {
             //     let val = Vec::<Option<NaiveDate>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Date(val)))
             // }
-            // Type::TIME => {
-            //     let val = NaiveTime::from_sql(typ, bytes)?;
-            //     Ok(Cell::Time(val))
-            // }
+            Type::TIME => {
+                let val = NaiveTime::parse_from_str(str, "%H:%M:%S%.f")?;
+                Ok(Cell::Time(val))
+            }
             // Type::TIME_ARRAY => {
             //     let val = Vec::<Option<NaiveTime>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Time(val)))
             // }
-            // Type::TIMESTAMP => {
-            //     let val = NaiveDateTime::from_sql(typ, bytes)?;
-            //     Ok(Cell::TimeStamp(val))
-            // }
+            Type::TIMESTAMP => {
+                let val = NaiveDateTime::parse_from_str(str, "%Y-%m-%d %H:%M:%S%.f")?;
+                Ok(Cell::TimeStamp(val))
+            }
             // Type::TIMESTAMP_ARRAY => {
             //     let val = Vec::<Option<NaiveDateTime>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::TimeStamp(val)))
             // }
-            // Type::TIMESTAMPTZ => {
-            //     let val = DateTime::<FixedOffset>::from_sql(typ, bytes)?;
-            //     Ok(Cell::TimeStampTz(val.into()))
-            // }
+            Type::TIMESTAMPTZ => {
+                let val = DateTime::<FixedOffset>::parse_from_rfc3339(str)?;
+                Ok(Cell::TimeStampTz(val.into()))
+            }
             // Type::TIMESTAMPTZ_ARRAY => {
             //     let mut val = Vec::<Option<DateTime<FixedOffset>>>::from_sql(typ, bytes)?;
             //     let val: Vec<Option<DateTime<Utc>>> =
             //         val.drain(..).map(|v| v.map(|v| v.into())).collect();
             //     Ok(Cell::Array(ArrayCell::TimeStampTz(val)))
             // }
-            // Type::UUID => {
-            //     let val = Uuid::from_sql(typ, bytes)?;
-            //     Ok(Cell::Uuid(val))
-            // }
+            Type::UUID => {
+                let val = Uuid::parse_str(str)?;
+                Ok(Cell::Uuid(val))
+            }
             // Type::UUID_ARRAY => {
             //     let val = Vec::<Option<Uuid>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Uuid(val)))
             // }
-            // Type::JSON | Type::JSONB => {
-            //     let val = serde_json::Value::from_sql(typ, bytes)?;
-            //     Ok(Cell::Json(val))
-            // }
+            Type::JSON | Type::JSONB => {
+                let val = serde_json::from_str(str)?;
+                Ok(Cell::Json(val))
+            }
             // Type::JSON_ARRAY | Type::JSONB_ARRAY => {
             //     let val = Vec::<Option<serde_json::Value>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Json(val)))
             // }
-            // Type::OID => {
-            //     let val = u32::from_sql(typ, bytes)?;
-            //     Ok(Cell::U32(val))
-            // }
+            Type::OID => {
+                let val: u32 = str.parse()?;
+                Ok(Cell::U32(val))
+            }
             // Type::OID_ARRAY => {
             //     let val = Vec::<Option<u32>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::U32(val)))
