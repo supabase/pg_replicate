@@ -137,7 +137,7 @@ impl ReplicationClient {
                 a.atttypid,
                 a.atttypmod,
                 a.attnotnull,
-                coalesce(i.indisprimary, false) primary
+                coalesce(i.indisprimary, false) as primary
             from pg_attribute a
             left join pg_index i
                 on a.attrelid = i.indrelid
