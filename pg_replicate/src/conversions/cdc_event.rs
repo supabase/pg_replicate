@@ -18,12 +18,15 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    conversions::bool::parse_bool,
+    conversions::{bool::parse_bool, hex},
     pipeline::batching::BatchBoundary,
     table::{ColumnSchema, TableId, TableSchema},
 };
 
-use super::{bool::ParseBoolError, numeric::PgNumeric, table_row::TableRow, ArrayCell, Cell};
+use super::{
+    bool::ParseBoolError, hex::ByteaHexParseError, numeric::PgNumeric, table_row::TableRow,
+    ArrayCell, Cell,
+};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
@@ -50,6 +53,9 @@ pub enum CdcEventConversionError {
 
     #[error("invalid numeric: {0}")]
     InvalidNumeric(#[from] ParseBigDecimalError),
+
+    #[error("invalid bytea: {0}")]
+    InvalidBytea(#[from] ByteaHexParseError),
 
     #[error("invalid uuid: {0}")]
     InvalidUuid(#[from] uuid::Error),
@@ -317,6 +323,7 @@ impl FromTupleData for TextFormatConverter {
             //     let val = Vec::<u8>::from_sql(typ, bytes)?;
             //     Ok(Cell::Bytes(val))
             // }
+            Type::BYTEA => Ok(Cell::Bytes(hex::from_bytea_hex(str)?)),
             // Type::BYTEA_ARRAY => {
             //     let val = Vec::<Option<Vec<u8>>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Bytes(val)))
