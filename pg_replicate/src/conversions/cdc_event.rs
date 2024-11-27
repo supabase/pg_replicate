@@ -291,7 +291,8 @@ impl TextFormatConverter {
 
         let mut res = vec![];
         let mut str = &str[1..(str.len() - 1)];
-        let mut done = false;
+        let mut in_quotes = false;
+        let mut done = str.is_empty();
 
         while !done {
             let start_idx = 0;
@@ -299,11 +300,12 @@ impl TextFormatConverter {
             let mut chars = str.char_indices();
             loop {
                 match chars.next() {
-                    Some((i, ',')) => {
+                    Some((i, ',')) if !in_quotes => {
                         end_idx = i;
                         break;
                     }
-                    Some((_i, _ch)) => {}
+                    Some((_, '"')) => in_quotes = !in_quotes,
+                    Some(_) => {}
                     None => {
                         done = true;
                         break;
