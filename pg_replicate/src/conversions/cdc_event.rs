@@ -69,6 +69,9 @@ pub enum CdcEventConversionError {
     #[error("invalid string: {0}")]
     InvalidString(#[from] FromUtf8Error),
 
+    #[error("invalid array: {0}")]
+    InvalidArray(#[from] ArrayParseError),
+
     #[error("unsupported type: {0}")]
     UnsupportedType(String),
 
@@ -260,6 +263,66 @@ impl FromTupleData for BinaryFormatConverter {
 
 pub struct TextFormatConverter;
 
+#[derive(Debug, Error)]
+pub enum ArrayParseError {
+    #[error("input too short")]
+    InputTooShort,
+
+    #[error("missing brances")]
+    MissingBraces,
+}
+
+impl TextFormatConverter {
+    fn parse_array<P, M, T>(str: &str, mut parse: P, m: M) -> Result<Cell, CdcEventConversionError>
+    where
+        P: FnMut(&str) -> Result<Option<T>, CdcEventConversionError>,
+        M: FnOnce(Vec<Option<T>>) -> ArrayCell,
+    {
+        if str.len() < 2 {
+            return Err(ArrayParseError::InputTooShort.into());
+        }
+
+        if str.as_bytes()[0] != b'{' || str.as_bytes()[str.len() - 1] != b'}' {
+            return Err(ArrayParseError::MissingBraces.into());
+        }
+
+        let mut res = vec![];
+        let mut str = &str[1..(str.len() - 1)];
+        let mut done = false;
+
+        while !done {
+            let start_idx = 0;
+            let mut end_idx = str.len();
+            let mut chars = str.char_indices();
+            loop {
+                match chars.next() {
+                    Some((i, ',')) => {
+                        end_idx = i;
+                        break;
+                    }
+                    Some((_i, _ch)) => {}
+                    None => {
+                        done = true;
+                        break;
+                    }
+                }
+            }
+            let val_str = &str[start_idx..end_idx];
+            let val = if val_str.to_lowercase() == "null" {
+                None
+            } else {
+                parse(val_str)?
+            };
+            res.push(val);
+            if !done {
+                str = &str[end_idx + 1..];
+            }
+        }
+
+        Ok(Cell::Array(m(res)))
+    }
+}
+
 impl FromTupleData for TextFormatConverter {
     fn try_from_tuple_data(
         &self,
@@ -270,10 +333,11 @@ impl FromTupleData for TextFormatConverter {
         info!("TYP: {typ:#?}, STR: {str:#?}");
         match *typ {
             Type::BOOL => Ok(Cell::Bool(parse_bool(str)?)),
-            // Type::BOOL_ARRAY => {
-            //     let val = Vec::<Option<bool>>::from_sql(typ, bytes)?;
-            //     Ok(Cell::Array(ArrayCell::Bool(val)))
-            // }
+            Type::BOOL_ARRAY => TextFormatConverter::parse_array(
+                str,
+                |str| Ok(Some(parse_bool(str)?)),
+                ArrayCell::Bool,
+            ),
             Type::CHAR | Type::BPCHAR | Type::VARCHAR | Type::NAME | Type::TEXT => {
                 Ok(Cell::String(str.to_string()))
             }
