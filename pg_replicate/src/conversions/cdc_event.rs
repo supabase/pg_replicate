@@ -308,6 +308,7 @@ impl FromTupleData for TextFormatConverter {
             //     let val = PgNumeric::from_sql(typ, bytes)?;
             //     Ok(Cell::Numeric(val))
             // }
+            Type::NUMERIC => Ok(Cell::Numeric(str.parse()?)),
             // Type::NUMERIC_ARRAY => {
             //     let val = Vec::<Option<PgNumeric>>::from_sql(typ, bytes)?;
             //     Ok(Cell::Array(ArrayCell::Numeric(val)))
