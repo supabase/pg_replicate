@@ -326,7 +326,7 @@ impl BigQueryClient {
     pub async fn stream_rows(
         &mut self,
         dataset_id: &str,
-        table_name: &str,
+        table_name: String,
         table_descriptor: &TableDescriptor,
         table_rows: &[TableRow],
     ) -> Result<(), BQError> {
