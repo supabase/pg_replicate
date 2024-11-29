@@ -11,6 +11,7 @@ use tokio_postgres::{
     error::Error,
     types::{Type, WasNull},
 };
+use tracing::error;
 use uuid::Uuid;
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
@@ -288,7 +289,17 @@ impl TableRowConverter {
     ) -> Result<TableRow, TableRowConversionError> {
         let mut values = Vec::with_capacity(column_schemas.len());
         for (i, column_schema) in column_schemas.iter().enumerate() {
-            let value = Self::get_cell_value(row, column_schema, i)?;
+            let value = match Self::get_cell_value(row, column_schema, i) {
+                Ok(value) => value,
+                Err(e) => {
+                    let bytes: Vec<u8> = row.get(i);
+                    error!(
+                        "error while getting column {} of type {} from bytes {bytes:#?}",
+                        column_schema.name, column_schema.typ
+                    );
+                    return Err(e);
+                }
+            };
             values.push(value);
         }
 
