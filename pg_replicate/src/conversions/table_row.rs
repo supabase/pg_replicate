@@ -292,10 +292,10 @@ impl TableRowConverter {
             let value = match Self::get_cell_value(row, column_schema, i) {
                 Ok(value) => value,
                 Err(e) => {
-                    let bytes: Vec<u8> = row.get(i);
+                    let bytes: VecWrapper = row.get(i);
                     error!(
-                        "error while getting column {} of type {} from bytes {bytes:#?}",
-                        column_schema.name, column_schema.typ
+                        "error while getting column {} of type {} from bytes {:#?}",
+                        column_schema.name, column_schema.typ, bytes.0
                     );
                     return Err(e);
                 }
