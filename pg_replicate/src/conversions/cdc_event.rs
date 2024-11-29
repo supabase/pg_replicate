@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     table_row::TableRow,
-    text::{FromBytesError, TextFormatConverter},
+    text::{FromTextError, TextFormatConverter},
     Cell,
 };
 
@@ -42,7 +42,7 @@ pub enum CdcEventConversionError {
     MissingSchema(TableId),
 
     #[error("from bytes error: {0}")]
-    FromBytes(#[from] FromBytesError),
+    FromBytes(#[from] FromTextError),
 
     #[error("invalid string value")]
     InvalidStr(#[from] Utf8Error),

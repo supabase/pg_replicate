@@ -4,10 +4,9 @@ use pg_escape::{quote_identifier, quote_literal};
 use postgres_replication::LogicalReplicationStream;
 use thiserror::Error;
 use tokio_postgres::{
-    binary_copy::BinaryCopyOutStream,
     config::ReplicationMode,
     types::{Kind, PgLsn, Type},
-    Client as PostgresClient, Config, NoTls, SimpleQueryMessage,
+    Client as PostgresClient, Config, CopyOutStream, NoTls, SimpleQueryMessage,
 };
 use tracing::{info, warn};
 
@@ -111,20 +110,19 @@ impl ReplicationClient {
         Ok(())
     }
 
-    /// Returns a [BinaryCopyOutStream] for a table
+    /// Returns a [CopyOutStream] for a table
     pub async fn get_table_copy_stream(
         &self,
         table_name: &TableName,
-        column_types: &[Type],
-    ) -> Result<BinaryCopyOutStream, ReplicationClientError> {
+    ) -> Result<CopyOutStream, ReplicationClientError> {
         let copy_query = format!(
-            r#"COPY {} TO STDOUT WITH (FORMAT binary);"#,
+            r#"COPY {} TO STDOUT WITH (FORMAT text);"#,
             table_name.as_quoted_identifier()
         );
 
         let stream = self.postgres_client.copy_out_simple(&copy_query).await?;
-        let row_stream = BinaryCopyOutStream::new(stream, column_types);
-        Ok(row_stream)
+
+        Ok(stream)
     }
 
     /// Returns a vector of columns of a table

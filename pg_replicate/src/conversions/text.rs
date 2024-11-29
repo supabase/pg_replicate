@@ -12,7 +12,7 @@ use crate::conversions::{bool::parse_bool, hex};
 use super::{bool::ParseBoolError, hex::ByteaHexParseError, ArrayCell, Cell};
 
 #[derive(Debug, Error)]
-pub enum FromBytesError {
+pub enum FromTextError {
     #[error("invalid bool value")]
     InvalidBool(#[from] ParseBoolError),
 
@@ -51,12 +51,12 @@ pub enum ArrayParseError {
     #[error("input too short")]
     InputTooShort,
 
-    #[error("missing brances")]
+    #[error("missing braces")]
     MissingBraces,
 }
 
 impl TextFormatConverter {
-    pub fn try_from_str(typ: &Type, str: &str) -> Result<Cell, FromBytesError> {
+    pub fn try_from_str(typ: &Type, str: &str) -> Result<Cell, FromTextError> {
         match *typ {
             Type::BOOL => Ok(Cell::Bool(parse_bool(str)?)),
             Type::BOOL_ARRAY => TextFormatConverter::parse_array(
@@ -187,9 +187,9 @@ impl TextFormatConverter {
         }
     }
 
-    fn parse_array<P, M, T>(str: &str, mut parse: P, m: M) -> Result<Cell, FromBytesError>
+    fn parse_array<P, M, T>(str: &str, mut parse: P, m: M) -> Result<Cell, FromTextError>
     where
-        P: FnMut(&str) -> Result<Option<T>, FromBytesError>,
+        P: FnMut(&str) -> Result<Option<T>, FromTextError>,
         M: FnOnce(Vec<Option<T>>) -> ArrayCell,
     {
         if str.len() < 2 {

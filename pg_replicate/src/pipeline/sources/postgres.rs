@@ -10,10 +10,7 @@ use futures::{ready, Stream};
 use pin_project_lite::pin_project;
 use postgres_replication::LogicalReplicationStream;
 use thiserror::Error;
-use tokio_postgres::{
-    binary_copy::BinaryCopyOutStream,
-    types::{PgLsn, Type},
-};
+use tokio_postgres::{types::PgLsn, CopyOutStream};
 use tracing::info;
 
 use crate::{
@@ -121,11 +118,10 @@ impl Source for PostgresSource {
         column_schemas: &[ColumnSchema],
     ) -> Result<TableCopyStream, SourceError> {
         info!("starting table copy stream for table {table_name}");
-        let column_types: Vec<Type> = column_schemas.iter().map(|c| c.typ.clone()).collect();
 
         let stream = self
             .replication_client
-            .get_table_copy_stream(table_name, &column_types)
+            .get_table_copy_stream(table_name)
             .await
             .map_err(PostgresSourceError::ReplicationClient)?;
 
@@ -181,7 +177,7 @@ pin_project! {
     #[must_use = "streams do nothing unless polled"]
     pub struct TableCopyStream {
         #[pin]
-        stream: BinaryCopyOutStream,
+        stream: CopyOutStream,
         column_schemas: Vec<ColumnSchema>,
     }
 }
