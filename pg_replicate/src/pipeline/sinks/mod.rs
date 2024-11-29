@@ -9,7 +9,7 @@ use crate::{
     table::{TableId, TableSchema},
 };
 
-use super::{sources::postgres::TableCopyStreamError, PipelineResumptionState};
+use super::PipelineResumptionState;
 
 #[cfg(feature = "bigquery")]
 pub mod bigquery;
@@ -53,7 +53,7 @@ pub trait BatchSink {
     ) -> Result<(), Self::Error>;
     async fn write_table_rows(
         &mut self,
-        rows: Vec<Result<TableRow, TableCopyStreamError>>,
+        rows: Vec<TableRow>,
         table_id: TableId,
     ) -> Result<(), Self::Error>;
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error>;

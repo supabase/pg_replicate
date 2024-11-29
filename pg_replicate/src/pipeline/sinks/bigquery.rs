@@ -9,7 +9,7 @@ use tracing::info;
 use crate::{
     clients::bigquery::BigQueryClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow, Cell},
-    pipeline::{sources::postgres::TableCopyStreamError, PipelineResumptionState},
+    pipeline::PipelineResumptionState,
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
@@ -162,24 +162,19 @@ impl BatchSink for BigQueryBatchSink {
 
     async fn write_table_rows(
         &mut self,
-        mut table_rows: Vec<Result<TableRow, TableCopyStreamError>>,
+        mut table_rows: Vec<TableRow>,
         table_id: TableId,
     ) -> Result<(), Self::Error> {
         let table_schema = self.get_table_schema(table_id)?;
         let table_name = Self::table_name_in_bq(&table_schema.table_name);
         let table_descriptor = table_schema.into();
 
-        let new_rows = table_rows
-            .drain(..)
-            .filter_map(|row| row.ok())
-            .map(|mut row| {
-                row.values.push(Cell::String("UPSERT".to_string()));
-                row
-            })
-            .collect::<Vec<TableRow>>();
+        for table_row in &mut table_rows {
+            table_row.values.push(Cell::String("UPSERT".to_string()));
+        }
 
         self.client
-            .stream_rows(&self.dataset_id, table_name, &table_descriptor, &new_rows)
+            .stream_rows(&self.dataset_id, table_name, &table_descriptor, &table_rows)
             .await?;
 
         Ok(())
