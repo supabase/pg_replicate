@@ -130,9 +130,12 @@ impl Source for PostgresSource {
             .await
             .map_err(PostgresSourceError::ReplicationClient)?;
 
+        let tuple_converter: Box<dyn FromBytes> = Box::new(TextFormatConverter);
+
         Ok(TableCopyStream {
             stream,
             column_schemas: column_schemas.to_vec(),
+            table_row_converter: TableRowConverter { tuple_converter },
         })
     }
 
@@ -191,6 +194,7 @@ pin_project! {
         #[pin]
         stream: BinaryCopyOutStream,
         column_schemas: Vec<ColumnSchema>,
+        table_row_converter: TableRowConverter,
     }
 }
 
@@ -200,7 +204,7 @@ impl Stream for TableCopyStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
-            Some(Ok(row)) => match TableRowConverter::try_from(&row, this.column_schemas) {
+            Some(Ok(row)) => match this.table_row_converter.try_from(&row, this.column_schemas) {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
                 Err(e) => {
                     let e = TableCopyStreamError::ConversionError(e);

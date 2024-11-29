@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
-use super::{numeric::PgNumeric, ArrayCell, Cell};
+use super::{bytes::FromBytes, numeric::PgNumeric, ArrayCell, Cell};
 
 #[derive(Debug)]
 pub struct TableRow {
@@ -41,7 +41,9 @@ pub enum TableRowConversionError {
     RowGetError(Option<Box<dyn std::error::Error + Sync + Send>>),
 }
 
-pub struct TableRowConverter;
+pub struct TableRowConverter {
+    pub tuple_converter: Box<dyn FromBytes>,
+}
 
 /// A wrapper type over Vec<u8> to help implement the FromSql trait.
 /// The wrapper is needed to avoid Rust's trait coherence rules. i.e.
@@ -284,6 +286,7 @@ impl TableRowConverter {
     }
 
     pub fn try_from(
+        &self,
         row: &tokio_postgres::binary_copy::BinaryCopyOutRow,
         column_schemas: &[crate::table::ColumnSchema],
     ) -> Result<TableRow, TableRowConversionError> {
