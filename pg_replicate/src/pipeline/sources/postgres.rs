@@ -20,8 +20,8 @@ use crate::{
     clients::postgres::{ReplicationClient, ReplicationClientError},
     conversions::{
         cdc_event::{
-            BinaryFormatConverter, CdcEvent, CdcEventConversionError, CdcEventConverter,
-            FromTupleData, TextFormatConverter,
+            BinaryFormatConverter, CdcEvent, CdcEventConversionError, CdcEventConverter, FromBytes,
+            TextFormatConverter,
         },
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
@@ -163,7 +163,7 @@ impl Source for PostgresSource {
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
-        let tuple_converter: Box<dyn FromTupleData> = if binary_format {
+        let tuple_converter: Box<dyn FromBytes> = if binary_format {
             Box::new(BinaryFormatConverter)
         } else {
             Box::new(TextFormatConverter)

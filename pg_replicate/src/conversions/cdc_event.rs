@@ -38,6 +38,21 @@ pub enum CdcEventConversionError {
     #[error("unchanged toast not yet supported")]
     UnchangedToastNotSupported,
 
+    #[error("unsupported type: {0}")]
+    UnsupportedType(String),
+
+    #[error("missing tuple in delete body")]
+    MissingTupleInDeleteBody,
+
+    #[error("schema missing for table id {0}")]
+    MissingSchema(TableId),
+
+    #[error("from bytes error: {0}")]
+    FromBytes(#[from] FromBytesError),
+}
+
+#[derive(Debug, Error)]
+pub enum FromBytesError {
     #[error("invalid string value")]
     InvalidStr(#[from] Utf8Error),
 
@@ -71,47 +86,18 @@ pub enum CdcEventConversionError {
     #[error("invalid array: {0}")]
     InvalidArray(#[from] ArrayParseError),
 
-    #[error("unsupported type: {0}")]
-    UnsupportedType(String),
-
-    #[error("out of range timestamp")]
-    OutOfRangeTimestamp,
-
-    #[error("missing tuple in delete body")]
-    MissingTupleInDeleteBody,
-
-    #[error("schema missing for table id {0}")]
-    MissingSchema(TableId),
-
-    #[error("invalid namespace: {0}")]
-    InvalidNamespace(String),
-
-    #[error("invalid relation name: {0}")]
-    InvalidRelationName(String),
-
-    #[error("invalid column name: {0}")]
-    InvalidColumnName(String),
-
     #[error("row get error: {0:?}")]
     RowGetError(#[from] Box<dyn std::error::Error + Sync + Send>),
 }
 
-pub trait FromTupleData {
-    fn try_from_tuple_data(
-        &self,
-        typ: &Type,
-        bytes: &[u8],
-    ) -> Result<Cell, CdcEventConversionError>;
+pub trait FromBytes {
+    fn try_from_tuple_data(&self, typ: &Type, bytes: &[u8]) -> Result<Cell, FromBytesError>;
 }
 
 pub struct BinaryFormatConverter;
 
-impl FromTupleData for BinaryFormatConverter {
-    fn try_from_tuple_data(
-        &self,
-        typ: &Type,
-        bytes: &[u8],
-    ) -> Result<Cell, CdcEventConversionError> {
+impl FromBytes for BinaryFormatConverter {
+    fn try_from_tuple_data(&self, typ: &Type, bytes: &[u8]) -> Result<Cell, FromBytesError> {
         match *typ {
             Type::BOOL => {
                 let val = bool::from_sql(typ, bytes)?;
@@ -272,9 +258,9 @@ pub enum ArrayParseError {
 }
 
 impl TextFormatConverter {
-    fn parse_array<P, M, T>(str: &str, mut parse: P, m: M) -> Result<Cell, CdcEventConversionError>
+    fn parse_array<P, M, T>(str: &str, mut parse: P, m: M) -> Result<Cell, FromBytesError>
     where
-        P: FnMut(&str) -> Result<Option<T>, CdcEventConversionError>,
+        P: FnMut(&str) -> Result<Option<T>, FromBytesError>,
         M: FnOnce(Vec<Option<T>>) -> ArrayCell,
     {
         if str.len() < 2 {
@@ -329,12 +315,8 @@ impl TextFormatConverter {
     }
 }
 
-impl FromTupleData for TextFormatConverter {
-    fn try_from_tuple_data(
-        &self,
-        typ: &Type,
-        bytes: &[u8],
-    ) -> Result<Cell, CdcEventConversionError> {
+impl FromBytes for TextFormatConverter {
+    fn try_from_tuple_data(&self, typ: &Type, bytes: &[u8]) -> Result<Cell, FromBytesError> {
         let str = str::from_utf8(bytes)?;
         match *typ {
             Type::BOOL => Ok(Cell::Bool(parse_bool(str)?)),
@@ -468,7 +450,7 @@ impl FromTupleData for TextFormatConverter {
 }
 
 pub struct CdcEventConverter {
-    pub tuple_converter: Box<dyn FromTupleData>,
+    pub tuple_converter: Box<dyn FromBytes>,
 }
 
 impl CdcEventConverter {
