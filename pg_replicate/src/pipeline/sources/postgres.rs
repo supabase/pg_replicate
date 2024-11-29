@@ -19,10 +19,8 @@ use tracing::info;
 use crate::{
     clients::postgres::{ReplicationClient, ReplicationClientError},
     conversions::{
-        cdc_event::{
-            BinaryFormatConverter, CdcEvent, CdcEventConversionError, CdcEventConverter, FromBytes,
-            TextFormatConverter,
-        },
+        bytes::{BinaryFormatConverter, FromBytes, TextFormatConverter},
+        cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
     table::{ColumnSchema, TableId, TableName, TableSchema},

@@ -5,6 +5,7 @@ use numeric::PgNumeric;
 use uuid::Uuid;
 
 pub mod bool;
+pub mod bytes;
 pub mod cdc_event;
 pub mod hex;
 pub mod numeric;
