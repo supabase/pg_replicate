@@ -133,7 +133,7 @@ impl ReplicationClient {
         table_id: TableId,
     ) -> Result<Vec<ColumnSchema>, ReplicationClientError> {
         let column_info_query = format!(
-            "select a.attname,
+            "select distinct a.attname,
                 a.atttypid,
                 a.atttypmod,
                 a.attnotnull,
