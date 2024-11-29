@@ -48,15 +48,12 @@ impl TableRowConverter {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         let row_str = str::from_utf8(row)?;
-        // info!("NUM COLS IN SCHEMA: {}", column_schemas.len());
-        // info!("ROW: {row_str:#?}");
         let mut column_schemas_iter = column_schemas.iter();
         let mut chars = row_str.chars();
         let mut val_str = String::with_capacity(10);
         let mut in_escape = false;
         let mut row_terminated = false;
         let mut done = false;
-        // let mut i = 0;
 
         while !done {
             loop {
@@ -92,12 +89,9 @@ impl TableRowConverter {
             }
 
             if !done {
-                // info!("VAL STR: {val_str:?}");
-                // info!("GETTING {i}th value from schema",);
                 let Some(column_schema) = column_schemas_iter.next() else {
                     return Err(TableRowConversionError::NumColsMismatch);
                 };
-                // i += 1;
 
                 let value = if val_str == "\\N" {
                     Cell::Null
@@ -114,7 +108,6 @@ impl TableRowConverter {
                     }
                 };
 
-                // info!("GOT VALUE: {value:#?}");
                 values.push(value);
                 val_str.clear();
             }
