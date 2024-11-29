@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::{
-    bytes::{FromBytesError, TextFormatConverter},
+    text::{FromBytesError, TextFormatConverter},
     table_row::TableRow,
     Cell,
 };
