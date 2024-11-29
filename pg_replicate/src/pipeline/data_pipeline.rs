@@ -37,7 +37,11 @@ impl<Src: Source, Snk: Sink> DataPipeline<Src, Snk> {
     async fn copy_tables(&mut self, copied_tables: &HashSet<TableId>) -> Result<(), PipelineError> {
         let table_schemas = self.source.get_table_schemas();
 
-        for table_schema in table_schemas.values() {
+        let mut keys: Vec<u32> = table_schemas.keys().copied().collect();
+        keys.sort();
+
+        for key in keys {
+            let table_schema = table_schemas.get(&key).expect("failed to get table key");
             if copied_tables.contains(&table_schema.table_id) {
                 continue;
             }
