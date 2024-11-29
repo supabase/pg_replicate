@@ -3,7 +3,7 @@ use std::{collections::HashSet, time::Instant};
 use futures::StreamExt;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{
     conversions::cdc_event::{CdcEvent, CdcEventConversionError},

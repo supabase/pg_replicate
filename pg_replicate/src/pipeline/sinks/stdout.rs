@@ -10,7 +10,7 @@ use crate::{
     table::{TableId, TableSchema},
 };
 
-use super::{Sink, SinkError, InfallibleSinkError};
+use super::{InfallibleSinkError, Sink, SinkError};
 
 pub struct StdoutSink;
 

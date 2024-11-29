@@ -9,7 +9,7 @@ use tracing::info;
 use crate::{
     clients::bigquery::BigQueryClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow, Cell},
-    pipeline::{PipelineResumptionState, sources::postgres::TableCopyStreamError},
+    pipeline::{sources::postgres::TableCopyStreamError, PipelineResumptionState},
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
