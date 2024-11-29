@@ -133,7 +133,7 @@ impl ReplicationClient {
         table_id: TableId,
     ) -> Result<Vec<ColumnSchema>, ReplicationClientError> {
         let column_info_query = format!(
-            "select distinct a.attname,
+            "select a.attname,
                 a.atttypid,
                 a.atttypmod,
                 a.attnotnull,
@@ -142,6 +142,7 @@ impl ReplicationClient {
             left join pg_index i
                 on a.attrelid = i.indrelid
                 and a.attnum = any(i.indkey)
+                and i.indisprimary = true
             where a.attnum > 0::int2
             and not a.attisdropped
             and a.attrelid = {table_id}
