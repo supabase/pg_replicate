@@ -102,7 +102,16 @@ impl TableRowConverter {
                 let value = if val_str == "\\N" {
                     Cell::Null
                 } else {
-                    TextFormatConverter::try_from_str(&column_schema.typ, &val_str)?
+                    match TextFormatConverter::try_from_str(&column_schema.typ, &val_str) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            error!(
+                                "error parsing column `{}` of type `{}` from text `{val_str}`",
+                                column_schema.name, column_schema.typ
+                            );
+                            return Err(e.into());
+                        }
+                    }
                 };
 
                 // info!("GOT VALUE: {value:#?}");

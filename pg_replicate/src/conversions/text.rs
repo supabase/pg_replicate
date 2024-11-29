@@ -141,18 +141,45 @@ impl TextFormatConverter {
                 ArrayCell::TimeStamp,
             ),
             Type::TIMESTAMPTZ => {
-                let val = DateTime::<FixedOffset>::parse_from_rfc3339(str)?;
+                let val =
+                    match DateTime::<FixedOffset>::parse_from_str(str, "%Y-%m-%d %H:%M:%S%.f%#z") {
+                        Ok(val) => val,
+                        Err(_) => {
+                            DateTime::<FixedOffset>::parse_from_str(str, "%Y-%m-%d %H:%M:%S%.f%:z")?
+                        }
+                    };
                 Ok(Cell::TimeStampTz(val.into()))
             }
-            Type::TIMESTAMPTZ_ARRAY => TextFormatConverter::parse_array(
-                str,
-                |str| {
-                    Ok(Some(
-                        DateTime::<FixedOffset>::parse_from_rfc3339(str)?.into(),
-                    ))
-                },
-                ArrayCell::TimeStampTz,
-            ),
+            Type::TIMESTAMPTZ_ARRAY => {
+                match TextFormatConverter::parse_array(
+                    str,
+                    |str| {
+                        Ok(Some(
+                            DateTime::<FixedOffset>::parse_from_str(
+                                str,
+                                "%Y-%m-%d %H:%M:%S%.f%#z",
+                            )?
+                            .into(),
+                        ))
+                    },
+                    ArrayCell::TimeStampTz,
+                ) {
+                    Ok(val) => Ok(val),
+                    Err(_) => TextFormatConverter::parse_array(
+                        str,
+                        |str| {
+                            Ok(Some(
+                                DateTime::<FixedOffset>::parse_from_str(
+                                    str,
+                                    "%Y-%m-%d %H:%M:%S%.f%:z",
+                                )?
+                                .into(),
+                            ))
+                        },
+                        ArrayCell::TimeStampTz,
+                    ),
+                }
+            }
             Type::UUID => {
                 let val = Uuid::parse_str(str)?;
                 Ok(Cell::Uuid(val))
