@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::{
-    bytes::{FromBytes, FromBytesError},
+    bytes::{FromBytesError, TextFormatConverter},
     table_row::TableRow,
     Cell,
 };
@@ -28,6 +28,9 @@ pub enum CdcEventConversionError {
     #[error("unchanged toast not yet supported")]
     UnchangedToastNotSupported,
 
+    #[error("binary format not yet supported")]
+    BinaryFormatNotSupported,
+
     #[error("unsupported type: {0}")]
     UnsupportedType(String),
 
@@ -41,13 +44,10 @@ pub enum CdcEventConversionError {
     FromBytes(#[from] FromBytesError),
 }
 
-pub struct CdcEventConverter {
-    pub tuple_converter: Box<dyn FromBytes>,
-}
+pub struct CdcEventConverter;
 
 impl CdcEventConverter {
     fn try_from_tuple_data_slice(
-        &self,
         column_schemas: &[ColumnSchema],
         tuple_data: &[TupleData],
     ) -> Result<TableRow, CdcEventConversionError> {
@@ -59,9 +59,12 @@ impl CdcEventConverter {
                 TupleData::UnchangedToast => {
                     return Err(CdcEventConversionError::UnchangedToastNotSupported)
                 }
-                TupleData::Text(bytes) | TupleData::Binary(bytes) => self
-                    .tuple_converter
-                    .try_from_tuple_data(&column_schema.typ, &bytes[..])?,
+                TupleData::Binary(_) => {
+                    return Err(CdcEventConversionError::BinaryFormatNotSupported)
+                }
+                TupleData::Text(bytes) => {
+                    TextFormatConverter::try_from_bytes(&column_schema.typ, &bytes[..])?
+                }
             };
             values.push(cell);
         }
@@ -70,32 +73,29 @@ impl CdcEventConverter {
     }
 
     fn try_from_insert_body(
-        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         insert_body: InsertBody,
     ) -> Result<CdcEvent, CdcEventConversionError> {
         let row =
-            self.try_from_tuple_data_slice(column_schemas, insert_body.tuple().tuple_data())?;
+            Self::try_from_tuple_data_slice(column_schemas, insert_body.tuple().tuple_data())?;
 
         Ok(CdcEvent::Insert((table_id, row)))
     }
 
     //TODO: handle when identity columns are changed
     fn try_from_update_body(
-        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         update_body: UpdateBody,
     ) -> Result<CdcEvent, CdcEventConversionError> {
         let row =
-            self.try_from_tuple_data_slice(column_schemas, update_body.new_tuple().tuple_data())?;
+            Self::try_from_tuple_data_slice(column_schemas, update_body.new_tuple().tuple_data())?;
 
         Ok(CdcEvent::Update((table_id, row)))
     }
 
     fn try_from_delete_body(
-        &self,
         table_id: TableId,
         column_schemas: &[ColumnSchema],
         delete_body: DeleteBody,
@@ -105,13 +105,12 @@ impl CdcEventConverter {
             .or(delete_body.old_tuple())
             .ok_or(CdcEventConversionError::MissingTupleInDeleteBody)?;
 
-        let row = self.try_from_tuple_data_slice(column_schemas, tuple.tuple_data())?;
+        let row = Self::try_from_tuple_data_slice(column_schemas, tuple.tuple_data())?;
 
         Ok(CdcEvent::Delete((table_id, row)))
     }
 
     pub fn try_from(
-        &self,
         value: ReplicationMessage<LogicalReplicationMessage>,
         table_schemas: &HashMap<TableId, TableSchema>,
     ) -> Result<CdcEvent, CdcEventConversionError> {
@@ -132,7 +131,11 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(self.try_from_insert_body(table_id, column_schemas, insert_body)?)
+                    Ok(Self::try_from_insert_body(
+                        table_id,
+                        column_schemas,
+                        insert_body,
+                    )?)
                 }
                 LogicalReplicationMessage::Update(update_body) => {
                     let table_id = update_body.rel_id();
@@ -140,7 +143,11 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(self.try_from_update_body(table_id, column_schemas, update_body)?)
+                    Ok(Self::try_from_update_body(
+                        table_id,
+                        column_schemas,
+                        update_body,
+                    )?)
                 }
                 LogicalReplicationMessage::Delete(delete_body) => {
                     let table_id = delete_body.rel_id();
@@ -148,7 +155,11 @@ impl CdcEventConverter {
                         .get(&table_id)
                         .ok_or(CdcEventConversionError::MissingSchema(table_id))?
                         .column_schemas;
-                    Ok(self.try_from_delete_body(table_id, column_schemas, delete_body)?)
+                    Ok(Self::try_from_delete_body(
+                        table_id,
+                        column_schemas,
+                        delete_body,
+                    )?)
                 }
                 LogicalReplicationMessage::Truncate(_) => {
                     Err(CdcEventConversionError::MessageNotSupported)

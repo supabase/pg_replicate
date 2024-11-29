@@ -19,7 +19,6 @@ use tracing::info;
 use crate::{
     clients::postgres::{ReplicationClient, ReplicationClientError},
     conversions::{
-        bytes::{BinaryFormatConverter, FromBytes, TextFormatConverter},
         cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
@@ -130,12 +129,9 @@ impl Source for PostgresSource {
             .await
             .map_err(PostgresSourceError::ReplicationClient)?;
 
-        let tuple_converter: Box<dyn FromBytes> = Box::new(TextFormatConverter);
-
         Ok(TableCopyStream {
             stream,
             column_schemas: column_schemas.to_vec(),
-            table_row_converter: TableRowConverter { tuple_converter },
         })
     }
 
@@ -155,7 +151,7 @@ impl Source for PostgresSource {
         let slot_name = self
             .slot_name()
             .ok_or(PostgresSourceError::MissingSlotName)?;
-        let (stream, binary_format) = self
+        let stream = self
             .replication_client
             .get_logical_replication_stream(publication, slot_name, start_lsn)
             .await
@@ -164,17 +160,10 @@ impl Source for PostgresSource {
         const TIME_SEC_CONVERSION: u64 = 946_684_800;
         let postgres_epoch = UNIX_EPOCH + Duration::from_secs(TIME_SEC_CONVERSION);
 
-        let tuple_converter: Box<dyn FromBytes> = if binary_format {
-            Box::new(BinaryFormatConverter)
-        } else {
-            Box::new(TextFormatConverter)
-        };
-
         Ok(CdcStream {
             stream,
             table_schemas: self.table_schemas.clone(),
             postgres_epoch,
-            converter: CdcEventConverter { tuple_converter },
         })
     }
 }
@@ -194,7 +183,6 @@ pin_project! {
         #[pin]
         stream: BinaryCopyOutStream,
         column_schemas: Vec<ColumnSchema>,
-        table_row_converter: TableRowConverter,
     }
 }
 
@@ -204,7 +192,7 @@ impl Stream for TableCopyStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
-            Some(Ok(row)) => match this.table_row_converter.try_from(&row, this.column_schemas) {
+            Some(Ok(row)) => match TableRowConverter::try_from(&row, this.column_schemas) {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
                 Err(e) => {
                     let e = TableCopyStreamError::ConversionError(e);
@@ -233,7 +221,6 @@ pin_project! {
         stream: LogicalReplicationStream,
         table_schemas: HashMap<TableId, TableSchema>,
         postgres_epoch: SystemTime,
-        converter: CdcEventConverter
     }
 }
 
@@ -267,7 +254,7 @@ impl Stream for CdcStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
-            Some(Ok(msg)) => match this.converter.try_from(msg, this.table_schemas) {
+            Some(Ok(msg)) => match CdcEventConverter::try_from(msg, this.table_schemas) {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
                 Err(e) => Poll::Ready(Some(Err(e.into()))),
             },

@@ -442,47 +442,10 @@ impl ReplicationClient {
         publication: &str,
         slot_name: &str,
         start_lsn: PgLsn,
-    ) -> Result<(LogicalReplicationStream, bool), ReplicationClientError> {
-        match self
-            .get_stream(publication, slot_name, start_lsn, true)
-            .await
-        {
-            Ok(stream) => {
-                info!("binary format supported by logical replication");
-                Ok((stream, true))
-            }
-            Err(rce) => {
-                if let ReplicationClientError::TokioPostgresError(e) = &rce {
-                    if let Some(dbe) = e.as_db_error() {
-                        //TODO: use a more robust method of recognizing whether the server supports binary option or not
-                        if dbe.message() == "unrecognized pgoutput option: binary" {
-                            info!(
-                                "binary format not supported by logical replication, trying text"
-                            );
-                            return self
-                                .get_stream(publication, slot_name, start_lsn, false)
-                                .await
-                                .map(|s| (s, false));
-                        }
-                    }
-                }
-                Err(rce)
-            }
-        }
-    }
-
-    pub async fn get_stream(
-        &self,
-        publication: &str,
-        slot_name: &str,
-        start_lsn: PgLsn,
-        binary_format: bool,
     ) -> Result<LogicalReplicationStream, ReplicationClientError> {
-        let binary_option = if binary_format { r#", "binary""# } else { "" };
         let options = format!(
-            r#"("proto_version" '1', "publication_names" {}{})"#,
+            r#"("proto_version" '1', "publication_names" {})"#,
             quote_literal(publication),
-            binary_option
         );
 
         let query = format!(
