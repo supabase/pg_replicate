@@ -1,9 +1,5 @@
 use core::str;
-use std::{
-    num::{ParseFloatError, ParseIntError},
-    str::Utf8Error,
-    string::FromUtf8Error,
-};
+use std::num::{ParseFloatError, ParseIntError};
 
 use bigdecimal::ParseBigDecimalError;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
@@ -17,9 +13,6 @@ use super::{bool::ParseBoolError, hex::ByteaHexParseError, ArrayCell, Cell};
 
 #[derive(Debug, Error)]
 pub enum FromBytesError {
-    #[error("invalid string value")]
-    InvalidStr(#[from] Utf8Error),
-
     #[error("invalid bool value")]
     InvalidBool(#[from] ParseBoolError),
 
@@ -44,9 +37,6 @@ pub enum FromBytesError {
     #[error("invalid timestamp: {0} ")]
     InvalidTimestamp(#[from] chrono::ParseError),
 
-    #[error("invalid string: {0}")]
-    InvalidString(#[from] FromUtf8Error),
-
     #[error("invalid array: {0}")]
     InvalidArray(#[from] ArrayParseError),
 
@@ -66,8 +56,7 @@ pub enum ArrayParseError {
 }
 
 impl TextFormatConverter {
-    pub fn try_from_bytes(typ: &Type, bytes: &[u8]) -> Result<Cell, FromBytesError> {
-        let str = str::from_utf8(bytes)?;
+    pub fn try_from_str(typ: &Type, str: &str) -> Result<Cell, FromBytesError> {
         match *typ {
             Type::BOOL => Ok(Cell::Bool(parse_bool(str)?)),
             Type::BOOL_ARRAY => TextFormatConverter::parse_array(

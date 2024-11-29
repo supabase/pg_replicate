@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use core::str;
+use std::{collections::HashMap, str::Utf8Error};
 
 use postgres_replication::protocol::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
@@ -12,8 +13,8 @@ use crate::{
 };
 
 use super::{
-    text::{FromBytesError, TextFormatConverter},
     table_row::TableRow,
+    text::{FromBytesError, TextFormatConverter},
     Cell,
 };
 
@@ -42,6 +43,9 @@ pub enum CdcEventConversionError {
 
     #[error("from bytes error: {0}")]
     FromBytes(#[from] FromBytesError),
+
+    #[error("invalid string value")]
+    InvalidStr(#[from] Utf8Error),
 }
 
 pub struct CdcEventConverter;
@@ -63,7 +67,8 @@ impl CdcEventConverter {
                     return Err(CdcEventConversionError::BinaryFormatNotSupported)
                 }
                 TupleData::Text(bytes) => {
-                    TextFormatConverter::try_from_bytes(&column_schema.typ, &bytes[..])?
+                    let str = str::from_utf8(&bytes[..])?;
+                    TextFormatConverter::try_from_str(&column_schema.typ, str)?
                 }
             };
             values.push(cell);
