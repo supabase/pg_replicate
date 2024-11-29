@@ -132,7 +132,9 @@ impl BigQueryClient {
     }
 
     fn column_spec(column_schema: &ColumnSchema, s: &mut String) {
+        s.push('`');
         s.push_str(&column_schema.name);
+        s.push('`');
         s.push(' ');
         let typ = Self::postgres_to_bigquery_type(&column_schema.typ);
         s.push_str(typ);
@@ -147,7 +149,9 @@ impl BigQueryClient {
         s.push_str("primary key (");
 
         for column in identity_columns {
+            s.push('`');
             s.push_str(&column.name);
+            s.push('`');
             s.push(',');
         }
 
