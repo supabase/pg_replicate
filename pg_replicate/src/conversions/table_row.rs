@@ -294,8 +294,8 @@ impl TableRowConverter {
                 Err(e) => {
                     let bytes: VecWrapper = row.get(i);
                     error!(
-                        "error while getting column {} of type {} from bytes {:#?}",
-                        column_schema.name, column_schema.typ, bytes.0
+                        "error while getting column {}(nullable = {}) of type {} from bytes {:#?}",
+                        column_schema.name, column_schema.nullable, column_schema.typ, bytes.0
                     );
                     return Err(e);
                 }
