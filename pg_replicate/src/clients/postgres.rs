@@ -143,6 +143,7 @@ impl ReplicationClient {
                 and i.indisprimary = true
             where a.attnum > 0::int2
             and not a.attisdropped
+            and a.attgenerated = ''
             and a.attrelid = {table_id}
             ",
         );
