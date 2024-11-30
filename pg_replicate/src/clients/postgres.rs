@@ -145,6 +145,7 @@ impl ReplicationClient {
             and not a.attisdropped
             and a.attgenerated = ''
             and a.attrelid = {table_id}
+            order by a.attnum
             ",
         );
 
