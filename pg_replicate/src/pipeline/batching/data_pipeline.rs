@@ -60,8 +60,6 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                 continue;
             }
 
-            info!("table schema: {table_schema:#?}");
-
             self.sink.truncate_table(table_schema.table_id).await?;
 
             let table_rows = self
