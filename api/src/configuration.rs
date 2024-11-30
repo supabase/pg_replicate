@@ -77,7 +77,6 @@ impl<'de> Deserialize<'de> for ApiKey {
                 formatter.write_str("struct ApiKey")
             }
 
-            #[allow(dependency_on_unit_never_type_fallback)]
             fn visit_map<V>(self, mut map: V) -> Result<ApiKey, V::Error>
             where
                 V: MapAccess<'de>,
