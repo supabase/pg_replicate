@@ -6,11 +6,11 @@ use tokio_postgres::types::PgLsn;
 use tracing::{debug, info};
 
 use crate::{
-    conversions::cdc_event::CdcEvent,
+    conversions::cdc_event::{CdcEvent, CdcEventConversionError},
     pipeline::{
         batching::stream::BatchTimeoutStream,
         sinks::BatchSink,
-        sources::{Source, SourceError},
+        sources::{postgres::CdcStreamError, Source, SourceError},
         PipelineAction, PipelineError,
     },
     table::TableId,
@@ -111,6 +111,12 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             let mut send_status_update = false;
             let mut events = Vec::with_capacity(batch.len());
             for event in batch {
+                if let Err(CdcStreamError::CdcEventConversion(
+                    CdcEventConversionError::MissingSchema(_),
+                )) = event
+                {
+                    continue;
+                }
                 let event = event.map_err(SourceError::CdcStream)?;
                 if let CdcEvent::KeepAliveRequested { reply } = event {
                     send_status_update = reply;
