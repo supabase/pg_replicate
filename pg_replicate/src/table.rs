@@ -42,3 +42,9 @@ pub struct TableSchema {
     pub table_id: TableId,
     pub column_schemas: Vec<ColumnSchema>,
 }
+
+impl TableSchema {
+    pub fn has_primary_keys(&self) -> bool {
+        self.column_schemas.iter().any(|cs| cs.primary)
+    }
+}

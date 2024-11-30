@@ -227,6 +227,13 @@ impl ReplicationClient {
 
         for table_name in table_names {
             let table_schema = self.get_table_schema(table_name.clone()).await?;
+            if !table_schema.has_primary_keys() {
+                warn!(
+                    "table {} will not be copied because it has no primary key",
+                    table_schema.table_name
+                );
+                continue;
+            }
             table_schemas.insert(table_schema.table_id, table_schema);
         }
 
