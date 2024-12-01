@@ -6,6 +6,7 @@ use postgres_replication::protocol::{
     ReplicationMessage, TupleData, TypeBody, UpdateBody,
 };
 use thiserror::Error;
+use tracing::info;
 
 use crate::{
     pipeline::batching::BatchBoundary,
@@ -119,16 +120,28 @@ impl CdcEventConverter {
     ) -> Result<CdcEvent, CdcEventConversionError> {
         match value {
             ReplicationMessage::XLogData(xlog_data) => match xlog_data.into_data() {
-                LogicalReplicationMessage::Begin(begin_body) => Ok(CdcEvent::Begin(begin_body)),
-                LogicalReplicationMessage::Commit(commit_body) => Ok(CdcEvent::Commit(commit_body)),
+                LogicalReplicationMessage::Begin(begin_body) => {
+                    info!("BEGIN MSG");
+                    Ok(CdcEvent::Begin(begin_body))
+                }
+                LogicalReplicationMessage::Commit(commit_body) => {
+                    info!("COMMIT MSG");
+                    Ok(CdcEvent::Commit(commit_body))
+                }
                 LogicalReplicationMessage::Origin(_) => {
+                    info!("ORIGIN MSG");
                     Err(CdcEventConversionError::MessageNotSupported)
                 }
                 LogicalReplicationMessage::Relation(relation_body) => {
+                    info!("RELATION MSG");
                     Ok(CdcEvent::Relation(relation_body))
                 }
-                LogicalReplicationMessage::Type(type_body) => Ok(CdcEvent::Type(type_body)),
+                LogicalReplicationMessage::Type(type_body) => {
+                    info!("TYPE MSG");
+                    Ok(CdcEvent::Type(type_body))
+                }
                 LogicalReplicationMessage::Insert(insert_body) => {
+                    info!("INSERT MSG");
                     let table_id = insert_body.rel_id();
                     let column_schemas = &table_schemas
                         .get(&table_id)
@@ -141,6 +154,7 @@ impl CdcEventConverter {
                     )?)
                 }
                 LogicalReplicationMessage::Update(update_body) => {
+                    info!("UPDATE MSG");
                     let table_id = update_body.rel_id();
                     let column_schemas = &table_schemas
                         .get(&table_id)
@@ -153,6 +167,7 @@ impl CdcEventConverter {
                     )?)
                 }
                 LogicalReplicationMessage::Delete(delete_body) => {
+                    info!("DELETE MSG");
                     let table_id = delete_body.rel_id();
                     let column_schemas = &table_schemas
                         .get(&table_id)
@@ -165,14 +180,24 @@ impl CdcEventConverter {
                     )?)
                 }
                 LogicalReplicationMessage::Truncate(_) => {
+                    info!("TRUNCATE MSG");
                     Err(CdcEventConversionError::MessageNotSupported)
                 }
-                _ => Err(CdcEventConversionError::UnknownReplicationMessage),
+                _ => {
+                    info!("UNKNOWN MSG");
+                    Err(CdcEventConversionError::UnknownReplicationMessage)
+                }
             },
-            ReplicationMessage::PrimaryKeepAlive(keep_alive) => Ok(CdcEvent::KeepAliveRequested {
-                reply: keep_alive.reply() == 1,
-            }),
-            _ => Err(CdcEventConversionError::UnknownReplicationMessage),
+            ReplicationMessage::PrimaryKeepAlive(keep_alive) => {
+                info!("PRIMARY KEEP ALIVE MSG");
+                Ok(CdcEvent::KeepAliveRequested {
+                    reply: keep_alive.reply() == 1,
+                })
+            }
+            _ => {
+                info!("UNKNOWN MSG");
+                Err(CdcEventConversionError::UnknownReplicationMessage)
+            }
         }
     }
 }
