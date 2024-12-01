@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs};
 use bytes::{Buf, BufMut};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use futures::StreamExt;
-use gcp_bigquery_client::storage::ColumnMode;
+use gcp_bigquery_client::storage::{ColumnMode, StorageApi};
 use gcp_bigquery_client::yup_oauth2::parse_service_account_key;
 use gcp_bigquery_client::{
     error::BQError,
@@ -332,7 +332,7 @@ impl BigQueryClient {
         dataset_id: &str,
         table_name: String,
         table_descriptor: &TableDescriptor,
-        table_rows: &[TableRow],
+        mut table_rows: &[TableRow],
     ) -> Result<(), BQError> {
         let default_stream = StreamName::new_default(
             self.project_id.clone(),
@@ -340,15 +340,23 @@ impl BigQueryClient {
             table_name.to_string(),
         );
 
-        let trace_id = "pg_replicate bigquery client".to_string();
-        let mut response_stream = self
-            .client
-            .storage_mut()
-            .append_rows(&default_stream, table_descriptor, table_rows, trace_id)
-            .await?;
+        loop {
+            let (rows, num_processed_rows) = StorageApi::create_rows(table_descriptor, table_rows);
+            let trace_id = "pg_replicate bigquery client".to_string();
+            let mut response_stream = self
+                .client
+                .storage_mut()
+                .append_rows(&default_stream, rows, trace_id)
+                .await?;
 
-        if let Some(r) = response_stream.next().await {
-            let _ = r?;
+            if let Some(r) = response_stream.next().await {
+                let _ = r?;
+            }
+
+            table_rows = &table_rows[num_processed_rows..];
+            if table_rows.is_empty() {
+                break;
+            }
         }
 
         Ok(())
