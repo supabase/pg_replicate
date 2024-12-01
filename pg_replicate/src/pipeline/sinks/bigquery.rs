@@ -184,10 +184,12 @@ impl BatchSink for BigQueryBatchSink {
         for event in events {
             match event {
                 CdcEvent::Begin(begin_body) => {
+                    info!("BEGIN MSG");
                     let final_lsn_u64 = begin_body.final_lsn();
                     final_lsn = Some(final_lsn_u64.into());
                 }
                 CdcEvent::Commit(commit_body) => {
+                    info!("COMMIT MSG");
                     let commit_lsn: PgLsn = commit_body.commit_lsn().into();
                     if let Some(final_lsn) = final_lsn {
                         if commit_lsn == final_lsn {
@@ -200,26 +202,35 @@ impl BatchSink for BigQueryBatchSink {
                     }
                 }
                 CdcEvent::Insert((table_id, mut table_row)) => {
+                    info!("INSERT MSG");
                     table_row.values.push(Cell::String("UPSERT".to_string()));
                     let table_rows: &mut Vec<TableRow> =
                         table_name_to_table_rows.entry(table_id).or_default();
                     table_rows.push(table_row);
                 }
                 CdcEvent::Update((table_id, mut table_row)) => {
+                    info!("UPDATE MSG");
                     table_row.values.push(Cell::String("UPSERT".to_string()));
                     let table_rows: &mut Vec<TableRow> =
                         table_name_to_table_rows.entry(table_id).or_default();
                     table_rows.push(table_row);
                 }
                 CdcEvent::Delete((table_id, mut table_row)) => {
+                    info!("DELETE MSG");
                     table_row.values.push(Cell::String("DELETE".to_string()));
                     let table_rows: &mut Vec<TableRow> =
                         table_name_to_table_rows.entry(table_id).or_default();
                     table_rows.push(table_row);
                 }
-                CdcEvent::Relation(_) => {}
-                CdcEvent::KeepAliveRequested { reply: _ } => {}
-                CdcEvent::Type(_) => {}
+                CdcEvent::Relation(_) => {
+                    info!("RELATION MSG");
+                }
+                CdcEvent::KeepAliveRequested { reply: _ } => {
+                    info!("KEEP ALIVE MSG");
+                }
+                CdcEvent::Type(_) => {
+                    info!("TYPE MSG");
+                }
             }
         }
 
