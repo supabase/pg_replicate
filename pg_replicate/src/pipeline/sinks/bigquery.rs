@@ -38,6 +38,7 @@ pub struct BigQueryBatchSink {
     dataset_id: String,
     table_schemas: Option<HashMap<TableId, TableSchema>>,
     committed_lsn: Option<PgLsn>,
+    final_lsn: Option<PgLsn>,
 }
 
 impl BigQueryBatchSink {
@@ -52,6 +53,7 @@ impl BigQueryBatchSink {
             dataset_id,
             table_schemas: None,
             committed_lsn: None,
+            final_lsn: None,
         })
     }
 
@@ -66,6 +68,7 @@ impl BigQueryBatchSink {
             dataset_id,
             table_schemas: None,
             committed_lsn: None,
+            final_lsn: None,
         })
     }
 
@@ -180,16 +183,15 @@ impl BatchSink for BigQueryBatchSink {
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, SinkError> {
         let mut table_name_to_table_rows = HashMap::new();
         let mut new_last_lsn = PgLsn::from(0);
-        let mut final_lsn: Option<PgLsn> = None;
         for event in events {
             match event {
                 CdcEvent::Begin(begin_body) => {
                     let final_lsn_u64 = begin_body.final_lsn();
-                    final_lsn = Some(final_lsn_u64.into());
+                    self.final_lsn = Some(final_lsn_u64.into());
                 }
                 CdcEvent::Commit(commit_body) => {
                     let commit_lsn: PgLsn = commit_body.commit_lsn().into();
-                    if let Some(final_lsn) = final_lsn {
+                    if let Some(final_lsn) = self.final_lsn {
                         if commit_lsn == final_lsn {
                             new_last_lsn = commit_lsn;
                         } else {
