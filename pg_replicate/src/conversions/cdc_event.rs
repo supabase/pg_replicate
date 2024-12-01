@@ -60,9 +60,7 @@ impl CdcEventConverter {
         for (i, column_schema) in column_schemas.iter().enumerate() {
             let cell = match &tuple_data[i] {
                 TupleData::Null => Cell::Null,
-                TupleData::UnchangedToast => {
-                    return Err(CdcEventConversionError::UnchangedToastNotSupported)
-                }
+                TupleData::UnchangedToast => Cell::Null,
                 TupleData::Binary(_) => {
                     return Err(CdcEventConversionError::BinaryFormatNotSupported)
                 }
