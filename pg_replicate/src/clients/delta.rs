@@ -149,7 +149,7 @@ impl DeltaClient {
 
     fn cell_to_arrow(&self, typ: &Cell) -> Arc<dyn Array> {
         match typ {
-            Cell::Null =>  Arc::new(StringArray::from(vec![String::from("")])),
+            Cell::Null => Arc::new(StringArray::from(vec![String::from("")])),
             Cell::Uuid(value) => Arc::new(StringArray::from(vec![value.to_string()])),
             Cell::Bytes(value) => {
                 let data = std::str::from_utf8(value)
