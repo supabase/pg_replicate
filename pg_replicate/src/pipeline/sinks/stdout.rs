@@ -10,12 +10,12 @@ use crate::{
     table::{TableId, TableSchema},
 };
 
-use super::{InfallibleSinkError, Sink};
+use super::{BatchSink, InfallibleSinkError};
 
 pub struct StdoutSink;
 
 #[async_trait]
-impl Sink for StdoutSink {
+impl BatchSink for StdoutSink {
     type Error = InfallibleSinkError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         Ok(PipelineResumptionState {
@@ -32,17 +32,21 @@ impl Sink for StdoutSink {
         Ok(())
     }
 
-    async fn write_table_row(
+    async fn write_table_rows(
         &mut self,
-        row: TableRow,
+        rows: Vec<TableRow>,
         _table_id: TableId,
     ) -> Result<(), Self::Error> {
-        info!("{row:?}");
+        for row in rows {
+            info!("{row:?}");
+        }
         Ok(())
     }
 
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, Self::Error> {
-        info!("{event:?}");
+    async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
+        for event in events {
+            info!("{event:?}");
+        }
         Ok(PgLsn::from(0))
     }
 

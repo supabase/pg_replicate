@@ -1,9 +1,9 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
-        data_pipeline::DataPipeline,
+        batching::{data_pipeline::BatchDataPipeline, BatchConfig},
         sinks::duckdb::DuckDbSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
@@ -162,7 +162,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let mut pipeline = DataPipeline::new(postgres_source, duckdb_sink, action);
+    let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
+    let mut pipeline = BatchDataPipeline::new(postgres_source, duckdb_sink, action, batch_config);
 
     pipeline.start().await?;
 

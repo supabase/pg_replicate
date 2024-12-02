@@ -8,13 +8,13 @@ use tokio_postgres::types::PgLsn;
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::PipelineResumptionState,
+    pipeline::{sinks::BatchSink, PipelineResumptionState},
     table::{TableId, TableSchema},
 };
 
 use super::{
     executor::{DuckDbExecutor, DuckDbExecutorError, DuckDbResponse},
-    DuckDbRequest, Sink,
+    DuckDbRequest,
 };
 pub struct DuckDbSink {
     req_sender: Sender<DuckDbRequest>,
@@ -98,7 +98,7 @@ impl DuckDbSink {
 }
 
 #[async_trait]
-impl Sink for DuckDbSink {
+impl BatchSink for DuckDbSink {
     type Error = DuckDbExecutorError;
 
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
@@ -127,28 +127,36 @@ impl Sink for DuckDbSink {
         Ok(())
     }
 
-    async fn write_table_row(
+    async fn write_table_rows(
         &mut self,
-        row: TableRow,
+        rows: Vec<TableRow>,
         table_id: TableId,
     ) -> Result<(), Self::Error> {
-        let req = DuckDbRequest::InsertRow(row, table_id);
-        match self.execute(req).await? {
-            DuckDbResponse::InsertRowResponse(res) => {
-                let _ = res?;
+        //TODO: use batching
+        for row in rows {
+            let req = DuckDbRequest::InsertRow(row, table_id);
+            match self.execute(req).await? {
+                DuckDbResponse::InsertRowResponse(res) => {
+                    let _ = res?;
+                }
+                _ => panic!("invalid response to InsertRow request"),
             }
-            _ => panic!("invalid response to InsertRow request"),
         }
+
         Ok(())
     }
 
-    async fn write_cdc_event(&mut self, event: CdcEvent) -> Result<PgLsn, Self::Error> {
-        let req = DuckDbRequest::HandleCdcEvent(event);
-        let last_lsn = match self.execute(req).await? {
-            DuckDbResponse::HandleCdcEventResponse(res) => res?,
-            _ => panic!("invalid response to HandleCdcEvent request"),
-        };
-        Ok(last_lsn)
+    async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
+        //TODO: use batching
+        let mut last_lsn = None;
+        for event in events {
+            let req = DuckDbRequest::HandleCdcEvent(event);
+            last_lsn = Some(match self.execute(req).await? {
+                DuckDbResponse::HandleCdcEventResponse(res) => res?,
+                _ => panic!("invalid response to HandleCdcEvent request"),
+            });
+        }
+        Ok(last_lsn.expect("no last_lsn"))
     }
 
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), Self::Error> {

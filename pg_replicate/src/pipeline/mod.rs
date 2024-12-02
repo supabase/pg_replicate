@@ -8,7 +8,6 @@ use tokio_postgres::types::PgLsn;
 use crate::table::TableId;
 
 pub mod batching;
-pub mod data_pipeline;
 pub mod sinks;
 pub mod sources;
 
