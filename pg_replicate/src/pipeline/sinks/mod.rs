@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+#[cfg(feature = "delta")]
 use deltalake::DeltaTableError;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
@@ -14,12 +15,12 @@ use super::PipelineResumptionState;
 
 #[cfg(feature = "bigquery")]
 pub mod bigquery;
+#[cfg(feature = "delta")]
+pub mod delta;
 #[cfg(feature = "duckdb")]
 pub mod duckdb;
 #[cfg(feature = "stdout")]
 pub mod stdout;
-#[cfg(feature = "delta")]
-pub mod delta;
 
 pub trait SinkError: std::error::Error + Send + Sync + 'static {}
 
@@ -27,7 +28,8 @@ pub trait SinkError: std::error::Error + Send + Sync + 'static {}
 #[error("unreachable")]
 pub enum InfallibleSinkError {}
 impl SinkError for InfallibleSinkError {}
-impl SinkError for DeltaTableError{}
+#[cfg(feature = "delta")]
+impl SinkError for DeltaTableError {}
 
 #[async_trait]
 pub trait BatchSink {
