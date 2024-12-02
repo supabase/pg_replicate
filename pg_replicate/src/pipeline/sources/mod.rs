@@ -13,8 +13,15 @@ use self::postgres::{
 
 pub mod postgres;
 
+pub trait SourceError: std::error::Error + Send + Sync + 'static {}
+
 #[derive(Debug, Error)]
-pub enum SourceError {
+#[error("unreachable")]
+pub enum InfallibleSourceError {}
+impl SourceError for InfallibleSourceError {}
+
+#[derive(Debug, Error)]
+pub enum CommonSourceError {
     #[error("source error: {0}")]
     Postgres(#[from] PostgresSourceError),
 
@@ -28,17 +35,21 @@ pub enum SourceError {
     StatusUpdate(#[from] StatusUpdateError),
 }
 
+impl SourceError for CommonSourceError {}
+
 #[async_trait]
 pub trait Source {
+    type Error: SourceError;
+
     fn get_table_schemas(&self) -> &HashMap<TableId, TableSchema>;
 
     async fn get_table_copy_stream(
         &self,
         table_name: &TableName,
         column_schemas: &[ColumnSchema],
-    ) -> Result<TableCopyStream, SourceError>;
+    ) -> Result<TableCopyStream, Self::Error>;
 
-    async fn commit_transaction(&self) -> Result<(), SourceError>;
+    async fn commit_transaction(&self) -> Result<(), Self::Error>;
 
-    async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, SourceError>;
+    async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, Self::Error>;
 }
