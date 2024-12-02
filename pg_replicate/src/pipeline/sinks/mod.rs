@@ -25,6 +25,7 @@ pub trait SinkError: std::error::Error + Send + Sync + 'static {}
 pub enum InfallibleSinkError {}
 impl SinkError for InfallibleSinkError {}
 
+#[deprecated(note = "use BatchSink trait instead")]
 #[async_trait]
 pub trait Sink {
     type Error: SinkError;
