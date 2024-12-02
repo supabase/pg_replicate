@@ -23,6 +23,7 @@ bigdecimal = { workspace = true, features = ["std"] }
 bytes = { workspace = true }
 byteorder = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+clickhouse = { workspace = true, default-features = true, optional= true}
 duckdb = { workspace = true, optional = true }
 futures = { workspace = true }
 gcp-bigquery-client = { workspace = true, optional = true, features = [
@@ -59,6 +60,7 @@ tracing-subscriber = { workspace = true, default-features = true, features = [
 
 [features]
 bigquery = ["dep:gcp-bigquery-client", "dep:prost"]
+clickhouse = ["dep:clickhouse"]
 duckdb = ["dep:duckdb"]
 stdout = []
 # When enabled converts unknown types to bytes

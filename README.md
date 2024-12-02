@@ -137,6 +137,12 @@ See the [open issues](https://github.com/imor/pg_replicate/issues) for a full li
 
 Distributed under the Apache-2.0 License. See `LICENSE` for more information.
 
+## Contributing
+
+If using the [asdf](https://asdf-vm.com/) package manager, run `asdf install`.
+
+Otherwise, ensure that dependencies match `.tool-versions.`
+
 ## Docker
 
 To create the docker image for `replicator` run `docker build -f ./replicator/Dockerfile .` from the root of the repo. Similarly, to create the docker image for `api` run `docker build -f ./api/Dockerfile .`.
