@@ -51,7 +51,7 @@ struct DbArgs {
 
 #[derive(Debug, Args)]
 struct DeltaArgs {
-    /// Host on which Postgres is running
+    /// Path to the Delta Lake for saving data from the database
     #[arg(long)]
     delta_path: String,
 }
