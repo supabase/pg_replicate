@@ -72,24 +72,26 @@ impl DeltaClient {
     ) -> Result<Arc<Schema>, DeltaTableError> {
         let full_path = self.delta_full_path(table_name);
 
-        let mut table = DeltaOps::try_from_uri(&full_path)
+        let table = DeltaOps::try_from_uri(&full_path)
             .await?
             .create()
             .with_table_name(table_name);
 
-        let arrow_schema = Self::generate_schema(columns, &mut table)?;
+        let arrow_schema = Self::generate_schema(columns, table)?;
 
         Ok(arrow_schema)
     }
 
     fn generate_schema(
         columns: &[ColumnSchema],
-        table: &mut CreateBuilder,
+        table: CreateBuilder,
     ) -> Result<Arc<Schema>, DeltaTableError> {
         let mut schema: Vec<Field> = vec![];
 
+        let mut final_table = table;
+
         for column in columns {
-            *table = table.clone().with_column(
+            final_table = final_table.with_column(
                 column.name.as_str(),
                 Self::postgres_to_delta(&column.typ),
                 false,
