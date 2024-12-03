@@ -179,7 +179,7 @@ impl DeltaClient {
                 Arc::new(Date32Array::from(vec![Self::naive_date_to_arrow(*value)]))
             }
             Cell::Time(value) => {
-                let final_time = self.naive_time_to_microseconds(value.clone());
+                let final_time = self.naive_time_to_microseconds(*value);
                 Arc::new(TimestampMicrosecondArray::from(vec![final_time]))
             }
             Cell::TimeStamp(value) => Arc::new(TimestampMicrosecondArray::from(vec![value
