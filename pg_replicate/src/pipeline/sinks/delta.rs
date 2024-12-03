@@ -23,16 +23,22 @@ use thiserror::Error;
 pub enum DeltaSinkError {
     #[error("arrow error: {0}")]
     DeltaArrow(#[from] ArrowError),
+
     #[error("delta error: {0}")]
     Delta(#[from] DeltaTableError),
+
     #[error("missing table schemas")]
     MissingTableSchemas,
+
     #[error("missing delta schemas")]
     MissingDeltaSchemas(String),
+
     #[error("missing table id: {0}")]
     MissingTableId(TableId),
+
     #[error("incorrect commit lsn: {0}(expected: {0})")]
     IncorrectCommitLsn(PgLsn, PgLsn),
+    
     #[error("commit message without begin message")]
     CommitWithoutBegin,
 }
