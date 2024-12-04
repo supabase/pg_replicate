@@ -238,6 +238,8 @@ impl ReplicationClient {
             table_schemas.insert(table_schema.table_id, table_schema);
         }
 
+        info!("TABLE SCHEMAS: {table_schemas:#?}");
+
         Ok(table_schemas)
     }
 
