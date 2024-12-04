@@ -13,6 +13,8 @@ use super::PipelineResumptionState;
 
 #[cfg(feature = "bigquery")]
 pub mod bigquery;
+#[cfg(feature = "delta")]
+pub mod delta;
 #[cfg(feature = "duckdb")]
 pub mod duckdb;
 #[cfg(feature = "stdout")]
