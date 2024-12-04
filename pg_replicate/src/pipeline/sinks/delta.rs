@@ -5,7 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use chrono::Utc;
-use tokio_postgres::types::PgLsn;
+use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
 
 use super::{BatchSink, SinkError};
@@ -13,7 +13,7 @@ use crate::{
     clients::delta::DeltaClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow, Cell},
     pipeline::PipelineResumptionState,
-    table::{TableId, TableSchema},
+    table::{ColumnSchema, TableId, TableSchema},
 };
 use deltalake::arrow::error::ArrowError;
 use deltalake::{arrow::datatypes::Schema, DeltaTableError};
@@ -45,6 +45,8 @@ pub enum DeltaSinkError {
 
 pub struct DeltaSink {
     client: DeltaClient,
+    committed_lsn: Option<PgLsn>,
+    final_lsn: Option<PgLsn>,
 }
 
 impl DeltaSink {
@@ -55,6 +57,8 @@ impl DeltaSink {
                 table_schemas: None,
                 delta_schemas: None,
             },
+            committed_lsn: None,
+            final_lsn: None,
         }
     }
 
@@ -72,9 +76,39 @@ impl SinkError for DeltaSinkError {}
 impl BatchSink for DeltaSink {
     type Error = DeltaSinkError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
+        let last_lsn_column_schemas = [
+            ColumnSchema {
+                name: "id".to_string(),
+                typ: Type::INT8,
+                modifier: 0,
+                nullable: false,
+                primary: true,
+            },
+            ColumnSchema {
+                name: "lsn".to_string(),
+                typ: Type::INT8,
+                modifier: 0,
+                nullable: false,
+                primary: false,
+            },
+        ];
+
+        if !self.client.delta_table_exists("last_lsn").await {
+            self.client
+                .create_table("last_lsn", &last_lsn_column_schemas)
+                .await?;
+
+            self.client.insert_last_lsn_row().await?;
+        } else {
+            info!("last_lsn table already exists")
+        }
+
+        let last_lsn = self.client.get_last_lsn().await?;
+        self.committed_lsn = Some(last_lsn);
+
         Ok(PipelineResumptionState {
             copied_tables: HashSet::new(),
-            last_lsn: PgLsn::from(0),
+            last_lsn,
         })
     }
 
@@ -89,7 +123,7 @@ impl BatchSink for DeltaSink {
 
             let schema = self
                 .client
-                .create_table_schema(&table_name, &table_schema.column_schemas)
+                .create_table(&table_name, &table_schema.column_schemas)
                 .await?;
 
             delta_schema.insert(table_name, schema);
@@ -123,11 +157,26 @@ impl BatchSink for DeltaSink {
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
         let mut rows_batch: HashMap<TableId, Vec<TableRow>> = HashMap::new();
+        let mut new_last_lsn = PgLsn::from(0);
 
         for event in events {
             match event {
-                CdcEvent::Begin(_) => {}
-                CdcEvent::Commit(_) => {}
+                CdcEvent::Begin(begin_body) => {
+                    let final_lsn_u64 = begin_body.final_lsn();
+                    self.final_lsn = Some(final_lsn_u64.into());
+                }
+                CdcEvent::Commit(commit_body) => {
+                    let commit_lsn: PgLsn = commit_body.commit_lsn().into();
+                    if let Some(final_lsn) = self.final_lsn {
+                        if commit_lsn == final_lsn {
+                            new_last_lsn = commit_lsn;
+                        } else {
+                            Err(DeltaSinkError::IncorrectCommitLsn(commit_lsn, final_lsn))?
+                        }
+                    } else {
+                        Err(DeltaSinkError::CommitWithoutBegin)?
+                    }
+                }
                 CdcEvent::Insert(insert) => {
                     let (table_id, mut table_row) = insert;
                     Self::add_optional_columns(&mut table_row, "I");
@@ -150,7 +199,14 @@ impl BatchSink for DeltaSink {
         }
 
         self.client.write_to_table_batch(rows_batch).await?;
-        Ok(PgLsn::from(0))
+
+        if new_last_lsn != PgLsn::from(0) {
+            self.client.set_last_lsn(new_last_lsn).await?;
+            self.committed_lsn = Some(new_last_lsn);
+        }
+
+        let committed_lsn = self.committed_lsn.expect("committed lsn is none");
+        Ok(committed_lsn)
     }
 
     async fn table_copied(&mut self, table_id: TableId) -> Result<(), Self::Error> {
