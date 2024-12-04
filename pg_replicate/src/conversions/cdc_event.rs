@@ -26,9 +26,6 @@ pub enum CdcEventConversionError {
     #[error("unknown replication message")]
     UnknownReplicationMessage,
 
-    #[error("unchanged toast not yet supported")]
-    UnchangedToastNotSupported,
-
     #[error("binary format not yet supported")]
     BinaryFormatNotSupported,
 
