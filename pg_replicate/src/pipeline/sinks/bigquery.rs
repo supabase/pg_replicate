@@ -184,6 +184,7 @@ impl BatchSink for BigQueryBatchSink {
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
+        info!("CDC EVENTS: {events:#?}");
         let mut table_name_to_table_rows = HashMap::new();
         let mut new_last_lsn = PgLsn::from(0);
         for event in events {
