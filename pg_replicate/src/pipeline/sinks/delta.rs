@@ -93,7 +93,7 @@ impl BatchSink for DeltaSink {
             },
         ];
 
-        if !self.client.delta_table_exists("last_lsn").await {
+        if !self.client.delta_table_exists("last_lsn").await? {
             self.client
                 .create_table("last_lsn", &last_lsn_column_schemas)
                 .await?;

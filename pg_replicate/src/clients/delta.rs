@@ -3,9 +3,12 @@ use chrono::{NaiveDate, NaiveTime, Utc};
 use deltalake::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, TimeUnit};
 use deltalake::datafusion::execution::context::SessionContext;
 use deltalake::datafusion::prelude::col;
-use deltalake::open_table;
-use deltalake::operations::create::CreateBuilder;
+use deltalake::kernel::{PrimitiveType, StructField, TableFeatures};
+use deltalake::operations::add_feature;
+use deltalake::protocol::SaveMode;
+use deltalake::{aws, open_table, open_table_with_storage_options, DeltaTable};
 use deltalake::{kernel::DataType, DeltaOps, DeltaTableError};
+use maplit::hashmap;
 use std::{collections::HashMap, sync::Arc};
 use tokio_postgres::types::{PgLsn, Type};
 
@@ -25,6 +28,91 @@ pub struct DeltaClient {
 }
 
 impl DeltaClient {
+    fn dev_aws_config() -> HashMap<String, String> {
+        let storage_options: HashMap<String, String> = hashmap! {
+            deltalake::aws::constants::AWS_ALLOW_HTTP.into() => "true".into(),
+            deltalake::aws::constants::AWS_FORCE_CREDENTIAL_LOAD.into() => "true".into(),
+            deltalake::aws::constants::AWS_ENDPOINT_URL.into()  => "http://localhost:4566".into(),
+            deltalake::aws::constants::AWS_S3_LOCKING_PROVIDER.into() => "dynamodb".into(),
+        };
+
+        storage_options
+    }
+    async fn _aws_config() -> HashMap<String, String> {
+        let storage_options: HashMap<String, String> = hashmap! {
+            deltalake::aws::constants::AWS_FORCE_CREDENTIAL_LOAD.into() => "true".into(),
+            deltalake::aws::constants::AWS_S3_LOCKING_PROVIDER.into() => "dynamodb".into(),
+        };
+
+        storage_options
+    }
+
+    async fn is_local_storage(uri: &str) -> Result<(bool, String), DeltaTableError> {
+        let array_of_uri: Vec<&str> = uri.split(r"://").collect();
+        let mut is_local_system: bool = false;
+        let final_uri: String;
+
+        if array_of_uri.len() != 2 {
+            return Err(DeltaTableError::Generic(
+                "Invalid URI. Expected format: s3://path or file://path".to_string(),
+            ));
+        }
+
+        if array_of_uri.first().unwrap().to_string() == *"file" {
+            final_uri = array_of_uri[1].to_string();
+            is_local_system = true;
+        } else {
+            final_uri = uri.to_string();
+        }
+
+        Ok((is_local_system, final_uri))
+    }
+
+    async fn open_delta_table(uri: &str) -> Result<Option<DeltaTable>, DeltaTableError> {
+        let (is_local_storage, final_uri) = Self::is_local_storage(uri).await?;
+        let result = if is_local_storage {
+            open_table(&final_uri).await
+        } else {
+            open_table_with_storage_options(&final_uri, Self::dev_aws_config()).await
+        };
+
+        result.ok().map_or(Ok(None), |tbl| Ok(Some(tbl)))
+    }
+
+    async fn try_open_delta_table(uri: &str) -> Result<DeltaTable, DeltaTableError> {
+        match Self::open_delta_table(uri).await? {
+            Some(tbl) => Ok(tbl),
+            None => Err(DeltaTableError::Generic("Table not found".to_string())),
+        }
+    }
+
+    async fn write_batch_to_s3(
+        uri: &str,
+        data: Vec<DeltaRecordBatch>,
+        save_mode: SaveMode,
+    ) -> Result<(), DeltaTableError> {
+        let table = Self::try_open_delta_table(uri).await?;
+        let table_snapshot = table.snapshot()?.clone();
+        let table_logstore = table.log_store();
+        let add_feature = add_feature::AddTableFeatureBuilder::new(
+            table_logstore.clone(),
+            table_snapshot.clone(),
+        )
+        .with_feature(TableFeatures::TimestampWithoutTimezone)
+        .with_allow_protocol_versions_increase(true)
+        .await?;
+
+        deltalake::operations::write::WriteBuilder::new(
+            add_feature.log_store(),
+            Some(add_feature.snapshot()?.clone()),
+        )
+        .with_save_mode(save_mode)
+        .with_input_batches(data)
+        .await?;
+
+        Ok(())
+    }
+
     fn naive_date_to_arrow(date: NaiveDate) -> i32 {
         let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
         (date - epoch).num_days() as i32
@@ -39,7 +127,9 @@ impl DeltaClient {
             &Type::INT2 | &Type::INT4 | &Type::INT8 => DataType::INTEGER,
             &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => DataType::FLOAT,
             &Type::DATE => DataType::DATE,
-            &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => DataType::TIMESTAMP,
+            &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => {
+                DataType::Primitive(PrimitiveType::TimestampNtz)
+            }
             &Type::UUID => DataType::STRING,
             &Type::OID => DataType::INTEGER,
             &Type::BYTEA => DataType::BYTE,
@@ -66,9 +156,15 @@ impl DeltaClient {
         }
     }
 
-    pub async fn delta_table_exists(&self, table_name: &str) -> bool {
+    pub async fn delta_table_exists(&self, table_name: &str) -> Result<bool, DeltaTableError> {
+        deltalake_aws::register_handlers(None);
         let uri = self.delta_full_path(table_name);
-        open_table(uri).await.is_ok()
+
+        match Self::open_delta_table(&uri).await {
+            Ok(Some(_table)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn set_last_lsn(&self, lsn: PgLsn) -> Result<(), DeltaTableError> {
@@ -90,7 +186,7 @@ impl DeltaClient {
             DeltaRecordBatch::try_new(schema, vec![id_array, lsn_array, operation, inserted_at])?;
         let source = ctx.read_batch(batch)?;
 
-        let table = open_table(uri).await?;
+        let table = Self::try_open_delta_table(&uri).await?;
         DeltaOps(table)
             .merge(source, col("target.id").eq(col("source.id")))
             .with_source_alias("source")
@@ -108,7 +204,7 @@ impl DeltaClient {
 
     pub async fn get_last_lsn(&self) -> Result<PgLsn, DeltaTableError> {
         let uri = self.delta_full_path("last_lsn");
-        let table = open_table(uri).await?;
+        let table = Self::try_open_delta_table(&uri).await?;
 
         let ctx = SessionContext::new();
         ctx.register_table("last_lsn", Arc::new(table))?;
@@ -146,34 +242,68 @@ impl DeltaClient {
         table_name: &str,
         columns: &[ColumnSchema],
     ) -> Result<Arc<Schema>, DeltaTableError> {
-        let full_path = self.delta_full_path(table_name);
+        let uri = self.delta_full_path(table_name);
+        aws::register_handlers(None);
 
-        let table = DeltaOps::try_from_uri(&full_path)
-            .await?
-            .create()
-            .with_table_name(table_name);
+        async fn execute_creation<F>(
+            delta_ops: DeltaOps,
+            table_name: &str,
+            columns: &[ColumnSchema],
+            postgres_to_delta_fn: &F,
+        ) -> Result<(), DeltaTableError>
+        where
+            F: Fn(&Type) -> DataType + Sync,
+        {
+            let mut struct_fields = columns
+                .iter()
+                .map(|column| {
+                    StructField::new(
+                        column.name.as_str(),
+                        postgres_to_delta_fn(&column.typ), // Call the function reference
+                        true,
+                    )
+                })
+                .collect::<Vec<StructField>>();
 
-        let arrow_schema = Self::generate_schema(columns, table)?;
+            struct_fields.push(StructField::new(
+                "OP",
+                postgres_to_delta_fn(&Type::VARCHAR), // Call the function reference
+                true,
+            ));
+
+            struct_fields.push(StructField::new(
+                "pg_replicate_inserted_time",
+                postgres_to_delta_fn(&Type::TIMESTAMP), // Call the function reference
+                true,
+            ));
+
+            delta_ops
+                .create()
+                .with_table_name(table_name)
+                .with_columns(struct_fields)
+                .await?;
+            Ok(())
+        }
+
+        let (is_local_storage, final_uri) = Self::is_local_storage(&uri).await?;
+        let delta_ops = if is_local_storage {
+            DeltaOps::try_from_uri(&final_uri).await?
+        } else {
+            let storage_options = Self::dev_aws_config();
+            DeltaOps::try_from_uri_with_storage_options(&final_uri, storage_options).await?
+        };
+
+        execute_creation(delta_ops, table_name, columns, &Self::postgres_to_delta).await?;
+
+        let arrow_schema = Self::generate_schema(columns)?;
 
         Ok(arrow_schema)
     }
 
-    fn generate_schema(
-        columns: &[ColumnSchema],
-        table: CreateBuilder,
-    ) -> Result<Arc<Schema>, DeltaTableError> {
+    fn generate_schema(columns: &[ColumnSchema]) -> Result<Arc<Schema>, DeltaTableError> {
         let mut schema: Vec<Field> = vec![];
 
-        let mut final_table = table;
-
         for column in columns {
-            final_table = final_table.with_column(
-                column.name.as_str(),
-                Self::postgres_to_delta(&column.typ),
-                false,
-                None,
-            );
-
             schema.push(Field::new(
                 column.name.as_str(),
                 Self::postgres_to_arrow(&column.typ),
@@ -311,7 +441,7 @@ impl DeltaClient {
         Ok(Arc::new(Schema::new(delta_schema)))
     }
     pub async fn insert_last_lsn_row(&self) -> Result<(), DeltaTableError> {
-        let full_path = self.delta_full_path("last_lsn");
+        let uri = self.delta_full_path("last_lsn");
         let delta_schema = Self::get_lsn_schema().await?;
 
         let id: Arc<dyn Array> = Arc::new(Int32Array::from(vec![1]));
@@ -327,7 +457,13 @@ impl DeltaClient {
         let batches = DeltaRecordBatch::try_new(delta_schema, arrow_vect)?;
         let data: Vec<DeltaRecordBatch> = vec![batches];
 
-        DeltaOps::try_from_uri(full_path).await?.write(data).await?;
+        let (is_local_storage, final_uri) = Self::is_local_storage(&uri).await?;
+
+        if is_local_storage {
+            Self::write_batch_to_local(&final_uri, data, SaveMode::Overwrite).await?;
+        } else {
+            Self::write_batch_to_s3(&final_uri, data, SaveMode::Overwrite).await?;
+        }
 
         Ok(())
     }
@@ -341,7 +477,7 @@ impl DeltaClient {
         let table_schema = self.get_table_schema(table_id)?;
         let table_name = Self::table_name_in_delta(&table_schema.table_name);
 
-        let full_path = self.delta_full_path(&table_name);
+        let uri = self.delta_full_path(&table_name);
 
         let data = row.values;
 
@@ -363,7 +499,12 @@ impl DeltaClient {
 
         data.push(batches);
 
-        DeltaOps::try_from_uri(full_path).await?.write(data).await?;
+        let (is_local_storage, final_uri) = Self::is_local_storage(&uri).await?;
+        if is_local_storage {
+            Self::write_batch_to_local(&final_uri, data, SaveMode::Append).await?;
+        } else {
+            Self::write_batch_to_s3(&final_uri, data, SaveMode::Append).await?;
+        }
 
         Ok(())
     }
@@ -376,7 +517,7 @@ impl DeltaClient {
             let table_schema = self.get_table_schema(table_id)?;
             let table_name = Self::table_name_in_delta(&table_schema.table_name);
 
-            let full_path = self.delta_full_path(&table_name);
+            let uri = self.delta_full_path(&table_name);
             let delta_schema = self.get_delta_schema(&table_name)?; // Move schema retrieval outside the loop
 
             let data: Vec<DeltaRecordBatch> = data
@@ -391,8 +532,27 @@ impl DeltaClient {
                 })
                 .collect::<Result<_, _>>()?; // Collect into Vec and handle errors
 
-            DeltaOps::try_from_uri(full_path).await?.write(data).await?;
+            let (is_local_storage, final_uri) = Self::is_local_storage(&uri).await?;
+            if is_local_storage {
+                Self::write_batch_to_local(&final_uri, data, SaveMode::Append).await?;
+            } else {
+                Self::write_batch_to_s3(&final_uri, data, SaveMode::Append).await?;
+            }
         }
+
+        Ok(())
+    }
+
+    async fn write_batch_to_local(
+        uri: &str,
+        data: Vec<DeltaRecordBatch>,
+        save_mode: SaveMode,
+    ) -> Result<(), DeltaTableError> {
+        DeltaOps::try_from_uri(uri)
+            .await?
+            .write(data)
+            .with_save_mode(save_mode)
+            .await?;
 
         Ok(())
     }
