@@ -58,7 +58,6 @@ struct DeltaArgs {
     delta_path: String,
 }
 
-
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Copy a table
