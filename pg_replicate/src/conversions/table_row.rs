@@ -48,7 +48,6 @@ impl TableRowConverter {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         let row_str = str::from_utf8(row)?;
-        tracing::info!("ROW_STR: {row_str:#?}");
         let mut column_schemas_iter = column_schemas.iter();
         let mut chars = row_str.chars();
         let mut val_str = String::with_capacity(10);
