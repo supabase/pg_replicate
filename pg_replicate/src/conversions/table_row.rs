@@ -48,6 +48,7 @@ impl TableRowConverter {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         let row_str = str::from_utf8(row)?;
+        tracing::info!("ROW_STR: {row_str:#?}");
         let mut column_schemas_iter = column_schemas.iter();
         let mut chars = row_str.chars();
         let mut val_str = String::with_capacity(10);
@@ -62,8 +63,22 @@ impl TableRowConverter {
                         c if in_escape => {
                             if c == 'N' {
                                 val_str.push('\\');
+                                val_str.push(c);
+                            } else if c == 'b' {
+                                val_str.push(8 as char);
+                            } else if c == 'f' {
+                                val_str.push(12 as char);
+                            } else if c == 'n' {
+                                val_str.push('\n');
+                            } else if c == 'r' {
+                                val_str.push('\r');
+                            } else if c == 't' {
+                                val_str.push('\t');
+                            } else if c == 'v' {
+                                val_str.push(11 as char)
+                            } else {
+                                val_str.push(c);
                             }
-                            val_str.push(c);
                             in_escape = false;
                         }
                         '\t' => {
