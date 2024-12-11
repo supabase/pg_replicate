@@ -37,11 +37,11 @@ impl DeltaClient {
         storage_options
     }
 
-    async fn is_local_storage(uri: String) -> Result<(bool, String), DeltaTableError> {
+    async fn is_local_storage(uri: &str) -> Result<bool, DeltaTableError> {
         if uri.starts_with("s3://") {
-            Ok((false, uri))
-        } else if let Some(path) = uri.strip_prefix("file://") {
-            Ok((true, path.to_string()))
+            Ok(false)
+        } else if uri.starts_with("file://") {
+            Ok(true)
         } else {
             Err(DeltaTableError::Generic(
                 "Storage type should start with either s3:// or file://".to_string(),
@@ -49,18 +49,28 @@ impl DeltaClient {
         }
     }
 
-    async fn open_delta_table(uri: String) -> Result<Option<DeltaTable>, DeltaTableError> {
-        let (is_local_storage, final_uri) = Self::is_local_storage(uri).await?;
-        let result = if is_local_storage {
-            open_table(&final_uri).await
+    /// strips file:/// prefix from the uri
+    async fn strip_file_prefix(uri: &str) -> Result<&str, DeltaTableError> {
+        if let Some(path) = uri.strip_prefix("file://") {
+            Ok(path)
         } else {
-            open_table_with_storage_options(&final_uri, Self::aws_config()).await
+            panic!("strip_file_prefix called on a non-file uri")
+        }
+    }
+
+    async fn open_delta_table(uri: &str) -> Result<Option<DeltaTable>, DeltaTableError> {
+        let is_local_storage = Self::is_local_storage(uri).await?;
+        let result = if is_local_storage {
+            open_table(uri).await
+        } else {
+            let uri = Self::strip_file_prefix(uri).await?;
+            open_table_with_storage_options(uri, Self::aws_config()).await
         };
 
         result.ok().map_or(Ok(None), |tbl| Ok(Some(tbl)))
     }
 
-    async fn try_open_delta_table(uri: String) -> Result<DeltaTable, DeltaTableError> {
+    async fn try_open_delta_table(uri: &str) -> Result<DeltaTable, DeltaTableError> {
         match Self::open_delta_table(uri).await? {
             Some(tbl) => Ok(tbl),
             None => Err(DeltaTableError::Generic("Table not found".to_string())),
@@ -68,7 +78,7 @@ impl DeltaClient {
     }
 
     async fn write_batch_to_s3(
-        uri: String,
+        uri: &str,
         data: Vec<DeltaRecordBatch>,
         save_mode: SaveMode,
     ) -> Result<(), DeltaTableError> {
@@ -144,7 +154,7 @@ impl DeltaClient {
         deltalake_aws::register_handlers(None);
         let uri = self.delta_full_path(table_name);
 
-        match Self::open_delta_table(uri).await {
+        match Self::open_delta_table(&uri).await {
             Ok(Some(_table)) => Ok(true),
             Ok(None) => Ok(false),
             Err(e) => Err(e),
@@ -170,7 +180,7 @@ impl DeltaClient {
             DeltaRecordBatch::try_new(schema, vec![id_array, lsn_array, operation, inserted_at])?;
         let source = ctx.read_batch(batch)?;
 
-        let table = Self::try_open_delta_table(uri).await?;
+        let table = Self::try_open_delta_table(&uri).await?;
         DeltaOps(table)
             .merge(source, col("target.id").eq(col("source.id")))
             .with_source_alias("source")
@@ -188,7 +198,7 @@ impl DeltaClient {
 
     pub(crate) async fn get_last_lsn(&self) -> Result<PgLsn, DeltaTableError> {
         let uri = self.delta_full_path("last_lsn");
-        let table = Self::try_open_delta_table(uri).await?;
+        let table = Self::try_open_delta_table(&uri).await?;
 
         let ctx = SessionContext::new();
         ctx.register_table("last_lsn", Arc::new(table))?;
@@ -242,11 +252,12 @@ impl DeltaClient {
             ])
             .collect::<Vec<_>>();
 
-        let (is_local, final_uri) = Self::is_local_storage(uri).await?;
-        let delta_ops = if is_local {
-            DeltaOps::try_from_uri(&final_uri).await?
+        let is_local_storage = Self::is_local_storage(&uri).await?;
+        let delta_ops = if is_local_storage {
+            DeltaOps::try_from_uri(&uri).await?
         } else {
-            DeltaOps::try_from_uri_with_storage_options(&final_uri, Self::aws_config()).await?
+            let uri = Self::strip_file_prefix(&uri).await?;
+            DeltaOps::try_from_uri_with_storage_options(uri, Self::aws_config()).await?
         };
 
         delta_ops
@@ -417,12 +428,13 @@ impl DeltaClient {
         let batches = DeltaRecordBatch::try_new(delta_schema, arrow_vect)?;
         let data: Vec<DeltaRecordBatch> = vec![batches];
 
-        let (is_local_storage, final_uri) = Self::is_local_storage(uri).await?;
+        let is_local_storage = Self::is_local_storage(&uri).await?;
 
         if is_local_storage {
-            Self::write_batch_to_local(&final_uri, data, SaveMode::Overwrite).await?;
+            Self::write_batch_to_local(&uri, data, SaveMode::Overwrite).await?;
         } else {
-            Self::write_batch_to_s3(final_uri, data, SaveMode::Overwrite).await?;
+            let uri = Self::strip_file_prefix(&uri).await?;
+            Self::write_batch_to_s3(uri, data, SaveMode::Overwrite).await?;
         }
 
         Ok(())
@@ -459,11 +471,12 @@ impl DeltaClient {
 
         data.push(batches);
 
-        let (is_local_storage, final_uri) = Self::is_local_storage(uri).await?;
+        let is_local_storage = Self::is_local_storage(&uri).await?;
         if is_local_storage {
-            Self::write_batch_to_local(&final_uri, data, SaveMode::Append).await?;
+            Self::write_batch_to_local(&uri, data, SaveMode::Append).await?;
         } else {
-            Self::write_batch_to_s3(final_uri, data, SaveMode::Append).await?;
+            let uri = Self::strip_file_prefix(&uri).await?;
+            Self::write_batch_to_s3(uri, data, SaveMode::Append).await?;
         }
 
         Ok(())
@@ -491,11 +504,12 @@ impl DeltaClient {
                 })
                 .collect::<Result<_, _>>()?;
 
-            let (is_local_storage, final_uri) = Self::is_local_storage(uri).await?;
+            let is_local_storage = Self::is_local_storage(&uri).await?;
             if is_local_storage {
-                Self::write_batch_to_local(&final_uri, data, SaveMode::Append).await?;
+                Self::write_batch_to_local(&uri, data, SaveMode::Append).await?;
             } else {
-                Self::write_batch_to_s3(final_uri, data, SaveMode::Append).await?;
+                let uri = Self::strip_file_prefix(&uri).await?;
+                Self::write_batch_to_s3(uri, data, SaveMode::Append).await?;
             }
         }
 
