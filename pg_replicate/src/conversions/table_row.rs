@@ -109,7 +109,7 @@ impl TryFrom<Cell> for DateTime<Utc> {
     }
 }
 
-#[trait_gen(T -> bool, i32, u32, i64, u64, String, DateTime<Utc>)]
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, DateTime<Utc>)]
 impl TryFrom<Cell> for Option<T> {
     type Error = CellConversionError;
 
