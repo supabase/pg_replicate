@@ -6,6 +6,7 @@ use deltalake::datafusion::execution::context::SessionContext;
 use deltalake::datafusion::prelude::col;
 use deltalake::kernel::{PrimitiveType, StructField, TableFeatures};
 use deltalake::operations::add_feature;
+use deltalake::operations::write::WriteBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{aws, open_table, open_table_with_storage_options, DeltaTable};
 use deltalake::{kernel::DataType, DeltaOps, DeltaTableError};
@@ -84,7 +85,7 @@ impl DeltaClient {
         .with_allow_protocol_versions_increase(true)
         .await?;
 
-        deltalake::operations::write::WriteBuilder::new(
+        WriteBuilder::new(
             add_feature.log_store(),
             Some(add_feature.snapshot()?.clone()),
         )
