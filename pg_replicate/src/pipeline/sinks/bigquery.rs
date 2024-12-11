@@ -221,6 +221,7 @@ impl BatchSink for BigQueryBatchSink {
                         table_name_to_table_rows.entry(table_id).or_default();
                     table_rows.push(table_row);
                 }
+                CdcEvent::Type(_) => {}
                 CdcEvent::Relation(_) => {}
                 CdcEvent::KeepAliveRequested { reply: _ } => {}
             }

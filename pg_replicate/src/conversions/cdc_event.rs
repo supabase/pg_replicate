@@ -7,7 +7,7 @@ use std::{
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use postgres_protocol::message::backend::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, RelationBody,
-    ReplicationMessage, TupleData, UpdateBody,
+    ReplicationMessage, TupleData, TypeBody, UpdateBody,
 };
 use thiserror::Error;
 use tokio_postgres::types::Type;
@@ -21,8 +21,8 @@ use super::table_row::{Cell, TableRow};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
-    #[error("message not supported: {0}")]
-    MessageNotSupported(&'static str),
+    #[error("message not supported")]
+    MessageNotSupported,
 
     #[error("unknown replication message")]
     UnknownReplicationMessage,
@@ -197,14 +197,12 @@ impl CdcEventConverter {
                 LogicalReplicationMessage::Begin(begin_body) => Ok(CdcEvent::Begin(begin_body)),
                 LogicalReplicationMessage::Commit(commit_body) => Ok(CdcEvent::Commit(commit_body)),
                 LogicalReplicationMessage::Origin(_) => {
-                    Err(CdcEventConversionError::MessageNotSupported("Origin"))
+                    Err(CdcEventConversionError::MessageNotSupported)
                 }
                 LogicalReplicationMessage::Relation(relation_body) => {
                     Ok(CdcEvent::Relation(relation_body))
                 }
-                LogicalReplicationMessage::Type(_) => {
-                    Err(CdcEventConversionError::MessageNotSupported("Type"))
-                }
+                LogicalReplicationMessage::Type(type_body) => Ok(CdcEvent::Type(type_body)),
                 LogicalReplicationMessage::Insert(insert_body) => {
                     let table_id = insert_body.rel_id();
                     let column_schemas = &table_schemas
@@ -242,7 +240,7 @@ impl CdcEventConverter {
                     )?)
                 }
                 LogicalReplicationMessage::Truncate(_) => {
-                    Err(CdcEventConversionError::MessageNotSupported("Truncate"))
+                    Err(CdcEventConversionError::MessageNotSupported)
                 }
                 _ => Err(CdcEventConversionError::UnknownReplicationMessage),
             },
@@ -267,6 +265,7 @@ pub enum CdcEvent {
     },
     Delete((TableId, TableRow)),
     Relation(RelationBody),
+    Type(TypeBody),
     KeepAliveRequested {
         reply: bool,
     },
