@@ -22,13 +22,11 @@ name = "delta"
 required-features = ["delta"]
 
 [dependencies]
+async-trait = { workspace = true }
+aws-config = { workspace = true, optional = true }
 aws-credential-types = { workspace = true, optional = true }
 aws-sdk-sts = { workspace = true, features = ["rustls"], optional = true }
 aws-types = { workspace = true, optional = true }
-aws-config = { workspace = true, optional = true }
-deltalake-aws = { workspace = true, optional = true }
-maplit = { workspace = true }
-async-trait = { workspace = true }
 bigdecimal = { workspace = true, features = ["std"] }
 bytes = { workspace = true }
 byteorder = { workspace = true }
@@ -38,11 +36,13 @@ deltalake = { workspace = true, features = [
     "datafusion",
     "s3",
 ], optional = true }
+deltalake-aws = { workspace = true, optional = true }
 futures = { workspace = true }
 gcp-bigquery-client = { workspace = true, optional = true, features = [
     "rust-tls",
     "aws-lc-rs",
 ] }
+maplit = { workspace = true }
 pg_escape = { workspace = true }
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }
