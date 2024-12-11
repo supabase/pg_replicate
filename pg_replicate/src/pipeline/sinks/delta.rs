@@ -90,7 +90,7 @@ impl BatchSink for DeltaSink {
             },
         ];
 
-        if !self.client.delta_table_exists("last_lsn").await? {
+        if !self.client.delta_table_exists("last_lsn").await {
             self.client
                 .create_table("last_lsn", &last_lsn_column_schemas)
                 .await?;
@@ -118,7 +118,7 @@ impl BatchSink for DeltaSink {
         for table_schema in table_schemas.values() {
             let table_name = DeltaClient::table_name_in_delta(&table_schema.table_name);
 
-            let schema = if !self.client.delta_table_exists(&table_name).await? {
+            let schema = if !self.client.delta_table_exists(&table_name).await {
                 self.client
                     .create_table(&table_name, &table_schema.column_schemas)
                     .await?

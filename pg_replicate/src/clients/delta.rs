@@ -58,22 +58,13 @@ impl DeltaClient {
         }
     }
 
-    async fn open_delta_table(uri: &str) -> Result<Option<DeltaTable>, DeltaTableError> {
+    async fn open_delta_table(uri: &str) -> Result<DeltaTable, DeltaTableError> {
         let is_local_storage = Self::is_local_storage(uri).await?;
-        let result = if is_local_storage {
+        if is_local_storage {
             open_table(uri).await
         } else {
             let uri = Self::strip_file_prefix(uri).await?;
             open_table_with_storage_options(uri, Self::aws_config()).await
-        };
-
-        result.ok().map_or(Ok(None), |tbl| Ok(Some(tbl)))
-    }
-
-    async fn try_open_delta_table(uri: &str) -> Result<DeltaTable, DeltaTableError> {
-        match Self::open_delta_table(uri).await? {
-            Some(table) => Ok(table),
-            None => Err(DeltaTableError::Generic(format!("table `{uri}` not found"))),
         }
     }
 
@@ -82,7 +73,7 @@ impl DeltaClient {
         data: Vec<DeltaRecordBatch>,
         save_mode: SaveMode,
     ) -> Result<(), DeltaTableError> {
-        let table = Self::try_open_delta_table(uri).await?;
+        let table = Self::open_delta_table(uri).await?;
         let table_snapshot = table.snapshot()?.clone();
         let table_logstore = table.log_store();
         let add_feature = add_feature::AddTableFeatureBuilder::new(
@@ -147,18 +138,11 @@ impl DeltaClient {
         }
     }
 
-    pub(crate) async fn delta_table_exists(
-        &self,
-        table_name: &str,
-    ) -> Result<bool, DeltaTableError> {
+    pub(crate) async fn delta_table_exists(&self, table_name: &str) -> bool {
         deltalake_aws::register_handlers(None);
         let uri = self.delta_full_path(table_name);
 
-        match Self::open_delta_table(&uri).await {
-            Ok(Some(_table)) => Ok(true),
-            Ok(None) => Ok(false),
-            Err(e) => Err(e),
-        }
+        Self::open_delta_table(&uri).await.is_ok()
     }
 
     pub(crate) async fn set_last_lsn(&self, lsn: PgLsn) -> Result<(), DeltaTableError> {
@@ -180,7 +164,7 @@ impl DeltaClient {
             DeltaRecordBatch::try_new(schema, vec![id_array, lsn_array, operation, inserted_at])?;
         let source = ctx.read_batch(batch)?;
 
-        let table = Self::try_open_delta_table(&uri).await?;
+        let table = Self::open_delta_table(&uri).await?;
         DeltaOps(table)
             .merge(source, col("target.id").eq(col("source.id")))
             .with_source_alias("source")
@@ -198,7 +182,7 @@ impl DeltaClient {
 
     pub(crate) async fn get_last_lsn(&self) -> Result<PgLsn, DeltaTableError> {
         let uri = self.delta_full_path("last_lsn");
-        let table = Self::try_open_delta_table(&uri).await?;
+        let table = Self::open_delta_table(&uri).await?;
 
         let ctx = SessionContext::new();
         ctx.register_table("last_lsn", Arc::new(table))?;
