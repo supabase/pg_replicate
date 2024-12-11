@@ -21,8 +21,8 @@ use super::table_row::{Cell, TableRow};
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {
-    #[error("message not supported")]
-    MessageNotSupported,
+    #[error("message not supported: {0}")]
+    MessageNotSupported(&'static str),
 
     #[error("unknown replication message")]
     UnknownReplicationMessage,
@@ -197,13 +197,13 @@ impl CdcEventConverter {
                 LogicalReplicationMessage::Begin(begin_body) => Ok(CdcEvent::Begin(begin_body)),
                 LogicalReplicationMessage::Commit(commit_body) => Ok(CdcEvent::Commit(commit_body)),
                 LogicalReplicationMessage::Origin(_) => {
-                    Err(CdcEventConversionError::MessageNotSupported)
+                    Err(CdcEventConversionError::MessageNotSupported("Origin"))
                 }
                 LogicalReplicationMessage::Relation(relation_body) => {
                     Ok(CdcEvent::Relation(relation_body))
                 }
                 LogicalReplicationMessage::Type(_) => {
-                    Err(CdcEventConversionError::MessageNotSupported)
+                    Err(CdcEventConversionError::MessageNotSupported("Type"))
                 }
                 LogicalReplicationMessage::Insert(insert_body) => {
                     let table_id = insert_body.rel_id();
@@ -242,7 +242,7 @@ impl CdcEventConverter {
                     )?)
                 }
                 LogicalReplicationMessage::Truncate(_) => {
-                    Err(CdcEventConversionError::MessageNotSupported)
+                    Err(CdcEventConversionError::MessageNotSupported("Truncate"))
                 }
                 _ => Err(CdcEventConversionError::UnknownReplicationMessage),
             },
