@@ -44,7 +44,7 @@ impl DeltaClient {
             Ok(true)
         } else {
             Err(DeltaTableError::Generic(
-                "Storage type should start with either s3:// or file://".to_string(),
+                "storage type should start with either s3:// or file://".to_string(),
             ))
         }
     }
@@ -72,8 +72,8 @@ impl DeltaClient {
 
     async fn try_open_delta_table(uri: &str) -> Result<DeltaTable, DeltaTableError> {
         match Self::open_delta_table(uri).await? {
-            Some(tbl) => Ok(tbl),
-            None => Err(DeltaTableError::Generic("Table not found".to_string())),
+            Some(table) => Ok(table),
+            None => Err(DeltaTableError::Generic(format!("table `{uri}` not found"))),
         }
     }
 
@@ -207,7 +207,7 @@ impl DeltaClient {
 
         if batches.is_empty() {
             return Err(DeltaTableError::Generic(
-                "No data returned from the query".to_string(),
+                "failed to get last_lsn".to_string(),
             ));
         }
 
@@ -218,12 +218,12 @@ impl DeltaClient {
             .as_any()
             .downcast_ref::<Int32Array>()
             .ok_or_else(|| {
-                DeltaTableError::Generic("Failed to downcast column to Int64Array".to_string())
+                DeltaTableError::Generic("failed to downcast column to Int32Array".to_string())
             })?;
 
         if array.is_empty() {
             return Err(DeltaTableError::Generic(
-                "No data in the 'lsn' column".to_string(),
+                "no data in the 'lsn' column".to_string(),
             ));
         }
         let lsn_value = array.value(0);
@@ -296,11 +296,11 @@ impl DeltaClient {
         self.table_schemas
             .as_ref()
             .ok_or_else(|| {
-                DeltaTableError::Generic("Table schemas are not initialized".to_string())
+                DeltaTableError::Generic("table schemas are not initialized".to_string())
             })?
             .get(&table_id)
             .ok_or_else(|| {
-                DeltaTableError::Generic(format!("Table schema not found for ID: {:?}", table_id))
+                DeltaTableError::Generic(format!("table schema not found for id: {:?}", table_id))
             })
     }
 
@@ -308,7 +308,7 @@ impl DeltaClient {
         self.delta_schemas
             .as_ref()
             .ok_or_else(|| {
-                DeltaTableError::Generic("Delta schemas are not initialized".to_string())
+                DeltaTableError::Generic("delta schemas are not initialized".to_string())
             })?
             .get(table_name)
             .ok_or_else(|| DeltaTableError::NoSchema)
