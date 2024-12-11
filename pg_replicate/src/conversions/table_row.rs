@@ -121,6 +121,17 @@ impl TryFrom<Cell> for Option<T> {
     }
 }
 
+impl TryFrom<Cell> for Vec<u8> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Bytes(b) => Ok(b),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("cell conversion error")]
 pub struct CellConversionError;
