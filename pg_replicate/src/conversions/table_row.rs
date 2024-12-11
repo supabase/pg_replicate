@@ -324,7 +324,14 @@ impl TableRowConverter {
             _ => {
                 let val = if column_schema.nullable {
                     match row.try_get::<VecWrapper>(i) {
-                        Ok(v) => Cell::Bytes(v.0),
+                        Ok(v) => {
+                            // CR alee: not convinced this is totally correct
+                            if v.0.is_empty() {
+                                Cell::Null
+                            } else {
+                                Cell::Bytes(v.0)
+                            }
+                        }
                         Err(_) => {
                             //TODO: Only return null if the error is WasNull from tokio_postgres crate
                             Cell::Null
