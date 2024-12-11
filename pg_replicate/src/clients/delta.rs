@@ -375,42 +375,20 @@ impl DeltaClient {
     }
 
     async fn get_lsn_schema() -> Result<Arc<Schema>, DeltaTableError> {
-        let last_lsn_column_schemas = [
-            ColumnSchema {
-                name: "id".to_string(),
-                typ: Type::INT8,
-                modifier: 0,
-                nullable: false,
-                primary: true,
-            },
-            ColumnSchema {
-                name: "lsn".to_string(),
-                typ: Type::INT8,
-                modifier: 0,
-                nullable: false,
-                primary: false,
-            },
-        ];
-
-        let mut delta_schema: Vec<Field> = vec![];
-
-        for column in last_lsn_column_schemas {
-            delta_schema.push(Field::new(
-                column.name.as_str(),
-                Self::postgres_to_arrow(&column.typ),
+        let delta_schema: Vec<Field> = vec![
+            Field::new("id", ArrowDataType::Int64, false),
+            Field::new("lsn", ArrowDataType::Int64, false),
+            Field::new("OP", ArrowDataType::Utf8, true),
+            Field::new(
+                "pg_replicate_inserted_time",
+                ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
                 true,
-            ));
-        }
-
-        delta_schema.push(Field::new("OP", ArrowDataType::Utf8, true));
-        delta_schema.push(Field::new(
-            "pg_replicate_inserted_time",
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
-            true,
-        ));
+            ),
+        ];
 
         Ok(Arc::new(Schema::new(delta_schema)))
     }
+
     pub(crate) async fn insert_last_lsn_row(&self) -> Result<(), DeltaTableError> {
         let uri = self.delta_full_path("last_lsn");
         let delta_schema = Self::get_lsn_schema().await?;
@@ -440,48 +418,6 @@ impl DeltaClient {
         Ok(())
     }
 
-    pub(crate) async fn _write_to_table(
-        &mut self,
-        row: TableRow,
-        table_id: TableId,
-        op: &str,
-    ) -> Result<(), DeltaTableError> {
-        let table_schema = self.get_table_schema(table_id)?;
-        let table_name = Self::table_name_in_delta(&table_schema.table_name);
-
-        let uri = self.delta_full_path(&table_name);
-
-        let data = row.values;
-
-        let mut arrow_vect: Vec<Arc<dyn Array>> =
-            data.iter().map(|cell| self.cell_to_arrow(cell)).collect();
-
-        let operation: Arc<dyn Array> = Arc::new(StringArray::from(vec![op]));
-        arrow_vect.push(operation);
-
-        let inserted_at: Arc<dyn Array> = Arc::new(TimestampMicrosecondArray::from(vec![
-            Utc::now().timestamp_micros(),
-        ]));
-        arrow_vect.push(inserted_at);
-
-        let mut data: Vec<DeltaRecordBatch> = Vec::new();
-        let delta_schema = self.get_delta_schema(&table_name)?;
-
-        let batches = DeltaRecordBatch::try_new(delta_schema.clone(), arrow_vect)?;
-
-        data.push(batches);
-
-        let is_local_storage = Self::is_local_storage(&uri).await?;
-        if is_local_storage {
-            Self::write_batch_to_local(&uri, data, SaveMode::Append).await?;
-        } else {
-            let uri = Self::strip_file_prefix(&uri).await?;
-            Self::write_batch_to_s3(uri, data, SaveMode::Append).await?;
-        }
-
-        Ok(())
-    }
-
     pub(crate) async fn write_to_table_batch(
         &mut self,
         rows_batch: HashMap<TableId, Vec<TableRow>>,
@@ -496,9 +432,9 @@ impl DeltaClient {
             let data: Vec<DeltaRecordBatch> = data
                 .into_iter()
                 .map(|row| {
-                    let data = row.values;
+                    let cells = row.values;
                     let arrow_vect: Vec<Arc<dyn Array>> =
-                        data.iter().map(|cell| self.cell_to_arrow(cell)).collect();
+                        cells.iter().map(|cell| self.cell_to_arrow(cell)).collect();
 
                     DeltaRecordBatch::try_new(delta_schema.clone(), arrow_vect)
                 })
