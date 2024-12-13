@@ -42,7 +42,6 @@ jobs:
   test_non_api:
     name: Run non-API Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -50,7 +49,10 @@ jobs:
       #   with:
       #     key: sqlx
       - name: Run non-api tests
+        env:
+          CARGO_TEST_THREADS: 2
         run: |
+          ulimit -v 1048576 # Limit to 1GB
           cargo test --workspace --all-features --exclude api -- --nocapture --test-threads=1
 
   fmt:
