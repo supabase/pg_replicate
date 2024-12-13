@@ -18,8 +18,9 @@ use crate::{
     table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 use deltalake::arrow::array::{
-    Array, BooleanArray, Date32Array, Float32Array, Float64Array, Int32Array,
-    RecordBatch as DeltaRecordBatch, StringArray, TimestampMicrosecondArray, UInt32Array,
+    Array, BinaryArray, BooleanArray, Date32Array, Float32Array, Float64Array, Int16Array,
+    Int32Array, Int64Array, RecordBatch as DeltaRecordBatch, StringArray,
+    TimestampMicrosecondArray, UInt32Array,
 };
 
 pub struct DeltaClient {
@@ -107,15 +108,18 @@ impl DeltaClient {
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => {
                 DataType::STRING
             }
-            &Type::INT2 | &Type::INT4 | &Type::INT8 => DataType::INTEGER,
-            &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => DataType::FLOAT,
+            &Type::INT4 => DataType::INTEGER,
+            &Type::INT8 => DataType::LONG,
+            &Type::INT2 => DataType::SHORT,
+            &Type::FLOAT4 => DataType::FLOAT,
+            &Type::FLOAT8 | &Type::NUMERIC => DataType::DOUBLE,
             &Type::DATE => DataType::DATE,
             &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => {
                 DataType::Primitive(PrimitiveType::TimestampNtz)
             }
             &Type::UUID => DataType::STRING,
             &Type::OID => DataType::INTEGER,
-            &Type::BYTEA => DataType::BYTE,
+            &Type::BYTEA => DataType::BINARY,
             _ => DataType::STRING,
         }
     }
@@ -126,8 +130,11 @@ impl DeltaClient {
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => {
                 ArrowDataType::Utf8
             }
-            &Type::INT2 | &Type::INT4 | &Type::INT8 => ArrowDataType::Int32,
-            &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => ArrowDataType::Float32,
+            &Type::INT2 => ArrowDataType::Int16,
+            &Type::INT4 => ArrowDataType::Int32,
+            &Type::INT8 => ArrowDataType::Int64,
+            &Type::FLOAT4 => ArrowDataType::Float32,
+            &Type::FLOAT8 | &Type::NUMERIC => ArrowDataType::Float64,
             &Type::DATE => ArrowDataType::Date32,
             &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => {
                 ArrowDataType::Timestamp(TimeUnit::Microsecond, None)
@@ -311,26 +318,24 @@ impl DeltaClient {
             Cell::Null => Arc::new(StringArray::from(vec![String::from("")])),
             Cell::Uuid(value) => Arc::new(StringArray::from(vec![value.to_string()])),
             Cell::Bytes(value) => {
-                let data = std::str::from_utf8(value)
-                    .map_err(|e| format!("Failed to convert to string: {}", e));
-                let result = match data {
-                    Ok(value) => value.to_string(),
-                    Err(err_msg) => err_msg,
-                };
-                Arc::new(StringArray::from(vec![result]))
+                let data: Vec<&[u8]> = value
+                    .iter()
+                    .map(|item| std::slice::from_ref(item))
+                    .collect();
+                Arc::new(BinaryArray::from(data))
             }
             Cell::Json(value) => Arc::new(StringArray::from(vec![value.to_string()])),
             Cell::Bool(value) => Arc::new(BooleanArray::from(vec![*value])),
             Cell::String(value) => Arc::new(StringArray::from(vec![value.to_string()])),
-            Cell::I16(value) => Arc::new(Int32Array::from(vec![*value as i32])),
+            Cell::I16(value) => Arc::new(Int16Array::from(vec![*value])),
             Cell::I32(value) => Arc::new(Int32Array::from(vec![*value])),
             Cell::U32(value) => Arc::new(UInt32Array::from(vec![*value])),
-            Cell::I64(value) => Arc::new(Int32Array::from(vec![*value as i32])),
+            Cell::I64(value) => Arc::new(Int64Array::from(vec![*value])),
             Cell::F32(value) => Arc::new(Float32Array::from(vec![*value])),
             Cell::F64(value) => Arc::new(Float64Array::from(vec![*value])),
             Cell::Numeric(value) => {
-                let data = value.clone().to_string();
-                Arc::new(StringArray::from(vec![data]))
+                let data = value.to_string().parse::<f64>().unwrap();
+                Arc::new(Float64Array::from(vec![data]))
             }
             Cell::Date(value) => {
                 Arc::new(Date32Array::from(vec![Self::naive_date_to_arrow(*value)]))
@@ -361,8 +366,8 @@ impl DeltaClient {
 
     async fn get_lsn_schema() -> Result<Arc<Schema>, DeltaTableError> {
         let delta_schema: Vec<Field> = vec![
-            Field::new("id", ArrowDataType::Int64, false),
-            Field::new("lsn", ArrowDataType::Int64, false),
+            Field::new("id", ArrowDataType::Int32, false),
+            Field::new("lsn", ArrowDataType::Int32, false),
             Field::new("OP", ArrowDataType::Utf8, true),
             Field::new(
                 "pg_replicate_inserted_time",

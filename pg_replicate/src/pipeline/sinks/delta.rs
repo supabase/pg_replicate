@@ -76,14 +76,14 @@ impl BatchSink for DeltaSink {
         let last_lsn_column_schemas = [
             ColumnSchema {
                 name: "id".to_string(),
-                typ: Type::INT8,
+                typ: Type::INT4,
                 modifier: 0,
                 nullable: false,
                 primary: true,
             },
             ColumnSchema {
                 name: "lsn".to_string(),
-                typ: Type::INT8,
+                typ: Type::INT4,
                 modifier: 0,
                 nullable: false,
                 primary: false,
