@@ -11,9 +11,9 @@ jobs:
     name: cargo build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -40,6 +40,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target/
+          key: cargo-cache-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
       # - uses: Swatinem/rust-cache@v2
       #   with:
       #     key: sqlx
@@ -64,15 +74,22 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target/
+          key: cargo-cache-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
       # - uses: Swatinem/rust-cache@v2
       #   with:
       #     key: sqlx
       - name: Run non-api tests
-        env:
-          CARGO_TEST_THREADS: 2
         run: |
-          ulimit -v 1048576 # Limit to 1GB
-          cargo test --workspace --all-features --exclude api -- --nocapture --test-threads=1
+          cargo test --workspace --all-features --exclude api
 
   fmt:
     name: Rustfmt
