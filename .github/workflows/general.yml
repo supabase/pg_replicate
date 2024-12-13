@@ -50,7 +50,7 @@ jobs:
       #     key: sqlx
       - name: Run non-api tests
         run: |
-          cargo test --workspace --all-features --exclude api
+          cargo test --workspace --all-features --exclude api -- --nocapture --test-threads=1
 
   fmt:
     name: Rustfmt
