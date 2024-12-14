@@ -10,7 +10,6 @@ jobs:
   test_api:
     name: Run API Tests
     runs-on: ubuntu-latest
-    needs: [ test_non_api ]
     services:
       postgres:
         image: postgres:15
@@ -23,16 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - name: Cache Cargo
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ./target/
-          key: cargo-cache-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
       # - uses: Swatinem/rust-cache@v2
       #   with:
       #     key: sqlx
@@ -52,26 +41,16 @@ jobs:
 
   test_non_api:
     name: Run non-API Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - name: Cache Cargo
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ./target/
-          key: cargo-cache-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
       # - uses: Swatinem/rust-cache@v2
       #   with:
       #     key: sqlx
       - name: Run non-api tests
         run: |
-          cargo test --workspace --all-features --exclude api  --jobs 1
+          cargo test --workspace --all-features --exclude api --jobs 1
 
   fmt:
     name: Rustfmt
@@ -99,7 +78,6 @@ jobs:
   coverage:
     name: Code coverage
     runs-on: ubuntu-latest
-    needs: [ test_non_api ]
     container:
       image: xd009642/tarpaulin
       options: --security-opt seccomp=unconfined
