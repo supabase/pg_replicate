@@ -52,7 +52,7 @@ jobs:
 
   test_non_api:
     name: Run non-API Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -71,7 +71,7 @@ jobs:
       #     key: sqlx
       - name: Run non-api tests
         run: |
-          cargo test --workspace --all-features --exclude api --verbose -- --test-threads=1
+          cargo test --workspace --all-features --exclude api -- --test-threads=1
 
   fmt:
     name: Rustfmt
