@@ -52,7 +52,7 @@ struct DbArgs {
 #[derive(Debug, Args)]
 struct DeltaArgs {
     /// The path to the Delta Lake where data from the database will be saved.
-    /// Use `file://datalake` for saving data to local file storage.
+    /// Use `file:///home/data/datalake` for saving data to local file storage.
     /// Use `s3://datalake` for saving data to an S3 bucket.
     #[arg(long)]
     delta_path: String,

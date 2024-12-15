@@ -73,6 +73,8 @@ impl SinkError for DeltaSinkError {}
 impl BatchSink for DeltaSink {
     type Error = DeltaSinkError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
+        deltalake::aws::register_handlers(None);
+
         let last_lsn_column_schemas = [
             ColumnSchema {
                 name: "id".to_string(),
@@ -113,6 +115,8 @@ impl BatchSink for DeltaSink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), Self::Error> {
+        deltalake::aws::register_handlers(None);
+
         let mut delta_schema = HashMap::new();
 
         for table_schema in table_schemas.values() {
@@ -141,6 +145,8 @@ impl BatchSink for DeltaSink {
         rows: Vec<TableRow>,
         table_id: TableId,
     ) -> Result<(), Self::Error> {
+        deltalake::aws::register_handlers(None);
+
         let mut rows_batch: HashMap<TableId, Vec<TableRow>> = HashMap::new();
 
         let updated_rows: Vec<TableRow> = rows
@@ -158,6 +164,8 @@ impl BatchSink for DeltaSink {
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
+        deltalake::aws::register_handlers(None);
+
         let mut rows_batch: HashMap<TableId, Vec<TableRow>> = HashMap::new();
         let mut new_last_lsn = PgLsn::from(0);
 

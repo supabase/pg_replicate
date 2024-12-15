@@ -1,7 +1,10 @@
+use aws_config::BehaviorVersion;
 use chrono::Timelike;
 use chrono::{NaiveDate, NaiveTime, Utc};
 use deltalake::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, TimeUnit};
-use deltalake::aws::constants::{AWS_FORCE_CREDENTIAL_LOAD, AWS_S3_ALLOW_UNSAFE_RENAME};
+use deltalake::aws::constants::{
+    AWS_ALLOW_HTTP, AWS_ENDPOINT_URL, AWS_FORCE_CREDENTIAL_LOAD, AWS_S3_ALLOW_UNSAFE_RENAME,
+};
 use deltalake::datafusion::execution::context::SessionContext;
 use deltalake::datafusion::prelude::col;
 use deltalake::kernel::{PrimitiveType, StructField, TableFeatures};
@@ -30,11 +33,20 @@ pub struct DeltaClient {
 }
 
 impl DeltaClient {
-    fn aws_config() -> HashMap<String, String> {
+    async fn aws_config() -> HashMap<String, String> {
         let mut storage_options = HashMap::new();
 
         storage_options.insert(AWS_FORCE_CREDENTIAL_LOAD.to_string(), "true".to_string());
         storage_options.insert(AWS_S3_ALLOW_UNSAFE_RENAME.to_string(), "true".to_string());
+        let config = aws_config::load_defaults(BehaviorVersion::v2024_03_28()).await;
+
+        match config.endpoint_url() {
+            Some(endpoint) => {
+                storage_options.insert(AWS_ENDPOINT_URL.to_string(), endpoint.to_string());
+                storage_options.insert(AWS_ALLOW_HTTP.to_string(), "true".to_string());
+            }
+            None => (),
+        }
 
         storage_options
     }
@@ -55,6 +67,9 @@ impl DeltaClient {
     async fn strip_file_prefix(uri: &str) -> Result<&str, DeltaTableError> {
         if let Some(path) = uri.strip_prefix("file://") {
             Ok(path)
+        } else if let Some(path) = uri.strip_prefix("s3://") {
+            let _ = path;
+            Ok(uri)
         } else {
             panic!("strip_file_prefix called on a non-file uri")
         }
@@ -66,7 +81,8 @@ impl DeltaClient {
             open_table(uri).await
         } else {
             let uri = Self::strip_file_prefix(uri).await?;
-            open_table_with_storage_options(uri, Self::aws_config()).await
+
+            open_table_with_storage_options(uri, Self::aws_config().await).await
         }
     }
 
@@ -75,6 +91,7 @@ impl DeltaClient {
         data: Vec<DeltaRecordBatch>,
         save_mode: SaveMode,
     ) -> Result<(), DeltaTableError> {
+        println!("{}", uri);
         let table = Self::open_delta_table(uri).await?;
         let table_snapshot = table.snapshot()?.clone();
         let table_logstore = table.log_store();
@@ -147,7 +164,6 @@ impl DeltaClient {
     }
 
     pub(crate) async fn delta_table_exists(&self, table_name: &str) -> bool {
-        deltalake_aws::register_handlers(None);
         let uri = self.delta_full_path(table_name);
 
         Self::open_delta_table(&uri).await.is_ok()
@@ -249,7 +265,7 @@ impl DeltaClient {
             DeltaOps::try_from_uri(&uri).await?
         } else {
             let uri = Self::strip_file_prefix(&uri).await?;
-            DeltaOps::try_from_uri_with_storage_options(uri, Self::aws_config()).await?
+            DeltaOps::try_from_uri_with_storage_options(uri, Self::aws_config().await).await?
         };
 
         delta_ops
