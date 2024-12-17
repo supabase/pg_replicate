@@ -63,13 +63,10 @@ impl DeltaClient {
         }
     }
 
-    /// strips file:/// prefix from the uri
-    async fn strip_file_prefix(uri: &str) -> Result<&str, DeltaTableError> {
+    /// strips file:// prefix from the uri
+    fn strip_file_prefix(uri: &str) -> &str {
         if let Some(path) = uri.strip_prefix("file://") {
-            Ok(path)
-        } else if let Some(path) = uri.strip_prefix("s3://") {
-            let _ = path;
-            Ok(uri)
+            path
         } else {
             panic!("strip_file_prefix called on a non-file uri")
         }
