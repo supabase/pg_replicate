@@ -209,7 +209,7 @@ impl Display for WorkerSettings {
     }
 }
 
-pub fn get_configuration() -> Result<Settings, config::ConfigError> {
+pub fn get_settings<'a, T: serde::Deserialize<'a>>() -> Result<T, config::ConfigError> {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory");
     let configuration_directory = base_path.join("configuration");
 
@@ -237,7 +237,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
         )
         .build()?;
 
-    settings.try_deserialize::<Settings>()
+    settings.try_deserialize::<T>()
 }
 
 const DEV_ENV_NAME: &str = "dev";

@@ -82,8 +82,10 @@ impl Application {
         Ok(Self { port, server })
     }
 
-    pub async fn migrate_database(configuration: Settings) -> Result<(), anyhow::Error> {
-        let connection_pool = get_connection_pool(&configuration.database);
+    pub async fn migrate_database(
+        database_settings: DatabaseSettings,
+    ) -> Result<(), anyhow::Error> {
+        let connection_pool = get_connection_pool(&database_settings);
 
         sqlx::migrate!("./migrations").run(&connection_pool).await?;
 

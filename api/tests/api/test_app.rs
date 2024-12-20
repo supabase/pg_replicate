@@ -1,7 +1,7 @@
 use std::net::TcpListener;
 
 use api::{
-    configuration::get_configuration,
+    configuration::{get_settings, Settings},
     db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
     encryption::{self, generate_random_key},
     startup::{get_connection_pool, run},
@@ -416,7 +416,7 @@ impl TestApp {
 pub async fn spawn_app() -> TestApp {
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind random port");
     let port = listener.local_addr().unwrap().port();
-    let mut configuration = get_configuration().expect("Failed to read configuration");
+    let mut configuration = get_settings::<'_, Settings>().expect("Failed to read configuration");
     configuration.database.name = Uuid::new_v4().to_string();
     let connection_pool = get_connection_pool(&configuration.database);
     configure_database(&configuration.database).await;

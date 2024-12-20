@@ -1,4 +1,4 @@
-use api::configuration::{get_configuration, DatabaseSettings};
+use api::configuration::{get_settings, DatabaseSettings, Settings};
 use sqlx::{Connection, Executor, PgConnection, PgPool, Row};
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
@@ -34,7 +34,7 @@ async fn delete_test_databases() {
 }
 
 async fn delete_all_test_databases() {
-    let config = get_configuration().expect("Failed to read configuration");
+    let config = get_settings::<'_, Settings>().expect("Failed to read configuration");
     let mut connection = PgConnection::connect_with(&config.database.without_db())
         .await
         .expect("Failed to connect to Postgres");
