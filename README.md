@@ -207,3 +207,19 @@ CDC stream is not the only kind of data a data pipeline performs. There's also f
 ### Performance
 
 Currently the data source and sinks copy table row and CDC events one at a time. This is expected to be slow. Batching, and other strategies will likely improve the performance drastically. But at this early stage the focus is on correctness rather than performance. There are also zero benchmarks at this stage, so commentary about performance is closer to speculation than reality.
+
+## Troubleshooting
+
+If you see the following error when running tests with `cargo test` on macOS:
+
+```
+called `Result::unwrap()` on an `Err` value: Os { code: 24, kind: Uncategorized, message: "Too many open files" }
+```
+
+Then raise the limit of open files per process with this command:
+
+```
+ulimit -n 10000
+```
+
+Now the tests should pass again.
