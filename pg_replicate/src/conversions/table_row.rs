@@ -6,6 +6,7 @@ use tokio_postgres::{
     types::{FromSql, Type},
 };
 use trait_gen::trait_gen;
+use uuid::Uuid;
 
 use crate::{pipeline::batching::BatchBoundary, table::ColumnSchema};
 
@@ -19,6 +20,7 @@ pub enum Cell {
     I64(i64),
     TimeStamp(String),
     Bytes(Vec<u8>),
+    Uuid(Uuid),
 }
 
 impl TryFrom<Cell> for bool {
@@ -127,6 +129,17 @@ impl TryFrom<Cell> for Vec<u8> {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::Bytes(b) => Ok(b),
+            _ => Err(CellConversionError),
+        }
+    }
+}
+
+impl TryFrom<Cell> for uuid::Uuid {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Uuid(u) => Ok(u),
             _ => Err(CellConversionError),
         }
     }
@@ -318,6 +331,18 @@ impl TableRowConverter {
                     let val = row.get::<DateTime<FixedOffset>>(i);
                     let val = val.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string();
                     Cell::TimeStamp(val)
+                };
+                Ok(val)
+            }
+            Type::UUID => {
+                let val = if column_schema.nullable {
+                    match row.try_get::<Uuid>(i) {
+                        Ok(u) => Cell::Uuid(u),
+                        Err(_) => Cell::Null,
+                    }
+                } else {
+                    let val = row.get::<Uuid>(i);
+                    Cell::Uuid(val)
                 };
                 Ok(val)
             }

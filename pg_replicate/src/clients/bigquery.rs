@@ -348,6 +348,7 @@ impl BigQueryClient {
                 let bytes: String = b.iter().map(|b| *b as char).collect();
                 s.push_str(&format!("b'{bytes}'"))
             }
+            Cell::Uuid(u) => s.push_str(&format!("'{u}'")),
         }
     }
 
@@ -544,6 +545,9 @@ impl Message for TableRow {
                         ::prost::encoding::bytes::encode(tag, b, buf);
                     }
                 }
+                Cell::Uuid(_) => {
+                    unimplemented!()
+                }
             }
             tag += 1;
         }
@@ -618,6 +622,9 @@ impl Message for TableRow {
                         0
                     }
                 }
+                Cell::Uuid(_) => {
+                    unimplemented!()
+                }
             };
             tag += 1;
         }
@@ -635,6 +642,9 @@ impl Message for TableRow {
                 Cell::I64(i) => *i = 0,
                 Cell::TimeStamp(t) => t.clear(),
                 Cell::Bytes(b) => b.clear(),
+                Cell::Uuid(_) => {
+                    unimplemented!()
+                }
             }
         }
     }

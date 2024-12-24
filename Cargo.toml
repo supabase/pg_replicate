@@ -43,3 +43,4 @@ tracing-subscriber = { version = "0.3", default-features = false }
 trait-gen = "0.3"
 utoipa = { version = "4.2.3", default-features = false }
 utoipa-swagger-ui = { version = "7.1.0", default-features = false }
+uuid = { version = "1", default-features = false }
