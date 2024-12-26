@@ -152,11 +152,7 @@ impl Display for DatabaseSettings {
         writeln!(f, "    port: {}", self.port)?;
         writeln!(f, "    name: {}", self.name)?;
         writeln!(f, "    username: {}", self.username)?;
-        writeln!(
-            f,
-            "    password: `{:#?}`",
-            self.password.as_ref().map(|p| p.expose_secret())
-        )?;
+        writeln!(f, "    password: REDACTED")?;
         writeln!(f, "    require_ssl: {}", self.require_ssl)
     }
 }
