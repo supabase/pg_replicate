@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -16,7 +13,7 @@ use crate::{
     table::{ColumnSchema, TableId, TableSchema},
 };
 use deltalake::arrow::error::ArrowError;
-use deltalake::{arrow::datatypes::Schema, DeltaTableError};
+use deltalake::DeltaTableError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -76,17 +73,19 @@ impl SinkError for DeltaSinkError {}
 impl BatchSink for DeltaSink {
     type Error = DeltaSinkError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
+        deltalake::aws::register_handlers(None);
+
         let last_lsn_column_schemas = [
             ColumnSchema {
                 name: "id".to_string(),
-                typ: Type::INT8,
+                typ: Type::INT4,
                 modifier: 0,
                 nullable: false,
                 primary: true,
             },
             ColumnSchema {
                 name: "lsn".to_string(),
-                typ: Type::INT8,
+                typ: Type::INT4,
                 modifier: 0,
                 nullable: false,
                 primary: false,
@@ -116,18 +115,25 @@ impl BatchSink for DeltaSink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), Self::Error> {
-        let mut delta_schema: HashMap<String, Arc<Schema>> = HashMap::new();
+        deltalake::aws::register_handlers(None);
+
+        let mut delta_schema = HashMap::new();
 
         for table_schema in table_schemas.values() {
             let table_name = DeltaClient::table_name_in_delta(&table_schema.table_name);
 
-            let schema = self
-                .client
-                .create_table(&table_name, &table_schema.column_schemas)
-                .await?;
+            let schema = if !self.client.delta_table_exists(&table_name).await {
+                self.client
+                    .create_table(&table_name, &table_schema.column_schemas)
+                    .await?
+            } else {
+                info!("Table already exists: {}", table_name);
+                DeltaClient::generate_schema(&table_schema.column_schemas)?
+            };
 
             delta_schema.insert(table_name, schema);
         }
+
         self.client.delta_schemas = Some(delta_schema);
         self.client.table_schemas = Some(table_schemas);
 
@@ -139,6 +145,8 @@ impl BatchSink for DeltaSink {
         rows: Vec<TableRow>,
         table_id: TableId,
     ) -> Result<(), Self::Error> {
+        deltalake::aws::register_handlers(None);
+
         let mut rows_batch: HashMap<TableId, Vec<TableRow>> = HashMap::new();
 
         let updated_rows: Vec<TableRow> = rows
@@ -156,6 +164,8 @@ impl BatchSink for DeltaSink {
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
+        deltalake::aws::register_handlers(None);
+
         let mut rows_batch: HashMap<TableId, Vec<TableRow>> = HashMap::new();
         let mut new_last_lsn = PgLsn::from(0);
 
