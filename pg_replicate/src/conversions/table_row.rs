@@ -147,6 +147,9 @@ impl TryFrom<Cell> for uuid::Uuid {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::Uuid(u) => Ok(u),
+            Cell::Bytes(b) => {
+                Uuid::from_slice(b.as_slice()).map_err(|e| CellConversionError(e.to_string()))
+            }
             _ => Err(CellConversionError(format!("to Uuid from {cell:?}"))),
         }
     }
