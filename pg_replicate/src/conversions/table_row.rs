@@ -21,6 +21,7 @@ pub enum Cell {
     TimeStamp(String),
     Bytes(Vec<u8>),
     Uuid(Uuid),
+    Array(Vec<Cell>),
 }
 
 impl TryFrom<Cell> for bool {
@@ -118,18 +119,6 @@ impl TryFrom<Cell> for DateTime<Utc> {
     }
 }
 
-#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, DateTime<Utc>)]
-impl TryFrom<Cell> for Option<T> {
-    type Error = CellConversionError;
-
-    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
-        match cell {
-            Cell::Null => Ok(None),
-            _ => T::try_from(cell).map(Some),
-        }
-    }
-}
-
 impl TryFrom<Cell> for Vec<u8> {
     type Error = CellConversionError;
 
@@ -141,7 +130,7 @@ impl TryFrom<Cell> for Vec<u8> {
     }
 }
 
-impl TryFrom<Cell> for uuid::Uuid {
+impl TryFrom<Cell> for Uuid {
     type Error = CellConversionError;
 
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
@@ -154,6 +143,36 @@ impl TryFrom<Cell> for uuid::Uuid {
                 Uuid::parse_str(uuid_s).map_err(|e| CellConversionError(e.to_string()))
             }
             _ => Err(CellConversionError(format!("to Uuid from {cell:?}"))),
+        }
+    }
+}
+
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, DateTime<Utc>, Uuid)]
+impl TryFrom<Cell> for Option<T> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Null => Ok(None),
+            _ => T::try_from(cell).map(Some),
+        }
+    }
+}
+
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, DateTime<Utc>, Uuid)]
+impl TryFrom<Cell> for Vec<T> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Array(a) => {
+                let mut vec = Vec::with_capacity(a.len());
+                for cell in a {
+                    vec.push(T::try_from(cell)?);
+                }
+                Ok(vec)
+            }
+            _ => Err(CellConversionError(format!("to Vec<T> from {cell:?}"))),
         }
     }
 }
@@ -356,6 +375,18 @@ impl TableRowConverter {
                 } else {
                     let val = row.get::<Uuid>(i);
                     Cell::Uuid(val)
+                };
+                Ok(val)
+            }
+            Type::UUID_ARRAY => {
+                let val = if column_schema.nullable {
+                    match row.try_get::<Vec<Uuid>>(i) {
+                        Ok(a) => Cell::Array(a.into_iter().map(|u| Cell::Uuid(u)).collect()),
+                        Err(_) => Cell::Null,
+                    }
+                } else {
+                    let val = row.get::<Vec<Uuid>>(i);
+                    Cell::Array(val.into_iter().map(|u| Cell::Uuid(u)).collect())
                 };
                 Ok(val)
             }
