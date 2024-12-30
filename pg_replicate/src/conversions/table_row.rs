@@ -177,6 +177,25 @@ impl TryFrom<Cell> for Vec<T> {
     }
 }
 
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, DateTime<Utc>, Uuid)]
+impl TryFrom<Cell> for Option<Vec<T>> {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Array(a) => {
+                let mut vec = Vec::with_capacity(a.len());
+                for cell in a {
+                    vec.push(T::try_from(cell)?);
+                }
+                Ok(Some(vec))
+            }
+            Cell::Null => Ok(None),
+            _ => Err(CellConversionError(format!("to Vec<T> from {cell:?}"))),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("cell conversion error: {0}")]
 pub struct CellConversionError(String);
