@@ -172,7 +172,22 @@ impl TryFrom<Cell> for Vec<T> {
                 }
                 Ok(vec)
             }
-            _ => Err(CellConversionError(format!("to Vec<T> from {cell:?}"))),
+            Cell::Bytes(b) => {
+                let mut vec = vec![];
+                // logical replication stream returns text tupledata
+                let arr_s = std::str::from_utf8(b.as_slice())
+                    .map_err(|e| CellConversionError(e.to_string()))?
+                    .strip_prefix('{')
+                    .and_then(|s| s.strip_suffix('}'))
+                    .ok_or_else(|| CellConversionError("invalid array format".to_string()))?;
+                // TODO: Vec<String> won't work because of quoting
+                // TODO: Vec<Vec<u8>> won't work
+                for elem in arr_s.split(',') {
+                    vec.push(T::try_from(Cell::String(elem.to_string()))?);
+                }
+                Ok(vec)
+            }
+            _ => Err(CellConversionError(format!("to Vec<${T}> from {cell:?}"))),
         }
     }
 }
@@ -187,6 +202,21 @@ impl TryFrom<Cell> for Option<Vec<T>> {
                 let mut vec = Vec::with_capacity(a.len());
                 for cell in a {
                     vec.push(T::try_from(cell)?);
+                }
+                Ok(Some(vec))
+            }
+            Cell::Bytes(b) => {
+                let mut vec = vec![];
+                // logical replication stream returns text tupledata
+                let arr_s = std::str::from_utf8(b.as_slice())
+                    .map_err(|e| CellConversionError(e.to_string()))?
+                    .strip_prefix('{')
+                    .and_then(|s| s.strip_suffix('}'))
+                    .ok_or_else(|| CellConversionError("invalid array format".to_string()))?;
+                // TODO: Vec<String> won't work because of quoting
+                // TODO: Vec<Vec<u8>> won't work
+                for elem in arr_s.split(',') {
+                    vec.push(T::try_from(Cell::String(elem.to_string()))?);
                 }
                 Ok(Some(vec))
             }
