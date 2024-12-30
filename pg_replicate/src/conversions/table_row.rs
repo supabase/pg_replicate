@@ -29,7 +29,7 @@ impl TryFrom<Cell> for bool {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::Bool(b) => Ok(b),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to bool from {cell:?}"))),
         }
     }
 }
@@ -40,7 +40,7 @@ impl TryFrom<Cell> for i32 {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::I32(i) => Ok(i),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to i32 from {cell:?}"))),
         }
     }
 }
@@ -51,7 +51,7 @@ impl TryFrom<Cell> for u32 {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::I32(i) => Ok(i as u32),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to u32 from {cell:?}"))),
         }
     }
 }
@@ -62,7 +62,7 @@ impl TryFrom<Cell> for i64 {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::I64(i) => Ok(i),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to i64 from {cell:?}"))),
         }
     }
 }
@@ -73,7 +73,7 @@ impl TryFrom<Cell> for u64 {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::I64(i) => Ok(i as u64),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to u64 from {cell:?}"))),
         }
     }
 }
@@ -84,7 +84,7 @@ impl TryFrom<Cell> for String {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::String(s) => Ok(s),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to String from {cell:?}"))),
         }
     }
 }
@@ -95,7 +95,9 @@ impl TryFrom<Cell> for std::borrow::Cow<'static, str> {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::String(s) => Ok(std::borrow::Cow::Owned(s)),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!(
+                "to Cow<'static, str> from {cell:?}"
+            ))),
         }
     }
 }
@@ -105,8 +107,13 @@ impl TryFrom<Cell> for DateTime<Utc> {
 
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
-            Cell::TimeStamp(s) => Ok(s.parse().map_err(|_| CellConversionError)?),
-            _ => Err(CellConversionError),
+            Cell::TimeStamp(s) => {
+                let dt = s.parse::<DateTime<Utc>>();
+                dt.map_err(|e| CellConversionError(e.to_string()))
+            }
+            _ => Err(CellConversionError(format!(
+                "to DateTime<Utc> from {cell:?}"
+            ))),
         }
     }
 }
@@ -129,7 +136,7 @@ impl TryFrom<Cell> for Vec<u8> {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::Bytes(b) => Ok(b),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to Vec<u8> from {cell:?}"))),
         }
     }
 }
@@ -140,14 +147,14 @@ impl TryFrom<Cell> for uuid::Uuid {
     fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
         match cell {
             Cell::Uuid(u) => Ok(u),
-            _ => Err(CellConversionError),
+            _ => Err(CellConversionError(format!("to Uuid from {cell:?}"))),
         }
     }
 }
 
 #[derive(Debug, Error)]
-#[error("cell conversion error")]
-pub struct CellConversionError;
+#[error("cell conversion error: {0}")]
+pub struct CellConversionError(String);
 
 #[derive(Debug)]
 pub struct TableRow {
