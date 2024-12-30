@@ -183,7 +183,10 @@ impl TryFrom<Cell> for Vec<T> {
                 // TODO: Vec<String> won't work because of quoting
                 // TODO: Vec<Vec<u8>> won't work
                 for elem in arr_s.split(',') {
-                    vec.push(T::try_from(Cell::String(elem.to_string()))?);
+                    let trimmed = elem.trim();
+                    if trimmed.len() > 0 {
+                        vec.push(T::try_from(Cell::String(trimmed.to_string()))?);
+                    }
                 }
                 Ok(vec)
             }
@@ -216,7 +219,10 @@ impl TryFrom<Cell> for Option<Vec<T>> {
                 // TODO: Vec<String> won't work because of quoting
                 // TODO: Vec<Vec<u8>> won't work
                 for elem in arr_s.split(',') {
-                    vec.push(T::try_from(Cell::String(elem.to_string()))?);
+                    let trimmed = elem.trim();
+                    if trimmed.len() > 0 {
+                        vec.push(T::try_from(Cell::String(trimmed.to_string()))?);
+                    }
                 }
                 Ok(Some(vec))
             }
