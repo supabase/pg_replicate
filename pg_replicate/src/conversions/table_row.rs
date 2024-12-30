@@ -148,7 +148,10 @@ impl TryFrom<Cell> for uuid::Uuid {
         match cell {
             Cell::Uuid(u) => Ok(u),
             Cell::Bytes(b) => {
-                Uuid::from_slice(b.as_slice()).map_err(|e| CellConversionError(e.to_string()))
+                // postgres works in mysterious ways...
+                let uuid_s = std::str::from_utf8(b.as_slice())
+                    .map_err(|e| CellConversionError(e.to_string()))?;
+                Uuid::parse_str(uuid_s).map_err(|e| CellConversionError(e.to_string()))
             }
             _ => Err(CellConversionError(format!("to Uuid from {cell:?}"))),
         }
