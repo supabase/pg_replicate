@@ -103,6 +103,22 @@ impl TryFrom<Cell> for std::borrow::Cow<'static, str> {
     }
 }
 
+impl TryFrom<Cell> for NaiveDateTime {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::TimeStamp(s) => {
+                let dt = s.parse::<NaiveDateTime>();
+                dt.map_err(|e| CellConversionError(e.to_string()))
+            }
+            _ => Err(CellConversionError(format!(
+                "to NaiveDateTime from {cell:?}"
+            ))),
+        }
+    }
+}
+
 impl TryFrom<Cell> for DateTime<Utc> {
     type Error = CellConversionError;
 
@@ -147,7 +163,7 @@ impl TryFrom<Cell> for Uuid {
     }
 }
 
-#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, DateTime<Utc>, Uuid)]
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, NaiveDateTime, DateTime<Utc>, Uuid)]
 impl TryFrom<Cell> for Option<T> {
     type Error = CellConversionError;
 
@@ -159,7 +175,7 @@ impl TryFrom<Cell> for Option<T> {
     }
 }
 
-#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, DateTime<Utc>, Uuid)]
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, NaiveDateTime, DateTime<Utc>, Uuid)]
 impl TryFrom<Cell> for Vec<T> {
     type Error = CellConversionError;
 
