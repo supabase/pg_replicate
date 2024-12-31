@@ -110,7 +110,7 @@ impl TryFrom<Cell> for NaiveDateTime {
         match cell {
             Cell::TimeStamp(s) => {
                 let dt = s.parse::<NaiveDateTime>();
-                dt.map_err(|e| CellConversionError(e.to_string()))
+                dt.map_err(|e| CellConversionError(format!("{}: {}", e.to_string(), s)))
             }
             _ => Err(CellConversionError(format!(
                 "to NaiveDateTime from {cell:?}"
