@@ -69,6 +69,7 @@ impl PostgresSource {
         let (table_names, publication) =
             Self::get_table_names_and_publication(&replication_client, table_names_from).await?;
         let table_schemas = replication_client.get_table_schemas(&table_names).await?;
+        replication_client.commit_txn().await?;
         Ok(PostgresSource {
             replication_client,
             table_schemas,
@@ -133,6 +134,14 @@ impl Source for PostgresSource {
             stream,
             column_schemas: column_schemas.to_vec(),
         })
+    }
+
+    async fn start_transaction(&self) -> Result<(), Self::Error> {
+        self.replication_client
+            .begin_readonly_transaction()
+            .await
+            .map_err(PostgresSourceError::ReplicationClient)?;
+        Ok(())
     }
 
     async fn commit_transaction(&self) -> Result<(), Self::Error> {
