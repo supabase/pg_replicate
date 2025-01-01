@@ -37,6 +37,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
     async fn copy_table_schemas(&mut self) -> Result<(), PipelineError<Src::Error, Snk::Error>> {
         let table_schemas = self.source.get_table_schemas();
+
         let table_schemas = table_schemas.clone();
 
         if !table_schemas.is_empty() {
@@ -54,6 +55,10 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         copied_tables: &HashSet<TableId>,
     ) -> Result<(), PipelineError<Src::Error, Snk::Error>> {
         let start = Instant::now();
+        self.source
+            .start_transaction()
+            .await
+            .map_err(PipelineError::Source)?;
         let table_schemas = self.source.get_table_schemas();
 
         let mut keys: Vec<u32> = table_schemas.keys().copied().collect();

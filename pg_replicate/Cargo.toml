@@ -52,6 +52,9 @@ tokio-postgres = { workspace = true, features = [
 ] }
 tracing = { workspace = true, default-features = true }
 uuid = { workspace = true, features = ["v4"] }
+async-nats = { version = "0.38.0", optional = true }
+anyhow = { workspace = true }
+sha256 = { workspace = true }
 
 [dev-dependencies]
 clap = { workspace = true, default-features = true, features = [
@@ -66,6 +69,7 @@ tracing-subscriber = { workspace = true, default-features = true, features = [
 bigquery = ["dep:gcp-bigquery-client", "dep:prost"]
 duckdb = ["dep:duckdb"]
 stdout = []
+nats = ["dep:async-nats"]
 delta = ["dep:deltalake"]
 # When enabled converts unknown types to bytes
 unknown_types_to_bytes = []
