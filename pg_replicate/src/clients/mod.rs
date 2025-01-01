@@ -4,4 +4,6 @@ pub mod bigquery;
 pub mod delta;
 #[cfg(feature = "duckdb")]
 pub mod duckdb;
+#[cfg(feature = "nats")]
+pub mod nats;
 pub mod postgres;
