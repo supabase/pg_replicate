@@ -177,7 +177,7 @@ impl TryFrom<Cell> for serde_json::Value {
     }
 }
 
-#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, NaiveDateTime, DateTime<Utc>, Uuid)]
+#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, NaiveDateTime, DateTime<Utc>, Uuid, serde_json::Value)]
 impl TryFrom<Cell> for Option<T> {
     type Error = CellConversionError;
 
