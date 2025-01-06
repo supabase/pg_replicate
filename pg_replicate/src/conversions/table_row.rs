@@ -21,6 +21,7 @@ pub enum Cell {
     TimeStamp(String),
     Bytes(Vec<u8>),
     Uuid(Uuid),
+    Json(serde_json::Value),
     Array(Vec<Cell>),
 }
 
@@ -159,6 +160,19 @@ impl TryFrom<Cell> for Uuid {
                 Uuid::parse_str(uuid_s).map_err(|e| CellConversionError(e.to_string()))
             }
             _ => Err(CellConversionError(format!("to Uuid from {cell:?}"))),
+        }
+    }
+}
+
+impl TryFrom<Cell> for serde_json::Value {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Json(v) => Ok(v),
+            _ => Err(CellConversionError(format!(
+                "to serde_json::Value from {cell:?}"
+            ))),
         }
     }
 }
@@ -349,11 +363,18 @@ impl TableRowConverter {
                 };
                 Ok(val)
             }
-            // Type::JSON | Type::JSONB => {
-            //     let val = row.get::<serde_json::Value>(i);
-            //     let val = json_to_cbor_value(&val);
-            //     Ok(val)
-            // }
+            Type::JSON | Type::JSONB => {
+                let val = if column_schema.nullable {
+                    match row.try_get::<serde_json::Value>(i) {
+                        Ok(v) => Cell::Json(v),
+                        Err(_) => Cell::Null,
+                    }
+                } else {
+                    let val = row.get::<serde_json::Value>(i);
+                    Cell::Json(val)
+                };
+                Ok(val)
+            }
             Type::INT2 => {
                 let val = if column_schema.nullable {
                     match row.try_get::<i16>(i) {

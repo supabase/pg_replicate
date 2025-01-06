@@ -349,6 +349,7 @@ impl BigQueryClient {
                 s.push_str(&format!("b'{bytes}'"))
             }
             Cell::Uuid(u) => s.push_str(&format!("'{u}'")),
+            Cell::Json(_) => unimplemented!(),
             Cell::Array(_) => unimplemented!(),
         }
     }
@@ -547,6 +548,7 @@ impl Message for TableRow {
                     }
                 }
                 Cell::Uuid(_) => unimplemented!(),
+                Cell::Json(_) => unimplemented!(),
                 Cell::Array(_) => unimplemented!(),
             }
             tag += 1;
@@ -623,6 +625,7 @@ impl Message for TableRow {
                     }
                 }
                 Cell::Uuid(_) => unimplemented!(),
+                Cell::Json(_) => unimplemented!(),
                 Cell::Array(_) => unimplemented!(),
             };
             tag += 1;
@@ -642,6 +645,7 @@ impl Message for TableRow {
                 Cell::TimeStamp(t) => t.clear(),
                 Cell::Bytes(b) => b.clear(),
                 Cell::Uuid(_) => unimplemented!(),
+                Cell::Json(_) => unimplemented!(),
                 Cell::Array(_) => unimplemented!(),
             }
         }
