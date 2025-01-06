@@ -26,6 +26,7 @@ postgres-protocol = { git = "https://github.com/MaterializeInc/rust-postgres", r
 prost = { version = "0.13.1", default-features = false }
 rand = { version = "0.8.5", default-features = false }
 reqwest = { version = "0.12", default-features = false }
+rust_decimal = { version = "1", default-features = false }
 rustls = { version = "0.23.12", default-features = false }
 rustyline = { version = "14.0.0", default-features = false }
 secrecy = { version = "0.8.0", default-features = false }

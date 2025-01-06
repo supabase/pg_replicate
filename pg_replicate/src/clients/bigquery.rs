@@ -343,6 +343,7 @@ impl BigQueryClient {
             Cell::I16(i) => s.push_str(&format!("{i}")),
             Cell::I32(i) => s.push_str(&format!("{i}")),
             Cell::I64(i) => s.push_str(&format!("{i}")),
+            Cell::Decimal(_) => unimplemented!(),
             Cell::TimeStamp(t) => s.push_str(&format!("'{t}'")),
             Cell::Bytes(b) => {
                 let bytes: String = b.iter().map(|b| *b as char).collect();
@@ -537,6 +538,7 @@ impl Message for TableRow {
                         ::prost::encoding::int64::encode(tag, i, buf);
                     }
                 }
+                Cell::Decimal(_) => unimplemented!(),
                 Cell::TimeStamp(t) => {
                     if !t.is_empty() {
                         ::prost::encoding::string::encode(tag, t, buf);
@@ -610,6 +612,7 @@ impl Message for TableRow {
                         0
                     }
                 }
+                Cell::Decimal(_) => unimplemented!(),
                 Cell::TimeStamp(t) => {
                     if !t.is_empty() {
                         ::prost::encoding::string::encoded_len(tag, t)
@@ -642,6 +645,7 @@ impl Message for TableRow {
                 Cell::I16(i) => *i = 0,
                 Cell::I32(i) => *i = 0,
                 Cell::I64(i) => *i = 0,
+                Cell::Decimal(_) => unimplemented!(),
                 Cell::TimeStamp(t) => t.clear(),
                 Cell::Bytes(b) => b.clear(),
                 Cell::Uuid(_) => unimplemented!(),

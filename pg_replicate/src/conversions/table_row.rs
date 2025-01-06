@@ -1,5 +1,6 @@
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use postgres_protocol::types;
+use rust_decimal::Decimal;
 use thiserror::Error;
 use tokio_postgres::{
     binary_copy::BinaryCopyOutRow,
@@ -18,6 +19,7 @@ pub enum Cell {
     I16(i16),
     I32(i32),
     I64(i64),
+    Decimal(Decimal),
     TimeStamp(String),
     Bytes(Vec<u8>),
     Uuid(Uuid),
@@ -76,6 +78,17 @@ impl TryFrom<Cell> for u64 {
         match cell {
             Cell::I64(i) => Ok(i as u64),
             _ => Err(CellConversionError(format!("to u64 from {cell:?}"))),
+        }
+    }
+}
+
+impl TryFrom<Cell> for Decimal {
+    type Error = CellConversionError;
+
+    fn try_from(cell: Cell) -> Result<Self, CellConversionError> {
+        match cell {
+            Cell::Decimal(d) => Ok(d),
+            _ => Err(CellConversionError(format!("to Decimal from {cell:?}"))),
         }
     }
 }
@@ -177,7 +190,7 @@ impl TryFrom<Cell> for serde_json::Value {
     }
 }
 
-#[trait_gen(T -> bool, i32, u32, i64, u64, String, Vec<u8>, NaiveDateTime, DateTime<Utc>, Uuid, serde_json::Value)]
+#[trait_gen(T -> bool, i32, u32, i64, u64, Decimal, String, Vec<u8>, NaiveDateTime, DateTime<Utc>, Uuid, serde_json::Value)]
 impl TryFrom<Cell> for Option<T> {
     type Error = CellConversionError;
 
@@ -417,6 +430,18 @@ impl TableRowConverter {
                 } else {
                     let val = row.get::<i64>(i);
                     Cell::I64(val)
+                };
+                Ok(val)
+            }
+            Type::NUMERIC => {
+                let val = if column_schema.nullable {
+                    match row.try_get::<Decimal>(i) {
+                        Ok(d) => Cell::Decimal(d),
+                        Err(_) => Cell::Null,
+                    }
+                } else {
+                    let val = row.get::<Decimal>(i);
+                    Cell::Decimal(val)
                 };
                 Ok(val)
             }

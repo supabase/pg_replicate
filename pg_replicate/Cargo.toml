@@ -30,6 +30,7 @@ gcp-bigquery-client = { workspace = true, optional = true, features = [
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }
 prost = { workspace = true, optional = true }
+rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
 rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
