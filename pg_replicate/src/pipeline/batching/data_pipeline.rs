@@ -116,6 +116,11 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         &mut self,
         last_lsn: PgLsn,
     ) -> Result<(), PipelineError<Src::Error, Snk::Error>> {
+        self.source
+            .commit_transaction()
+            .await
+            .map_err(PipelineError::Source)?;
+
         let mut last_lsn: u64 = last_lsn.into();
         last_lsn += 1;
         let cdc_events = self

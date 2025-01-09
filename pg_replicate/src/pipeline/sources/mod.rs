@@ -49,7 +49,7 @@ pub trait Source {
         column_schemas: &[ColumnSchema],
     ) -> Result<TableCopyStream, Self::Error>;
 
-    async fn commit_transaction(&self) -> Result<(), Self::Error>;
+    async fn commit_transaction(&mut self) -> Result<(), Self::Error>;
 
     async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, Self::Error>;
 }

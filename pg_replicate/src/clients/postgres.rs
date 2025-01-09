@@ -19,6 +19,7 @@ pub struct SlotInfo {
 /// A client for Postgres logical replication
 pub struct ReplicationClient {
     postgres_client: PostgresClient,
+    in_txn: bool,
 }
 
 #[derive(Debug, Error)]
@@ -88,25 +89,35 @@ impl ReplicationClient {
 
         info!("successfully connected to postgres");
 
-        Ok(ReplicationClient { postgres_client })
+        Ok(ReplicationClient {
+            postgres_client,
+            in_txn: false,
+        })
     }
 
     /// Starts a read-only trasaction with repeatable read isolation level
-    pub async fn begin_readonly_transaction(&self) -> Result<(), ReplicationClientError> {
+    pub async fn begin_readonly_transaction(&mut self) -> Result<(), ReplicationClientError> {
         self.postgres_client
             .simple_query("begin read only isolation level repeatable read;")
             .await?;
+        self.in_txn = true;
         Ok(())
     }
 
     /// Commits a transaction
-    pub async fn commit_txn(&self) -> Result<(), ReplicationClientError> {
-        self.postgres_client.simple_query("commit;").await?;
+    pub async fn commit_txn(&mut self) -> Result<(), ReplicationClientError> {
+        if self.in_txn {
+            self.postgres_client.simple_query("commit;").await?;
+            self.in_txn = false;
+        }
         Ok(())
     }
 
-    async fn rollback_txn(&self) -> Result<(), ReplicationClientError> {
-        self.postgres_client.simple_query("rollback;").await?;
+    async fn rollback_txn(&mut self) -> Result<(), ReplicationClientError> {
+        if self.in_txn {
+            self.postgres_client.simple_query("rollback;").await?;
+            self.in_txn = false;
+        }
         Ok(())
     }
 
@@ -372,7 +383,7 @@ impl ReplicationClient {
     /// Either return the slot info of an existing slot or creates a new
     /// slot and returns its slot info.
     pub async fn get_or_create_slot(
-        &self,
+        &mut self,
         slot_name: &str,
     ) -> Result<SlotInfo, ReplicationClientError> {
         if let Some(slot_info) = self.get_slot(slot_name).await? {

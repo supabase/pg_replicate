@@ -60,7 +60,7 @@ impl PostgresSource {
         slot_name: Option<String>,
         table_names_from: TableNamesFrom,
     ) -> Result<PostgresSource, PostgresSourceError> {
-        let replication_client =
+        let mut replication_client =
             ReplicationClient::connect_no_tls(host, port, database, username, password).await?;
         replication_client.begin_readonly_transaction().await?;
         if let Some(ref slot_name) = slot_name {
@@ -135,7 +135,7 @@ impl Source for PostgresSource {
         })
     }
 
-    async fn commit_transaction(&self) -> Result<(), Self::Error> {
+    async fn commit_transaction(&mut self) -> Result<(), Self::Error> {
         self.replication_client
             .commit_txn()
             .await
