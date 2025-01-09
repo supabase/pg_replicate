@@ -125,6 +125,7 @@ The repository is a cargo workspace. Each of the individual sub-folders are crat
 - [x] Add BigQuery Sink
 - [x] Add DuckDb Sink
 - [x] Add MotherDuck Sink
+- [x] Add Deltalake Sink (local/s3)
 - [ ] Add Snowflake Sink
 - [ ] Add ClickHouse Sink
 - [ ] Many more to come...
