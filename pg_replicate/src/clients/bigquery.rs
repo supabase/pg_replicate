@@ -340,8 +340,11 @@ impl BigQueryClient {
             table_name.to_string(),
         );
 
+        const MAX_SIZE_BYTES: usize = 9 * 1024 * 1024; // 9 MB
+
         loop {
-            let (rows, num_processed_rows) = StorageApi::create_rows(table_descriptor, table_rows);
+            let (rows, num_processed_rows) =
+                StorageApi::create_rows(table_descriptor, table_rows, MAX_SIZE_BYTES);
             let trace_id = "pg_replicate bigquery client".to_string();
             let mut response_stream = self
                 .client
