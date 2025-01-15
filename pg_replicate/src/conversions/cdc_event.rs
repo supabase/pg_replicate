@@ -35,6 +35,9 @@ pub enum CdcEventConversionError {
     #[error("missing tuple in delete body")]
     MissingTupleInDeleteBody,
 
+    #[error("missing column in tuple")]
+    MissingColumnInTuple,
+
     #[error("schema missing for table id {0}")]
     MissingSchema(TableId),
 
@@ -55,7 +58,7 @@ impl CdcEventConverter {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         for (i, column_schema) in column_schemas.iter().enumerate() {
-            let cell = match &tuple_data[i] {
+            let cell = match &tuple_data.get(i).ok_or(CdcEventConversionError::MissingColumnInTuple)? {
                 TupleData::Null => Cell::Null,
                 TupleData::UnchangedToast => TextFormatConverter::default_value(&column_schema.typ),
                 TupleData::Binary(_) => {
