@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Write};
+use std::collections::HashMap;
 
 use pg_escape::{quote_identifier, quote_literal};
 use postgres_replication::LogicalReplicationStream;
@@ -127,14 +127,11 @@ impl ReplicationClient {
         table_name: &TableName,
         column_schemas: &[ColumnSchema],
     ) -> Result<CopyOutStream, ReplicationClientError> {
-        let mut column_iter = column_schemas.iter().map(|col| quote_identifier(&col.name));
-        let mut column_list = column_iter
-            .next()
-            .expect("at least one column in any table or publication column list")
-            .to_string();
-        for col in column_iter {
-            let _ = write!(column_list, ", {col}");
-        }
+        let column_list = column_schemas
+            .iter()
+            .map(|col| quote_identifier(&col.name))
+            .collect::<Vec<_>>()
+            .join(", ");
 
         let copy_query = format!(
             r#"COPY {} ({column_list}) TO STDOUT WITH (FORMAT text);"#,
