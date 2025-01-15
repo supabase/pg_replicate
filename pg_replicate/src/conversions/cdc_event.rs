@@ -58,7 +58,10 @@ impl CdcEventConverter {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         for (i, column_schema) in column_schemas.iter().enumerate() {
-            let cell = match &tuple_data.get(i).ok_or(CdcEventConversionError::MissingColumnInTuple)? {
+            let cell = match &tuple_data
+                .get(i)
+                .ok_or(CdcEventConversionError::MissingColumnInTuple)?
+            {
                 TupleData::Null => Cell::Null,
                 TupleData::UnchangedToast => TextFormatConverter::default_value(&column_schema.typ),
                 TupleData::Binary(_) => {
