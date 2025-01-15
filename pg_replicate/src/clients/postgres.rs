@@ -153,12 +153,12 @@ impl ReplicationClient {
                         and r.prrelid = {table_id}
                     )"
                 ),
-                    "and (
-                        case (select count(*) from pub_attrs)
-                        when 0 then true
-                        else (a.attnum in (select * from pub_attrs))
-                        end
-                    )"
+                "and (
+                    case (select count(*) from pub_attrs)
+                    when 0 then true
+                    else (a.attnum in (select * from pub_attrs))
+                    end
+                )",
             )
         } else {
             ("".into(), "")
