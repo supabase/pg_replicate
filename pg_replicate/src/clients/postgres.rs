@@ -149,9 +149,10 @@ impl ReplicationClient {
                         select unnest(r.prattrs)
                         from pg_publication_rel r
                         left join pg_publication p on r.prpubid = p.oid
-                        where p.pubname = '{publication}'
+                        where p.pubname = {publication}
                         and r.prrelid = {table_id}
-                    )"
+                    )",
+                    publication=quote_literal(publication),
                 ),
                 "and (
                     case (select count(*) from pub_attrs)
