@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write};
 
 use pg_escape::{quote_identifier, quote_literal};
 use postgres_replication::LogicalReplicationStream;
@@ -125,10 +125,20 @@ impl ReplicationClient {
     pub async fn get_table_copy_stream(
         &self,
         table_name: &TableName,
+        column_schemas: &[ColumnSchema],
     ) -> Result<CopyOutStream, ReplicationClientError> {
+        let mut column_iter = column_schemas.iter().map(|col| quote_identifier(&col.name));
+        let mut column_list = column_iter
+            .next()
+            .expect("at least one column in any table or publication column list")
+            .to_string();
+        for col in column_iter {
+            let _ = write!(column_list, ", {col}");
+        }
+
         let copy_query = format!(
-            r#"COPY {} TO STDOUT WITH (FORMAT text);"#,
-            table_name.as_quoted_identifier()
+            r#"COPY {} ({column_list}) TO STDOUT WITH (FORMAT text);"#,
+            table_name.as_quoted_identifier(),
         );
 
         let stream = self.postgres_client.copy_out_simple(&copy_query).await?;
@@ -152,7 +162,7 @@ impl ReplicationClient {
                         where p.pubname = {publication}
                         and r.prrelid = {table_id}
                     )",
-                    publication=quote_literal(publication),
+                    publication = quote_literal(publication),
                 ),
                 "and (
                     case (select count(*) from pub_attrs)

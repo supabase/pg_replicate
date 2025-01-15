@@ -127,7 +127,7 @@ impl Source for PostgresSource {
 
         let stream = self
             .replication_client
-            .get_table_copy_stream(table_name)
+            .get_table_copy_stream(table_name, column_schemas)
             .await
             .map_err(PostgresSourceError::ReplicationClient)?;
 
