@@ -153,17 +153,15 @@ impl ReplicationClient {
                         and r.prrelid = {table_id}
                     )"
                 ),
-                format!(
                     "and (
                         case (select count(*) from pub_attrs)
                         when 0 then true
                         else (a.attnum in (select * from pub_attrs))
                         end
                     )"
-                ),
             )
         } else {
-            ("".into(), "".into())
+            ("".into(), "")
         };
 
         let column_info_query = format!(
