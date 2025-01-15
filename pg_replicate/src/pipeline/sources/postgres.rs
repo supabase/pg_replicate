@@ -68,7 +68,9 @@ impl PostgresSource {
         }
         let (table_names, publication) =
             Self::get_table_names_and_publication(&replication_client, table_names_from).await?;
-        let table_schemas = replication_client.get_table_schemas(&table_names).await?;
+        let table_schemas = replication_client
+            .get_table_schemas(&table_names, publication.as_deref())
+            .await?;
         Ok(PostgresSource {
             replication_client,
             table_schemas,
