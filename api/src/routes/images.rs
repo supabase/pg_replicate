@@ -19,7 +19,7 @@ enum ImageError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
-    #[error("source with id {0} not found")]
+    #[error("image with id {0} not found")]
     ImageNotFound(i64),
 }
 
