@@ -78,9 +78,28 @@ jobs:
   coverage:
     name: Code coverage
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5430:5432
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli
+          --features native-tls,postgres
+          --no-default-features
+          --locked
+      - name: Migrate database
+        run: |
+          sudo apt-get install libpq-dev -y
+          cd api
+          SKIP_DOCKER=true ./scripts/init_db.sh
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate code coverage
