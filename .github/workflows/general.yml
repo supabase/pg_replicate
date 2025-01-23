@@ -87,6 +87,8 @@ jobs:
       - name: Generate code coverage
         run: |
           cargo tarpaulin --verbose --workspace --all-features --exclude api
+      - name: Report Coveralls
+        uses: coverallsapp/github-action@v2
   docker:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
