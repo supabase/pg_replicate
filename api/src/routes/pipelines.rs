@@ -395,6 +395,30 @@ pub async fn stop_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[utoipa::path(
+    context_path = "/v1",
+    responses(
+        (status = 200, description = "Stop all pipelines"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+#[post("/pipelines/stop")]
+pub async fn stop_all_pipelines(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    k8s_client: Data<Arc<HttpK8sClient>>,
+) -> Result<impl Responder, PipelineError> {
+    let tenant_id = extract_tenant_id(&req)?;
+    let replicators = db::replicators::read_replicators(&pool, tenant_id).await?;
+    for replicator in replicators {
+        let prefix = create_prefix(tenant_id, replicator.id);
+        delete_secrets(&k8s_client, &prefix).await?;
+        delete_config(&k8s_client, &prefix).await?;
+        delete_replicator(&k8s_client, &prefix).await?;
+    }
+    Ok(HttpResponse::Ok().finish())
+}
+
 #[derive(Serialize, ToSchema)]
 pub enum PipelineStatus {
     Stopped,

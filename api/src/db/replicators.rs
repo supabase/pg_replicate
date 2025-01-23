@@ -61,3 +61,29 @@ pub async fn read_replicator_by_pipeline_id(
         image_id: r.image_id,
     }))
 }
+
+pub async fn read_replicators(
+    pool: &PgPool,
+    tenant_id: &str,
+) -> Result<Vec<Replicator>, sqlx::Error> {
+    let mut records = sqlx::query!(
+        r#"
+        select r.id, r.tenant_id, r.image_id
+        from app.replicators r
+        join app.pipelines p on r.id = p.replicator_id
+        where r.tenant_id = $1 and p.tenant_id = $1
+        "#,
+        tenant_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(records
+        .drain(..)
+        .map(|r| Replicator {
+            id: r.id,
+            tenant_id: r.tenant_id,
+            image_id: r.image_id,
+        })
+        .collect())
+}
