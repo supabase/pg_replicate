@@ -21,3 +21,11 @@ Run the following command from this folder:
 ```
 sqlx migrate reset
 ```
+
+## Update sqlx metadata
+
+Run the following command from this folder:
+
+```
+cargo sqlx prepare
+```
