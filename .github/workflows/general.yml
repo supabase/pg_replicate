@@ -78,17 +78,21 @@ jobs:
   coverage:
     name: Code coverage
     runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin
-      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate code coverage
+        id: coverage
         run: |
-          cargo tarpaulin --verbose --workspace --all-features --exclude api
-      - name: Report Coveralls
+          cargo llvm-cov test --workspace --no-fail-fast --lcov --output-path lcov.info
+      - name: Coveralls upload
         uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: lcov.info
+          debug: true
   docker:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
