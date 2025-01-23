@@ -23,8 +23,8 @@ use crate::{
         },
         pipelines::{
             create_pipeline, delete_pipeline, get_pipeline_status, read_all_pipelines,
-            read_pipeline, start_pipeline, stop_pipeline, update_pipeline, GetPipelineResponse,
-            PostPipelineRequest, PostPipelineResponse,
+            read_pipeline, start_pipeline, stop_all_pipelines, stop_pipeline, update_pipeline,
+            GetPipelineResponse, PostPipelineRequest, PostPipelineResponse,
         },
         sinks::{
             create_sink, delete_sink, read_all_sinks, read_sink, update_sink, GetSinkResponse,
@@ -223,6 +223,7 @@ pub async fn run(
                     .service(read_all_pipelines)
                     .service(start_pipeline)
                     .service(stop_pipeline)
+                    .service(stop_all_pipelines)
                     .service(get_pipeline_status)
                     //tables
                     .service(read_table_names)

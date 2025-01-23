@@ -240,7 +240,7 @@ pub async fn read_pipeline(
         (status = 500, description = "Internal server error")
     )
 )]
-#[post("/pipelines/{pipeline_id}")]
+#[post("/pipelines/{pipeline_id:\\d+}")]
 pub async fn update_pipeline(
     req: HttpRequest,
     pool: Data<PgPool>,
