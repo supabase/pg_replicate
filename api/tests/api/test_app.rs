@@ -100,6 +100,11 @@ pub struct SinkResponse {
     pub config: SinkConfig,
 }
 
+#[derive(Deserialize)]
+pub struct SinksResponse {
+    pub sinks: Vec<SinkResponse>,
+}
+
 #[derive(Serialize)]
 pub struct CreatePipelineRequest {
     pub source_id: i64,

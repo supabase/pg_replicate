@@ -4,7 +4,8 @@ use reqwest::StatusCode;
 use crate::{
     tenants::create_tenant,
     test_app::{
-        spawn_app, CreateSinkRequest, CreateSinkResponse, SinkResponse, TestApp, UpdateSinkRequest,
+        spawn_app, CreateSinkRequest, CreateSinkResponse, SinkResponse, SinksResponse, TestApp,
+        UpdateSinkRequest,
     },
 };
 
@@ -225,11 +226,11 @@ async fn all_sinks_can_be_read() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: Vec<SinkResponse> = response
+    let response: SinksResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
-    for sink in response {
+    for sink in response.sinks {
         if sink.id == sink1_id {
             let name = new_name();
             let config = new_sink_config();
