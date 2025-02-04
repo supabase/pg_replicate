@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 
 use crate::test_app::{
-    spawn_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, TestApp,
+    spawn_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, TenantsResponse, TestApp,
     UpdateTenantRequest,
 };
 
@@ -267,11 +267,11 @@ async fn all_tenants_can_be_read() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: Vec<TenantResponse> = response
+    let response: TenantsResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
-    for tenant in response {
+    for tenant in response.tenants {
         if tenant.id == tenant1_id {
             assert_eq!(tenant.name, "Tenant1");
         } else if tenant.id == tenant2_id {

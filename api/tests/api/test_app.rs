@@ -40,6 +40,11 @@ pub struct TenantResponse {
     pub name: String,
 }
 
+#[derive(Deserialize)]
+pub struct TenantsResponse {
+    pub tenants: Vec<TenantResponse>,
+}
+
 #[derive(Serialize)]
 pub struct CreateSourceRequest {
     pub name: String,
