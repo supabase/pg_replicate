@@ -4,11 +4,13 @@ use actix_web::{
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
+use serde::Serialize;
 use sqlx::PgPool;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::{
-    db::{self, sources::SourcesDbError},
+    db::{self, sources::SourcesDbError, tables::Table},
     encryption::EncryptionKey,
     routes::{extract_tenant_id, ErrorMessage, TenantIdError},
 };
@@ -37,6 +39,11 @@ impl TableError {
             e => e.to_string(),
         }
     }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct GetTablesReponse {
+    pub tables: Vec<Table>,
 }
 
 impl ResponseError for TableError {
@@ -89,6 +96,6 @@ pub async fn read_table_names(
 
     let options = config.connect_options();
     let tables = db::tables::get_tables(&options).await?;
-
-    Ok(Json(tables))
+    let response = GetTablesReponse { tables };
+    Ok(Json(response))
 }
