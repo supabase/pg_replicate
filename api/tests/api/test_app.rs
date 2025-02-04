@@ -65,6 +65,11 @@ pub struct SourceResponse {
     pub config: SourceConfig,
 }
 
+#[derive(Deserialize)]
+pub struct SourcesResponse {
+    pub sources: Vec<SourceResponse>,
+}
+
 #[derive(Serialize)]
 pub struct CreateSinkRequest {
     pub name: String,
