@@ -1,7 +1,8 @@
 use reqwest::StatusCode;
 
 use crate::test_app::{
-    spawn_app, CreateImageRequest, CreateImageResponse, ImageResponse, TestApp, UpdateImageRequest,
+    spawn_app, CreateImageRequest, CreateImageResponse, ImageResponse, ImagesResponse, TestApp,
+    UpdateImageRequest,
 };
 
 pub async fn create_default_image(app: &TestApp) -> i64 {
@@ -191,11 +192,11 @@ async fn all_images_can_be_read() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: Vec<ImageResponse> = response
+    let response: ImagesResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
-    for image in response {
+    for image in response.images {
         if image.id == image1_id {
             assert_eq!(image.name, "some/image");
             assert!(image.is_default);

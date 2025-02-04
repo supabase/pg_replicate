@@ -160,6 +160,11 @@ pub struct ImageResponse {
     pub is_default: bool,
 }
 
+#[derive(Deserialize)]
+pub struct ImagesResponse {
+    pub images: Vec<ImageResponse>,
+}
+
 #[derive(Serialize)]
 pub struct UpdateImageRequest {
     pub name: String,
