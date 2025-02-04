@@ -11,6 +11,7 @@ use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SinkConfig {
+    #[serde(rename = "big_query")]
     BigQuery {
         /// BigQuery project id
         project_id: String,
@@ -298,4 +299,41 @@ pub async fn sink_exists(
     .await?;
 
     Ok(record.exists)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::sinks::SinkConfig;
+
+    #[test]
+    pub fn deserialize_settings_test() {
+        let settings = r#"{
+            "big_query": {
+                "project_id": "project-id",
+                "dataset_id": "dataset-id",
+                "service_account_key": "service-account-key"
+            }
+        }"#;
+        let actual = serde_json::from_str::<SinkConfig>(settings);
+        let expected = SinkConfig::BigQuery {
+            project_id: "project-id".to_string(),
+            dataset_id: "dataset-id".to_string(),
+            service_account_key: "service-account-key".to_string(),
+        };
+        assert!(actual.is_ok());
+        assert_eq!(expected, actual.unwrap());
+    }
+
+    #[test]
+    pub fn serialize_settings_test() {
+        let actual = SinkConfig::BigQuery {
+            project_id: "project-id".to_string(),
+            dataset_id: "dataset-id".to_string(),
+            service_account_key: "service-account-key".to_string(),
+        };
+        let expected = r#"{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"service-account-key"}}"#;
+        let actual = serde_json::to_string(&actual);
+        assert!(actual.is_ok());
+        assert_eq!(expected, actual.unwrap());
+    }
 }

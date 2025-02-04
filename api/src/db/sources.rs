@@ -81,6 +81,7 @@ impl SourceConfigInDb {
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SourceConfig {
+    #[serde(rename = "postgres")]
     Postgres {
         /// Host on which Postgres is running
         host: String,
@@ -376,4 +377,50 @@ pub async fn source_exists(
     .await?;
 
     Ok(record.exists)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::sources::SourceConfig;
+
+    #[test]
+    pub fn deserialize_settings_test() {
+        let settings = r#"{
+            "postgres": {
+                "host": "localhost",
+                "port": 5432,
+                "name": "postgres",
+                "username": "postgres",
+                "password": "postgres",
+                "slot_name": "slot"
+            }
+        }"#;
+        let actual = serde_json::from_str::<SourceConfig>(settings);
+        let expected = SourceConfig::Postgres {
+            host: "localhost".to_string(),
+            port: 5432,
+            name: "postgres".to_string(),
+            username: "postgres".to_string(),
+            password: Some("postgres".to_string()),
+            slot_name: "slot".to_string(),
+        };
+        assert!(actual.is_ok());
+        assert_eq!(expected, actual.unwrap());
+    }
+
+    #[test]
+    pub fn serialize_settings_test() {
+        let actual = SourceConfig::Postgres {
+            host: "localhost".to_string(),
+            port: 5432,
+            name: "postgres".to_string(),
+            username: "postgres".to_string(),
+            password: Some("postgres".to_string()),
+            slot_name: "slot".to_string(),
+        };
+        let expected = r#"{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","password":"postgres","slot_name":"slot"}}"#;
+        let actual = serde_json::to_string(&actual);
+        assert!(actual.is_ok());
+        assert_eq!(expected, actual.unwrap());
+    }
 }
