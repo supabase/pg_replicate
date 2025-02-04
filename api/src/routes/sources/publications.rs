@@ -5,7 +5,7 @@ use actix_web::{
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
@@ -79,6 +79,11 @@ pub struct CreatePublicationRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdatePublicationRequest {
     tables: Vec<Table>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct GetPublicationsResponse {
+    pub publications: Vec<Publication>,
 }
 
 #[utoipa::path(
@@ -251,6 +256,6 @@ pub async fn read_all_publications(
 
     let options = config.connect_options();
     let publications = db::publications::read_all_publications(&options).await?;
-
-    Ok(Json(publications))
+    let response = GetPublicationsResponse { publications };
+    Ok(Json(response))
 }
