@@ -141,6 +141,11 @@ pub struct GetPipelineResponse {
     config: PipelineConfig,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct GetPipelinesResponse {
+    pipelines: Vec<GetPipelineResponse>,
+}
+
 #[utoipa::path(
     context_path = "/v1",
     request_body = PostPipelineRequest,
@@ -319,7 +324,7 @@ pub async fn read_all_pipelines(
     let mut pipelines = vec![];
     for pipeline in db::pipelines::read_all_pipelines(&pool, tenant_id).await? {
         let config: PipelineConfig = serde_json::from_value(pipeline.config)?;
-        let sink = GetPipelineResponse {
+        let pipeline = GetPipelineResponse {
             id: pipeline.id,
             tenant_id: pipeline.tenant_id,
             source_id: pipeline.source_id,
@@ -330,9 +335,10 @@ pub async fn read_all_pipelines(
             publication_name: pipeline.publication_name,
             config,
         };
-        pipelines.push(sink);
+        pipelines.push(pipeline);
     }
-    Ok(Json(pipelines))
+    let response = GetPipelinesResponse { pipelines };
+    Ok(Json(response))
 }
 
 #[utoipa::path(

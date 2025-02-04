@@ -129,6 +129,11 @@ pub struct PipelineResponse {
     pub config: PipelineConfig,
 }
 
+#[derive(Deserialize)]
+pub struct PipelinesResponse {
+    pub pipelines: Vec<PipelineResponse>,
+}
+
 #[derive(Serialize)]
 pub struct UpdatePipelineRequest {
     pub source_id: i64,
