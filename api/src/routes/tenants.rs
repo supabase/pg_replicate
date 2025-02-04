@@ -193,9 +193,7 @@ pub async fn delete_tenant(
     tenant_id: Path<String>,
 ) -> Result<impl Responder, TenantError> {
     let tenant_id = tenant_id.into_inner();
-    db::tenants::delete_tenant(&pool, &tenant_id)
-        .await?
-        .ok_or(TenantError::TenantNotFound(tenant_id))?;
+    db::tenants::delete_tenant(&pool, &tenant_id).await?;
     Ok(HttpResponse::Ok().finish())
 }
 

@@ -234,7 +234,7 @@ async fn an_existing_tenant_can_be_deleted() {
 }
 
 #[tokio::test]
-async fn a_non_existing_tenant_cant_be_deleted() {
+async fn a_non_existing_tenant_returns_ok_when_deleted() {
     // Arrange
     let app = spawn_app().await;
 
@@ -242,7 +242,7 @@ async fn a_non_existing_tenant_cant_be_deleted() {
     let response = app.delete_tenant("42").await;
 
     // Assert
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
