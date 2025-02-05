@@ -4,8 +4,8 @@ use reqwest::StatusCode;
 use crate::{
     tenants::create_tenant,
     test_app::{
-        spawn_app, CreateSourceRequest, CreateSourceResponse, SourceResponse, TestApp,
-        UpdateSourceRequest,
+        spawn_app, CreateSourceRequest, CreateSourceResponse, SourceResponse, SourcesResponse,
+        TestApp, UpdateSourceRequest,
     },
 };
 
@@ -235,11 +235,11 @@ async fn all_sources_can_be_read() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: Vec<SourceResponse> = response
+    let response: SourcesResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
-    for source in response {
+    for source in response.sources {
         if source.id == source1_id {
             let name = new_name();
             let config = new_source_config();

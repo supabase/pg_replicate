@@ -74,6 +74,11 @@ pub struct GetImageResponse {
     is_default: bool,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct GetImagesResponse {
+    images: Vec<GetImageResponse>,
+}
+
 #[utoipa::path(
     context_path = "/v1",
     request_body = PostImageRequest,
@@ -178,14 +183,15 @@ pub async fn delete_image(
 )]
 #[get("/images")]
 pub async fn read_all_images(pool: Data<PgPool>) -> Result<impl Responder, ImageError> {
-    let mut sources = vec![];
+    let mut images = vec![];
     for image in db::images::read_all_images(&pool).await? {
         let image = GetImageResponse {
             id: image.id,
             name: image.name,
             is_default: image.is_default,
         };
-        sources.push(image);
+        images.push(image);
     }
-    Ok(Json(sources))
+    let response = GetImagesResponse { images };
+    Ok(Json(response))
 }

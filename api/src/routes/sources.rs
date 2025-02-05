@@ -95,6 +95,11 @@ pub struct GetSourceResponse {
     config: SourceConfig,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct GetSourcesResponse {
+    sources: Vec<GetSourceResponse>,
+}
+
 #[utoipa::path(
     context_path = "/v1",
     request_body = PostSourceRequest,
@@ -231,5 +236,6 @@ pub async fn read_all_sources(
         };
         sources.push(source);
     }
-    Ok(Json(sources))
+    let response = GetSourcesResponse { sources };
+    Ok(Json(response))
 }

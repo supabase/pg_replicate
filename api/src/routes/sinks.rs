@@ -93,6 +93,11 @@ pub struct GetSinkResponse {
     config: SinkConfig,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct GetSinksResponse {
+    sinks: Vec<GetSinkResponse>,
+}
+
 #[utoipa::path(
     context_path = "/v1",
     request_body = PostSinkRequest,
@@ -229,5 +234,6 @@ pub async fn read_all_sinks(
         };
         sinks.push(sink);
     }
-    Ok(Json(sinks))
+    let response = GetSinksResponse { sinks };
+    Ok(Json(response))
 }

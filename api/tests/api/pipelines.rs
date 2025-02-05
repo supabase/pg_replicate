@@ -8,8 +8,8 @@ use crate::{
     tenants::create_tenant,
     tenants::create_tenant_with_id_and_name,
     test_app::{
-        spawn_app, CreatePipelineRequest, CreatePipelineResponse, PipelineResponse, TestApp,
-        UpdatePipelineRequest,
+        spawn_app, CreatePipelineRequest, CreatePipelineResponse, PipelineResponse,
+        PipelinesResponse, TestApp, UpdatePipelineRequest,
     },
 };
 
@@ -439,11 +439,11 @@ async fn all_pipelines_can_be_read() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: Vec<PipelineResponse> = response
+    let response: PipelinesResponse = response
         .json()
         .await
         .expect("failed to deserialize response");
-    for pipeline in response {
+    for pipeline in response.pipelines {
         if pipeline.id == pipeline1_id {
             let config = new_pipeline_config();
             assert_eq!(&pipeline.tenant_id, tenant_id);

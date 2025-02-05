@@ -40,6 +40,11 @@ pub struct TenantResponse {
     pub name: String,
 }
 
+#[derive(Deserialize)]
+pub struct TenantsResponse {
+    pub tenants: Vec<TenantResponse>,
+}
+
 #[derive(Serialize)]
 pub struct CreateSourceRequest {
     pub name: String,
@@ -63,6 +68,11 @@ pub struct SourceResponse {
     pub tenant_id: String,
     pub name: String,
     pub config: SourceConfig,
+}
+
+#[derive(Deserialize)]
+pub struct SourcesResponse {
+    pub sources: Vec<SourceResponse>,
 }
 
 #[derive(Serialize)]
@@ -90,6 +100,11 @@ pub struct SinkResponse {
     pub config: SinkConfig,
 }
 
+#[derive(Deserialize)]
+pub struct SinksResponse {
+    pub sinks: Vec<SinkResponse>,
+}
+
 #[derive(Serialize)]
 pub struct CreatePipelineRequest {
     pub source_id: i64,
@@ -112,6 +127,11 @@ pub struct PipelineResponse {
     pub replicator_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
+}
+
+#[derive(Deserialize)]
+pub struct PipelinesResponse {
+    pub pipelines: Vec<PipelineResponse>,
 }
 
 #[derive(Serialize)]
@@ -138,6 +158,11 @@ pub struct ImageResponse {
     pub id: i64,
     pub name: String,
     pub is_default: bool,
+}
+
+#[derive(Deserialize)]
+pub struct ImagesResponse {
+    pub images: Vec<ImageResponse>,
 }
 
 #[derive(Serialize)]

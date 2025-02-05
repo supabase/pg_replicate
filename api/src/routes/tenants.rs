@@ -81,6 +81,11 @@ pub struct GetTenantResponse {
     name: String,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct GetTenantsResponse {
+    tenants: Vec<GetTenantResponse>,
+}
+
 #[utoipa::path(
     context_path = "/v1",
     request_body = CreateTenantRequest,
@@ -206,7 +211,7 @@ pub async fn delete_tenant(
 )]
 #[get("/tenants")]
 pub async fn read_all_tenants(pool: Data<PgPool>) -> Result<impl Responder, TenantError> {
-    let response: Vec<GetTenantResponse> = db::tenants::read_all_tenants(&pool)
+    let tenants: Vec<GetTenantResponse> = db::tenants::read_all_tenants(&pool)
         .await?
         .drain(..)
         .map(|t| GetTenantResponse {
@@ -214,5 +219,6 @@ pub async fn read_all_tenants(pool: Data<PgPool>) -> Result<impl Responder, Tena
             name: t.name,
         })
         .collect();
+    let response = GetTenantsResponse { tenants };
     Ok(Json(response))
 }
