@@ -24,13 +24,22 @@ pub trait MessageMapper {
     ) -> Result<serde_json::Value, serde_json::Error>;
 }
 
-pub struct NatsClient<M: MessageMapper + Send + Sync> {
-    conn: jetstream::Context,
-    message_mapper: M,
+#[async_trait]
+pub trait SubjectMapper {
+    fn map(
+        &self,
+        row: serde_json::Value
+    ) -> Result<String, anyhow::Error>;
 }
 
-impl<M: MessageMapper + Send + Sync> NatsClient<M> {
-    pub async fn new(address: String, message_mapper: M) -> Result<NatsClient<M>, ConnectError> {
+pub struct NatsClient<M: MessageMapper + Send + Sync, S: SubjectMapper + Send + Sync> {
+    conn: jetstream::Context,
+    message_mapper: M,
+    subject_mapper: S
+}
+
+impl<M: MessageMapper + Send + Sync, S: SubjectMapper + Send + Sync> NatsClient<M, S> {
+    pub async fn new(address: String, message_mapper: M, subject_mapper: S) -> Result<NatsClient<M, S>, ConnectError> {
         let client = async_nats::connect_with_options(
             address,
             ConnectOptions::new()
@@ -53,6 +62,7 @@ impl<M: MessageMapper + Send + Sync> NatsClient<M> {
         return Ok(Self {
             conn: jetstream,
             message_mapper,
+            subject_mapper
         });
     }
 
@@ -117,7 +127,7 @@ impl<M: MessageMapper + Send + Sync> NatsClient<M> {
 
         let serialized: String = payload.to_string();
 
-        let topic = format!("postgres.table.{}", table_id);
+        let topic = self.subject_mapper.map(payload)?;
 
         self.conn
             .publish_with_headers(topic, headers, serialized.into())

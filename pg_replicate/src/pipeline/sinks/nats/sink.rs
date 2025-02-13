@@ -7,7 +7,7 @@ use tokio_postgres::types::PgLsn;
 use tracing::info;
 
 use crate::{
-    clients::nats::{MessageMapper, NatsClient},
+    clients::nats::{MessageMapper, SubjectMapper, NatsClient},
     conversions::{cdc_event::CdcEvent, table_row::TableRow, Cell},
     pipeline::{
         sinks::{BatchSink, SinkError},
@@ -31,19 +31,20 @@ pub enum NatsSinkError {
     MissingTableSchemas,
 }
 
-pub struct NatsBatchSink<M: MessageMapper + Send + Sync> {
-    client: NatsClient<M>,
+pub struct NatsBatchSink<M: MessageMapper + Send + Sync, S: SubjectMapper + Send + Sync> {
+    client: NatsClient<M, S>,
     committed_lsn: Option<PgLsn>,
     final_lsn: Option<PgLsn>,
     table_schemas: HashMap<TableId, TableSchema>,
 }
 
-impl<M: MessageMapper + Send + Sync> NatsBatchSink<M> {
+impl<M: MessageMapper + Send + Sync, S: SubjectMapper + Send + Sync> NatsBatchSink<M, S> {
     pub async fn new(
         address: &str,
         message_mapper: M,
-    ) -> Result<NatsBatchSink<M>, async_nats::ConnectError> {
-        let client = NatsClient::new(address.to_string(), message_mapper).await?;
+        subject_mapper: S
+    ) -> Result<NatsBatchSink<M, S>, async_nats::ConnectError> {
+        let client = NatsClient::new(address.to_string(), message_mapper, subject_mapper).await?;
         Ok(NatsBatchSink {
             client,
             committed_lsn: None,
@@ -56,7 +57,7 @@ impl<M: MessageMapper + Send + Sync> NatsBatchSink<M> {
 impl SinkError for NatsSinkError {}
 
 #[async_trait]
-impl<M: MessageMapper + Send + Sync> BatchSink for NatsBatchSink<M> {
+impl<M: MessageMapper + Send + Sync, S: SubjectMapper + Send + Sync> BatchSink for NatsBatchSink<M, S> {
     type Error = NatsSinkError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         if !self.client.bucket_exists().await {
