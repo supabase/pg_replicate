@@ -10,8 +10,8 @@ use thiserror::Error;
 use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SinkConfig {
-    #[serde(rename = "big_query")]
     BigQuery {
         /// BigQuery project id
         project_id: String,
@@ -68,6 +68,7 @@ impl Debug for SinkConfig {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SinkConfigInDb {
     BigQuery {
         /// BigQuery project id
