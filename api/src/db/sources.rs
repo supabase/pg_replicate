@@ -13,8 +13,8 @@ use thiserror::Error;
 use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 enum SourceConfigInDb {
-    #[serde(rename = "postgres")]
     Postgres {
         /// Host on which Postgres is running
         host: String,
@@ -81,8 +81,8 @@ impl SourceConfigInDb {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceConfig {
-    #[serde(rename = "postgres")]
     Postgres {
         /// Host on which Postgres is running
         host: String,

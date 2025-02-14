@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceSettings {
-    #[serde(rename = "postgres")]
     Postgres {
         /// Host on which Postgres is running
         host: String,
@@ -53,8 +53,8 @@ impl Debug for SourceSettings {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SinkSettings {
-    #[serde(rename = "big_query")]
     BigQuery {
         /// BigQuery project id
         project_id: String,
