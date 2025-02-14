@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SourceSettings {
+    #[serde(rename = "postgres")]
     Postgres {
         /// Host on which Postgres is running
         host: String,
@@ -53,6 +54,7 @@ impl Debug for SourceSettings {
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SinkSettings {
+    #[serde(rename = "big_query")]
     BigQuery {
         /// BigQuery project id
         project_id: String,
@@ -169,7 +171,7 @@ mod tests {
     pub fn deserialize_settings_test() {
         let settings = r#"{
             "source": {
-                "Postgres": {
+                "postgres": {
                     "host": "localhost",
                     "port": 5432,
                     "name": "postgres",
@@ -180,7 +182,7 @@ mod tests {
                 }
             },
             "sink": {
-                "BigQuery": {
+                "big_query": {
                     "project_id": "project-id",
                     "dataset_id": "dataset-id",
                     "service_account_key": "key"
@@ -238,7 +240,7 @@ mod tests {
                 max_fill_secs: 10,
             },
         };
-        let expected = r#"{"source":{"Postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","password":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"BigQuery":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"key"}},"batch":{"max_size":1000,"max_fill_secs":10}}"#;
+        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","password":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"key"}},"batch":{"max_size":1000,"max_fill_secs":10}}"#;
         let actual = serde_json::to_string(&actual);
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());
