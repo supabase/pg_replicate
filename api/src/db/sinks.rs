@@ -69,6 +69,7 @@ impl Debug for SinkConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SinkConfigInDb {
+    #[serde(rename = "big_query")]
     BigQuery {
         /// BigQuery project id
         project_id: String,

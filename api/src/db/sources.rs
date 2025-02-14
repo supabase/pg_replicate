@@ -14,6 +14,7 @@ use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 enum SourceConfigInDb {
+    #[serde(rename = "postgres")]
     Postgres {
         /// Host on which Postgres is running
         host: String,
