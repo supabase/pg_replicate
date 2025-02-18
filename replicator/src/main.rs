@@ -12,7 +12,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod configuration;
 
-// APP_SOURCE__POSTGRES__PASSWORD and APP_SINK__BIGQUERY__PROJECT_ID environment variables must be set
+// APP_SOURCE__POSTGRES__PASSWORD and APP_SINK__BIG_QUERY__PROJECT_ID environment variables must be set
 // before running because these are sensitive values which can't be configured in the config files
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
