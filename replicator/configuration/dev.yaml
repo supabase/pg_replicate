@@ -1,5 +1,5 @@
 source:
-  Postgres:
+  postgres:
     host: "localhost"
     port: 5432
     name: "postgres"
@@ -7,6 +7,6 @@ source:
     slot_name: "replicator_slot"
     publication: "replicator_publication"
 sink:
-  BigQuery:
+  big_query:
     project_id: "project-id"
     dataset_id: "dataset-id"
