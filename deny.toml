@@ -1,7 +1,6 @@
 [advisories]
 version = 2
 ignore = [
-    { id = "RUSTSEC-2024-0320", reason = "temporarily disabling" },
     { id = "RUSTSEC-2024-0370", reason = "temporarily disabling" },
     { id = "RUSTSEC-2024-0384", reason = "temporarily disabling" },
 ]
