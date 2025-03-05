@@ -515,6 +515,7 @@ fn create_configs(
         project_id,
         dataset_id,
         service_account_key: bigquery_service_account_key,
+        max_staleness_mins,
     } = sink_config;
 
     let secrets = Secrets {
@@ -535,6 +536,7 @@ fn create_configs(
     let sink_config = replicator_config::SinkConfig::BigQuery {
         project_id,
         dataset_id,
+        max_staleness_mins,
     };
 
     let pipeline_config: PipelineConfig = serde_json::from_value(pipeline.config)?;

@@ -21,6 +21,10 @@ pub enum SinkConfig {
 
         /// BigQuery service account key
         service_account_key: String,
+
+        /// The max_staleness parameter for BigQuery: https://cloud.google.com/bigquery/docs/change-data-capture#create-max-staleness
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_staleness_mins: Option<u16>,
     },
 }
 
@@ -30,6 +34,7 @@ impl SinkConfig {
             project_id,
             dataset_id,
             service_account_key,
+            max_staleness_mins,
         } = self;
 
         let (encrypted_sa_key, nonce) =
@@ -46,6 +51,7 @@ impl SinkConfig {
             project_id,
             dataset_id,
             service_account_key: encrypted_sa_key,
+            max_staleness_mins,
         })
     }
 }
@@ -57,11 +63,13 @@ impl Debug for SinkConfig {
                 project_id,
                 dataset_id,
                 service_account_key: _,
+                max_staleness_mins,
             } => f
                 .debug_struct("BigQuery")
                 .field("project_id", project_id)
                 .field("dataset_id", dataset_id)
                 .field("service_account_key", &"REDACTED")
+                .field("max_staleness_mins", max_staleness_mins)
                 .finish(),
         }
     }
@@ -79,6 +87,10 @@ pub enum SinkConfigInDb {
 
         /// BigQuery service account key
         service_account_key: EncryptedValue,
+
+        /// The max_staleness parameter for BigQuery: https://cloud.google.com/bigquery/docs/change-data-capture#create-max-staleness
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_staleness_mins: Option<u16>,
     },
 }
 
@@ -88,6 +100,7 @@ impl SinkConfigInDb {
             project_id,
             dataset_id,
             service_account_key: encrypted_sa_key,
+            max_staleness_mins,
         } = self;
 
         if encrypted_sa_key.id != encryption_key.id {
@@ -111,6 +124,7 @@ impl SinkConfigInDb {
             project_id,
             dataset_id,
             service_account_key: decrypted_sa_key,
+            max_staleness_mins,
         })
     }
 }
@@ -320,6 +334,7 @@ mod tests {
             project_id: "project-id".to_string(),
             dataset_id: "dataset-id".to_string(),
             service_account_key: "service-account-key".to_string(),
+            max_staleness_mins: None,
         };
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());
@@ -331,6 +346,7 @@ mod tests {
             project_id: "project-id".to_string(),
             dataset_id: "dataset-id".to_string(),
             service_account_key: "service-account-key".to_string(),
+            max_staleness_mins: None,
         };
         let expected = r#"{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"service-account-key"}}"#;
         let actual = serde_json::to_string(&actual);
