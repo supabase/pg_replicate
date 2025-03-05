@@ -1,4 +1,4 @@
-FROM rust:1.79.0-slim-bookworm AS builder
+FROM rust:1.85.0-slim-bookworm AS builder
 WORKDIR /app
 # TODO: remove protobuf-compiler once the upstream gcp-bigquery-client remove it from its deps
 RUN apt update && apt install protobuf-compiler clang -y

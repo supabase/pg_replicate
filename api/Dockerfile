@@ -1,4 +1,4 @@
-FROM rust:1.83.0-slim-bookworm AS builder
+FROM rust:1.85.0-slim-bookworm AS builder
 WORKDIR /app
 COPY . .
 ENV SQLX_OFFLINE=true
