@@ -158,6 +158,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         bq_args.bq_project_id,
         bq_args.bq_dataset_id,
         &bq_args.bq_sa_key_file,
+        5,
     )
     .await?;
 

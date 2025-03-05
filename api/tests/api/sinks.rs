@@ -18,6 +18,7 @@ fn new_sink_config() -> SinkConfig {
         project_id: "project-id".to_string(),
         dataset_id: "dataset-id".to_string(),
         service_account_key: "service-account-key".to_string(),
+        max_staleness_mins: None,
     }
 }
 
@@ -30,6 +31,7 @@ fn updated_sink_config() -> SinkConfig {
         project_id: "project-id-updated".to_string(),
         dataset_id: "dataset-id-updated".to_string(),
         service_account_key: "service-account-key-updated".to_string(),
+        max_staleness_mins: Some(10),
     }
 }
 

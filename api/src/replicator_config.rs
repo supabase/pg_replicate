@@ -56,6 +56,10 @@ pub enum SinkConfig {
 
         /// BigQuery dataset id
         dataset_id: String,
+
+        /// The max_staleness parameter for BigQuery: https://cloud.google.com/bigquery/docs/change-data-capture#create-max-staleness
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_staleness_mins: Option<u16>,
     },
 }
 
@@ -65,10 +69,12 @@ impl Debug for SinkConfig {
             Self::BigQuery {
                 project_id,
                 dataset_id,
+                max_staleness_mins,
             } => f
                 .debug_struct("BigQuery")
                 .field("project_id", project_id)
                 .field("dataset_id", dataset_id)
+                .field("max_staleness_mins", max_staleness_mins)
                 .finish(),
         }
     }
@@ -131,6 +137,7 @@ mod tests {
             sink: SinkConfig::BigQuery {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
+                max_staleness_mins: None,
             },
             batch: BatchConfig {
                 max_size: 1000,
@@ -155,6 +162,7 @@ mod tests {
             sink: SinkConfig::BigQuery {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
+                max_staleness_mins: None,
             },
             batch: BatchConfig {
                 max_size: 1000,

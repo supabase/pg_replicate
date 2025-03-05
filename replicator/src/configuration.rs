@@ -64,6 +64,10 @@ pub enum SinkSettings {
 
         /// BigQuery service account key
         service_account_key: String,
+
+        /// The max_staleness parameter for BigQuery: https://cloud.google.com/bigquery/docs/change-data-capture#create-max-staleness
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_staleness_mins: Option<u16>,
     },
 }
 
@@ -74,11 +78,13 @@ impl Debug for SinkSettings {
                 project_id,
                 dataset_id,
                 service_account_key: _,
+                max_staleness_mins,
             } => f
                 .debug_struct("BigQuery")
                 .field("project_id", project_id)
                 .field("dataset_id", dataset_id)
                 .field("service_account_key", &"REDACTED")
+                .field("max_staleness_mins", max_staleness_mins)
                 .finish(),
         }
     }
@@ -208,6 +214,7 @@ mod tests {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
                 service_account_key: "key".to_string(),
+                max_staleness_mins: None,
             },
             batch: BatchSettings {
                 max_size: 1000,
@@ -234,6 +241,7 @@ mod tests {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
                 service_account_key: "key".to_string(),
+                max_staleness_mins: None,
             },
             batch: BatchSettings {
                 max_size: 1000,

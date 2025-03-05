@@ -76,10 +76,16 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         project_id,
         dataset_id,
         service_account_key,
+        max_staleness_mins,
     } = settings.sink;
 
-    let bigquery_sink =
-        BigQueryBatchSink::new_with_key(project_id, dataset_id, &service_account_key).await?;
+    let bigquery_sink = BigQueryBatchSink::new_with_key(
+        project_id,
+        dataset_id,
+        &service_account_key,
+        max_staleness_mins.unwrap_or(5),
+    )
+    .await?;
 
     let BatchSettings {
         max_size,

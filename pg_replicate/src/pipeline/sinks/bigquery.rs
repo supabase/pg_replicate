@@ -41,6 +41,7 @@ pub struct BigQueryBatchSink {
     table_schemas: Option<HashMap<TableId, TableSchema>>,
     committed_lsn: Option<PgLsn>,
     final_lsn: Option<PgLsn>,
+    max_staleness_mins: u16,
 }
 
 impl BigQueryBatchSink {
@@ -48,6 +49,7 @@ impl BigQueryBatchSink {
         project_id: String,
         dataset_id: String,
         gcp_sa_key_path: &str,
+        max_staleness_mins: u16,
     ) -> Result<BigQueryBatchSink, BQError> {
         let client = BigQueryClient::new_with_key_path(project_id, gcp_sa_key_path).await?;
         Ok(BigQueryBatchSink {
@@ -56,6 +58,7 @@ impl BigQueryBatchSink {
             table_schemas: None,
             committed_lsn: None,
             final_lsn: None,
+            max_staleness_mins,
         })
     }
 
@@ -63,6 +66,7 @@ impl BigQueryBatchSink {
         project_id: String,
         dataset_id: String,
         gcp_sa_key: &str,
+        max_staleness_mins: u16,
     ) -> Result<BigQueryBatchSink, BQError> {
         let client = BigQueryClient::new_with_key(project_id, gcp_sa_key).await?;
         Ok(BigQueryBatchSink {
@@ -71,6 +75,7 @@ impl BigQueryBatchSink {
             table_schemas: None,
             committed_lsn: None,
             final_lsn: None,
+            max_staleness_mins,
         })
     }
 
@@ -105,6 +110,7 @@ impl BatchSink for BigQueryBatchSink {
                 &self.dataset_id,
                 "copied_tables",
                 &copied_table_column_schemas,
+                self.max_staleness_mins,
             )
             .await?;
 
@@ -126,7 +132,12 @@ impl BatchSink for BigQueryBatchSink {
         ];
         if self
             .client
-            .create_table_if_missing(&self.dataset_id, "last_lsn", &last_lsn_column_schemas)
+            .create_table_if_missing(
+                &self.dataset_id,
+                "last_lsn",
+                &last_lsn_column_schemas,
+                self.max_staleness_mins,
+            )
             .await?
         {
             self.client.insert_last_lsn_row(&self.dataset_id).await?;
@@ -154,6 +165,7 @@ impl BatchSink for BigQueryBatchSink {
                     &self.dataset_id,
                     &table_name,
                     &table_schema.column_schemas,
+                    self.max_staleness_mins,
                 )
                 .await?;
         }
