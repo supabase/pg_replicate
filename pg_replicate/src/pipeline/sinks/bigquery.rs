@@ -234,6 +234,12 @@ impl BatchSink for BigQueryBatchSink {
                         table_name_to_table_rows.entry(table_id).or_default();
                     table_rows.push(table_row);
                 }
+                CdcEvent::Origin(_) => {}
+                CdcEvent::Truncate(_) => {
+                    // BigQuery doesn't support TRUNCATE DML statement when using the storage write API.
+                    // If you try to truncate a table that has a streaming buffer, you will get the following error:
+                    // TRUNCATE DML statement over table <tablename> would affect rows in the streaming buffer, which is not supported
+                }
                 CdcEvent::Relation(_) => {}
                 CdcEvent::KeepAliveRequested { reply: _ } => {}
                 CdcEvent::Type(_) => {}

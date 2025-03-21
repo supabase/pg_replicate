@@ -122,6 +122,16 @@ impl DuckDbExecutor {
                             CdcEvent::Delete((table_id, table_row)) => {
                                 self.delete_row(table_id, table_row)
                             }
+                            CdcEvent::Origin(_) => Ok(()),
+                            CdcEvent::Truncate(truncate_body) => {
+                                let truncate_table_fn = || -> Result<(), DuckDbExecutorError> {
+                                    for table_id in truncate_body.rel_ids() {
+                                        self.truncate_table(*table_id)?;
+                                    }
+                                    Ok(())
+                                };
+                                truncate_table_fn()
+                            }
                             CdcEvent::Relation(_) => Ok(()),
                             CdcEvent::KeepAliveRequested { reply: _ } => Ok(()),
                             CdcEvent::Type(_) => Ok(()),
