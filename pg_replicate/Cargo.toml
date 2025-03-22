@@ -17,10 +17,6 @@ required-features = ["duckdb"]
 name = "stdout"
 required-features = ["stdout"]
 
-[[example]]
-name = "delta"
-required-features = ["delta"]
-
 [dependencies]
 async-trait = { workspace = true }
 bigdecimal = { workspace = true, features = ["std"] }
@@ -28,7 +24,6 @@ bytes = { workspace = true }
 byteorder = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 duckdb = { workspace = true, optional = true }
-deltalake = { workspace = true,features=["datafusion"],optional = true}
 futures = { workspace = true }
 gcp-bigquery-client = { workspace = true, optional = true, features = [
     "rust-tls",
@@ -66,7 +61,6 @@ tracing-subscriber = { workspace = true, default-features = true, features = [
 bigquery = ["dep:gcp-bigquery-client", "dep:prost"]
 duckdb = ["dep:duckdb"]
 stdout = []
-delta = ["dep:deltalake"]
 # When enabled converts unknown types to bytes
 unknown_types_to_bytes = []
 default = ["unknown_types_to_bytes"]

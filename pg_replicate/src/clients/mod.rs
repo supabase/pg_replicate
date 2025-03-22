@@ -3,5 +3,3 @@ pub mod bigquery;
 #[cfg(feature = "duckdb")]
 pub mod duckdb;
 pub mod postgres;
-#[cfg(feature = "delta")]
-pub mod delta;
