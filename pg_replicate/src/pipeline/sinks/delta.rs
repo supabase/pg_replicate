@@ -1,22 +1,17 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use async_trait::async_trait;
 use tokio_postgres::types::PgLsn;
 use tracing::info;
 
-use super::{BatchSink, SinkError};
 use crate::{
-    clients::delta::DeltaClient,
-    conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::PipelineResumptionState,
-    table::{TableId, TableSchema},
+    clients::delta::DeltaClient, conversions::{cdc_event::CdcEvent, table_row::TableRow}, pipeline::PipelineResumptionState, table::{TableId, TableSchema}
 };
-use deltalake::arrow::error::ArrowError;
 use deltalake::{arrow::datatypes::Schema, DeltaTableError};
+use super::{BatchSink, SinkError};
 use thiserror::Error;
+use deltalake::arrow::error::ArrowError;
+
 
 #[derive(Debug, Error)]
 pub enum DeltaSinkError {
@@ -36,7 +31,7 @@ pub enum DeltaSinkError {
     CommitWithoutBegin,
 }
 
-pub struct DeltaSink {
+pub struct DeltaSink{
     client: DeltaClient,
 }
 
@@ -68,6 +63,7 @@ impl BatchSink for DeltaSink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), Self::Error> {
+        
         let mut delta_schema: HashMap<String, Arc<Schema>> = HashMap::new();
 
         for (_, table_schema) in &table_schemas {
@@ -82,7 +78,7 @@ impl BatchSink for DeltaSink {
         }
         self.client.delta_schemas = Some(delta_schema);
         self.client.table_schemas = Some(table_schemas);
-
+        
         Ok(())
     }
 
@@ -93,8 +89,8 @@ impl BatchSink for DeltaSink {
     ) -> Result<(), Self::Error> {
         for row in rows {
             self.client
-                .write_to_table(row, table_id, String::from("I"))
-                .await?;
+            .write_to_table(row, table_id, String::from("I"))
+            .await?;
         }
         Ok(())
     }

@@ -135,7 +135,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let delta_sink = DeltaSink::new(delta_args.delta_path);
+    let  delta_sink = DeltaSink::new(delta_args.delta_path);
 
     let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
     let mut pipeline = BatchDataPipeline::new(postgres_source, delta_sink, action, batch_config);
