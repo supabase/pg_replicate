@@ -1,13 +1,10 @@
 use chrono::Timelike;
 use chrono::{NaiveDate, NaiveTime, Utc};
 use deltalake::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, TimeUnit};
-use deltalake::datafusion::execution::context::SessionContext;
-use deltalake::datafusion::prelude::col;
-use deltalake::open_table;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::{kernel::DataType, DeltaOps, DeltaTableError};
 use std::{collections::HashMap, sync::Arc};
-use tokio_postgres::types::{PgLsn, Type};
+use tokio_postgres::types::Type;
 
 use crate::{
     conversions::{table_row::TableRow, Cell},
@@ -36,7 +33,8 @@ impl DeltaClient {
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => {
                 DataType::STRING
             }
-            &Type::INT2 | &Type::INT4 | &Type::INT8 => DataType::INTEGER,
+            &Type::INT2 | &Type::INT4 => DataType::INTEGER,
+            &Type::INT8 => DataType::SHORT,
             &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => DataType::FLOAT,
             &Type::DATE => DataType::DATE,
             &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => DataType::TIMESTAMP,
@@ -53,8 +51,9 @@ impl DeltaClient {
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => {
                 ArrowDataType::Utf8
             }
-            &Type::INT2 | &Type::INT4 | &Type::INT8 => ArrowDataType::Int32,
-            &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => ArrowDataType::Float32,
+            &Type::INT2 | &Type::INT4 => ArrowDataType::Int32,
+            &Type::INT8 => ArrowDataType::Int8,
+            &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => ArrowDataType::Float64,
             &Type::DATE => ArrowDataType::Date32,
             &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => {
                 ArrowDataType::Timestamp(TimeUnit::Microsecond, None)
@@ -66,82 +65,7 @@ impl DeltaClient {
         }
     }
 
-    pub async fn delta_table_exists(&self, table_name: &str) -> bool {
-        let uri = self.delta_full_path(table_name);
-        open_table(uri).await.is_ok()
-    }
-
-    pub async fn set_last_lsn(&self, lsn: PgLsn) -> Result<(), DeltaTableError> {
-        let uri = self.delta_full_path("last_lsn");
-
-        let lsn_value: u64 = lsn.into();
-
-        let ctx = SessionContext::new();
-
-        let id_array = Arc::new(Int32Array::from(vec![1])); // ID column
-        let lsn_array = Arc::new(Int32Array::from(vec![lsn_value as i32])); // LSN column
-        let operation: Arc<dyn Array> = Arc::new(StringArray::from(vec!["I"]));
-        let inserted_at: Arc<dyn Array> = Arc::new(TimestampMicrosecondArray::from(vec![
-            Utc::now().timestamp_micros(),
-        ]));
-
-        let schema = Self::get_lsn_schema().await?;
-        let batch =
-            DeltaRecordBatch::try_new(schema, vec![id_array, lsn_array, operation, inserted_at])?;
-        let source = ctx.read_batch(batch)?;
-
-        let table = open_table(uri).await?;
-        DeltaOps(table)
-            .merge(source, col("target.id").eq(col("source.id")))
-            .with_source_alias("source")
-            .with_target_alias("target")
-            .when_matched_update(|update| {
-                update.update("lsn", col("source.lsn")).update(
-                    "pg_replicate_inserted_time",
-                    col("source.pg_replicate_inserted_time"),
-                )
-            })?
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn get_last_lsn(&self) -> Result<PgLsn, DeltaTableError> {
-        let uri = self.delta_full_path("last_lsn");
-        let table = open_table(uri).await?;
-
-        let ctx = SessionContext::new();
-        ctx.register_table("last_lsn", Arc::new(table))?;
-
-        let batches = ctx.sql("SELECT lsn FROM last_lsn").await?.collect().await?;
-
-        if batches.is_empty() {
-            return Err(DeltaTableError::Generic(
-                "No data returned from the query".to_string(),
-            ));
-        }
-
-        let batch = &batches[0];
-        let column = batch.column(0);
-
-        let array = column
-            .as_any()
-            .downcast_ref::<Int32Array>()
-            .ok_or_else(|| {
-                DeltaTableError::Generic("Failed to downcast column to Int64Array".to_string())
-            })?;
-
-        if array.is_empty() {
-            return Err(DeltaTableError::Generic(
-                "No data in the 'lsn' column".to_string(),
-            ));
-        }
-        let lsn_value = array.value(0);
-
-        Ok((lsn_value as u64).into())
-    }
-
-    pub async fn create_table(
+    pub async fn create_table_schema(
         &mut self,
         table_name: &str,
         columns: &[ColumnSchema],
@@ -210,7 +134,12 @@ impl DeltaClient {
                 DeltaTableError::Generic("Delta schemas are not initialized".to_string())
             })?
             .get(table_name)
-            .ok_or_else(|| DeltaTableError::NoSchema)
+            .ok_or_else(|| {
+                DeltaTableError::Generic(format!(
+                    "Delta schema not found for table: {}",
+                    table_name
+                ))
+            })
     }
 
     fn naive_time_to_microseconds(&self, time: NaiveTime) -> i64 {
@@ -271,65 +200,6 @@ impl DeltaClient {
 
     fn delta_full_path(&self, table_name: &str) -> String {
         format!("{}/{}", self.path, table_name)
-    }
-
-    async fn get_lsn_schema() -> Result<Arc<Schema>, DeltaTableError> {
-        let last_lsn_column_schemas = [
-            ColumnSchema {
-                name: "id".to_string(),
-                typ: Type::INT8,
-                modifier: 0,
-                nullable: false,
-                primary: true,
-            },
-            ColumnSchema {
-                name: "lsn".to_string(),
-                typ: Type::INT8,
-                modifier: 0,
-                nullable: false,
-                primary: false,
-            },
-        ];
-
-        let mut delta_schema: Vec<Field> = vec![];
-
-        for column in last_lsn_column_schemas {
-            delta_schema.push(Field::new(
-                column.name.as_str(),
-                Self::postgres_to_arrow(&column.typ),
-                true,
-            ));
-        }
-
-        delta_schema.push(Field::new("OP", ArrowDataType::Utf8, true));
-        delta_schema.push(Field::new(
-            "pg_replicate_inserted_time",
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
-            true,
-        ));
-
-        Ok(Arc::new(Schema::new(delta_schema)))
-    }
-    pub async fn insert_last_lsn_row(&self) -> Result<(), DeltaTableError> {
-        let full_path = self.delta_full_path("last_lsn");
-        let delta_schema = Self::get_lsn_schema().await?;
-
-        let id: Arc<dyn Array> = Arc::new(Int32Array::from(vec![1]));
-        let last_lsn: Arc<dyn Array> = Arc::new(Int32Array::from(vec![0]));
-
-        let operation: Arc<dyn Array> = Arc::new(StringArray::from(vec!["I"]));
-        let inserted_at: Arc<dyn Array> = Arc::new(TimestampMicrosecondArray::from(vec![
-            Utc::now().timestamp_micros(),
-        ]));
-
-        let arrow_vect: Vec<Arc<dyn Array>> = vec![id, last_lsn, operation, inserted_at];
-
-        let batches = DeltaRecordBatch::try_new(delta_schema, arrow_vect)?;
-        let data: Vec<DeltaRecordBatch> = vec![batches];
-
-        DeltaOps::try_from_uri(full_path).await?.write(data).await?;
-
-        Ok(())
     }
 
     pub async fn write_to_table(
