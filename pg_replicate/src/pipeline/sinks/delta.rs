@@ -38,7 +38,7 @@ pub enum DeltaSinkError {
 
     #[error("incorrect commit lsn: {0}(expected: {0})")]
     IncorrectCommitLsn(PgLsn, PgLsn),
-
+    
     #[error("commit message without begin message")]
     CommitWithoutBegin,
 }
