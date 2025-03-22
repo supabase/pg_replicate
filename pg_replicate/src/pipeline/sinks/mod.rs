@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+#[cfg(feature = "delta")]
+use deltalake::DeltaTableError;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
@@ -26,6 +28,8 @@ pub trait SinkError: std::error::Error + Send + Sync + 'static {}
 #[error("unreachable")]
 pub enum InfallibleSinkError {}
 impl SinkError for InfallibleSinkError {}
+#[cfg(feature = "delta")]
+impl SinkError for DeltaTableError {}
 
 #[async_trait]
 pub trait BatchSink {

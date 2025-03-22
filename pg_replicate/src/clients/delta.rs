@@ -1,9 +1,8 @@
-use chrono::Timelike;
-use chrono::{NaiveDate, NaiveTime, Utc};
+use chrono::{NaiveDate, Utc};
 use deltalake::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, TimeUnit};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::{kernel::DataType, DeltaOps, DeltaTableError};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio_postgres::types::Type;
 
 use crate::{
@@ -21,6 +20,15 @@ pub struct DeltaClient {
     pub delta_schemas: Option<HashMap<String, Arc<Schema>>>,
 }
 
+impl Default for DeltaClient {
+    fn default() -> Self {
+        Self {
+            path: Default::default(),
+            table_schemas: Default::default(),
+            delta_schemas: Default::default(),
+        }
+    }
+}
 impl DeltaClient {
     fn naive_date_to_arrow(date: NaiveDate) -> i32 {
         let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
@@ -33,8 +41,7 @@ impl DeltaClient {
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => {
                 DataType::STRING
             }
-            &Type::INT2 | &Type::INT4 => DataType::INTEGER,
-            &Type::INT8 => DataType::SHORT,
+            &Type::INT2 | &Type::INT4 | &Type::INT8 => DataType::INTEGER,
             &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => DataType::FLOAT,
             &Type::DATE => DataType::DATE,
             &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => DataType::TIMESTAMP,
@@ -51,31 +58,31 @@ impl DeltaClient {
             &Type::CHAR | &Type::BPCHAR | &Type::VARCHAR | &Type::NAME | &Type::TEXT => {
                 ArrowDataType::Utf8
             }
-            &Type::INT2 | &Type::INT4 => ArrowDataType::Int32,
-            &Type::INT8 => ArrowDataType::Int8,
-            &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => ArrowDataType::Float64,
+            &Type::INT2 | &Type::INT4 | &Type::INT8 => ArrowDataType::Int32,
+            &Type::FLOAT4 | &Type::FLOAT8 | &Type::NUMERIC => ArrowDataType::Float16,
             &Type::DATE => ArrowDataType::Date32,
-            &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => {
-                ArrowDataType::Timestamp(TimeUnit::Microsecond, None)
-            }
+            &Type::TIME | &Type::TIMESTAMP | &Type::TIMESTAMPTZ => ArrowDataType::Utf8,
             &Type::UUID => ArrowDataType::Utf8,
-            &Type::OID => ArrowDataType::Int32,
-            &Type::BYTEA => ArrowDataType::Binary,
+            &Type::OID => ArrowDataType::Utf8,
             _ => ArrowDataType::Utf8,
         }
     }
 
     pub async fn create_table_schema(
         &mut self,
-        table_name: &str,
+        tb_name: String,
         columns: &[ColumnSchema],
     ) -> Result<Arc<Schema>, DeltaTableError> {
-        let full_path = self.delta_full_path(table_name);
+        let full_path = self.delta_full_path(tb_name.clone());
+
+        if Path::new(&full_path).join("_delta_log").exists() {
+            DeltaOps::try_from_uri(&full_path).await?.delete().await?;
+        }
 
         let mut table = DeltaOps::try_from_uri(&full_path)
             .await?
             .create()
-            .with_table_name(table_name);
+            .with_table_name(tb_name.clone());
 
         let arrow_schema = Self::generate_schema(columns, &mut table)?;
 
@@ -125,26 +132,19 @@ impl DeltaClient {
             })
     }
 
-    fn get_delta_schema(&self, table_name: &str) -> Result<&Arc<Schema>, DeltaTableError> {
+    fn get_delta_schema(&self, table_name: String) -> Result<&Arc<Schema>, DeltaTableError> {
         self.delta_schemas
             .as_ref()
             .ok_or_else(|| {
                 DeltaTableError::Generic("Delta schemas are not initialized".to_string())
             })?
-            .get(table_name)
+            .get(&table_name)
             .ok_or_else(|| {
                 DeltaTableError::Generic(format!(
                     "Delta schema not found for table: {}",
                     table_name
                 ))
             })
-    }
-
-    fn naive_time_to_microseconds(&self, time: NaiveTime) -> i64 {
-        (time.hour() as i64 * 3_600_000_000)
-            + (time.minute() as i64 * 60_000_000)
-            + (time.second() as i64 * 1_000_000)
-            + (time.nanosecond() as i64 / 1_000) // Convert nanoseconds to microseconds
     }
 
     fn cell_to_arrow(&self, typ: &Cell) -> Arc<dyn Array> {
@@ -176,16 +176,9 @@ impl DeltaClient {
             Cell::Date(value) => {
                 Arc::new(Date32Array::from(vec![Self::naive_date_to_arrow(*value)]))
             }
-            Cell::Time(value) => {
-                let final_time = self.naive_time_to_microseconds(value.clone());
-                Arc::new(TimestampMicrosecondArray::from(vec![final_time]))
-            }
-            Cell::TimeStamp(value) => Arc::new(TimestampMicrosecondArray::from(vec![value
-                .and_utc()
-                .timestamp_micros()])),
-            Cell::TimeStampTz(value) => Arc::new(TimestampMicrosecondArray::from(vec![
-                value.timestamp_micros()
-            ])),
+            Cell::Time(value) => Arc::new(StringArray::from(vec![value.to_string()])),
+            Cell::TimeStamp(value) => Arc::new(StringArray::from(vec![value.to_string()])),
+            Cell::TimeStampTz(value) => Arc::new(StringArray::from(vec![value.to_string()])),
             Cell::Array(_) => {
                 Arc::new(StringArray::from(vec![String::from("not implemented yet")]))
             }
@@ -196,7 +189,7 @@ impl DeltaClient {
         format!("{}_{}", table_name.schema, table_name.name)
     }
 
-    fn delta_full_path(&self, table_name: &str) -> String {
+    fn delta_full_path(&self, table_name: String) -> String {
         format!("{}/{}", self.path, table_name)
     }
 
@@ -204,17 +197,21 @@ impl DeltaClient {
         &mut self,
         row: TableRow,
         table_id: TableId,
-        op: &str,
+        op: String,
     ) -> Result<(), DeltaTableError> {
         let table_schema = self.get_table_schema(table_id)?;
         let table_name = Self::table_name_in_delta(&table_schema.table_name);
 
-        let full_path = self.delta_full_path(&table_name);
+        let full_path = self.delta_full_path(table_name.clone());
 
         let data = row.values;
 
-        let mut arrow_vect: Vec<Arc<dyn Array>> =
-            data.iter().map(|cell| self.cell_to_arrow(cell)).collect();
+        let mut arrow_vect: Vec<Arc<dyn Array>> = vec![];
+
+        data.iter().for_each(|cell| {
+            let arrow_array = self.cell_to_arrow(cell);
+            arrow_vect.push(arrow_array);
+        });
 
         let operation: Arc<dyn Array> = Arc::new(StringArray::from(vec![op]));
         arrow_vect.push(operation);
@@ -225,42 +222,13 @@ impl DeltaClient {
         arrow_vect.push(inserted_at);
 
         let mut data: Vec<DeltaRecordBatch> = Vec::new();
-        let delta_schema = self.get_delta_schema(&table_name)?;
+        let delta_schema = self.get_delta_schema(table_name)?;
 
         let batches = DeltaRecordBatch::try_new(delta_schema.clone(), arrow_vect)?;
 
         data.push(batches);
 
         DeltaOps::try_from_uri(full_path).await?.write(data).await?;
-
-        Ok(())
-    }
-
-    pub async fn write_to_table_batch(
-        &mut self,
-        rows_batch: HashMap<TableId, Vec<TableRow>>,
-    ) -> Result<(), DeltaTableError> {
-        for (table_id, data) in rows_batch {
-            let table_schema = self.get_table_schema(table_id)?;
-            let table_name = Self::table_name_in_delta(&table_schema.table_name);
-
-            let full_path = self.delta_full_path(&table_name);
-            let delta_schema = self.get_delta_schema(&table_name)?; // Move schema retrieval outside the loop
-
-            let data: Vec<DeltaRecordBatch> = data
-                .into_iter()
-                .map(|row| {
-                    let data = row.values;
-                    let arrow_vect: Vec<Arc<dyn Array>> =
-                        data.iter().map(|cell| self.cell_to_arrow(cell)).collect();
-
-                    // Return DeltaRecordBatch or propagate the error
-                    DeltaRecordBatch::try_new(delta_schema.clone(), arrow_vect)
-                })
-                .collect::<Result<_, _>>()?; // Collect into Vec and handle errors
-
-            DeltaOps::try_from_uri(full_path).await?.write(data).await?;
-        }
 
         Ok(())
     }
