@@ -4,7 +4,7 @@ use pg_escape::{quote_identifier, quote_literal};
 use postgres_replication::LogicalReplicationStream;
 use thiserror::Error;
 use tokio_postgres::{
-    config::ReplicationMode,
+    config::{ReplicationMode, SslMode},
     types::{Kind, PgLsn, Type},
     Client as PostgresClient, Config, CopyOutStream, NoTls, SimpleQueryMessage,
 };
@@ -63,6 +63,7 @@ impl ReplicationClient {
         database: &str,
         username: &str,
         password: Option<String>,
+        ssl_mode: SslMode,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres");
 
@@ -72,6 +73,7 @@ impl ReplicationClient {
             .port(port)
             .dbname(database)
             .user(username)
+            .ssl_mode(ssl_mode)
             .replication_mode(ReplicationMode::Logical);
 
         if let Some(password) = password {

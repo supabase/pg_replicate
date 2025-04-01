@@ -1,11 +1,14 @@
 use std::{error::Error, time::Duration};
 
 use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings};
-use pg_replicate::pipeline::{
-    batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-    sinks::bigquery::BigQueryBatchSink,
-    sources::postgres::{PostgresSource, TableNamesFrom},
-    PipelineAction,
+use pg_replicate::{
+    pipeline::{
+        batching::{data_pipeline::BatchDataPipeline, BatchConfig},
+        sinks::bigquery::BigQueryBatchSink,
+        sources::postgres::{PostgresSource, TableNamesFrom},
+        PipelineAction,
+    },
+    SslMode,
 };
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -68,6 +71,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         &username,
         password,
         Some(slot_name),
+        SslMode::Disable,
         TableNamesFrom::Publication(publication),
     )
     .await?;
