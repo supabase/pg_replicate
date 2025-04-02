@@ -32,7 +32,6 @@ gcp-bigquery-client = { workspace = true, optional = true, features = [
 pg_escape = { workspace = true }
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }
-postgres-native-tls = { workspace = true, features = ["runtime"] }
 postgres-replication = { workspace = true }
 prost = { workspace = true, optional = true }
 ring = { workspace = true }
