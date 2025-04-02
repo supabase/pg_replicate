@@ -29,14 +29,15 @@ gcp-bigquery-client = { workspace = true, optional = true, features = [
     "rust-tls",
     "aws-lc-rs",
 ] }
-native-tls = { workspace = true }
 pg_escape = { workspace = true }
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }
 postgres-native-tls = { workspace = true, features = ["runtime"] }
 postgres-replication = { workspace = true }
 prost = { workspace = true, optional = true }
+ring = { workspace = true }
 rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
+rustls-pemfile = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }
@@ -47,8 +48,10 @@ tokio-postgres = { workspace = true, features = [
     "with-uuid-1",
     "with-serde_json-1",
 ] }
+tokio-rustls = { workspace = true }
 tracing = { workspace = true, default-features = true }
 uuid = { workspace = true, features = ["v4"] }
+x509-certificate = { workspace = true }
 
 [dev-dependencies]
 clap = { workspace = true, default-features = true, features = [

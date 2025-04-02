@@ -99,11 +99,30 @@ pub struct BatchSettings {
     pub max_fill_secs: u64,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct TlsSettings {
+    /// trusted root certificates in PEM format
+    pub trusted_root_certs: String,
+
+    /// true when TLS is enabled
+    pub enabled: bool,
+}
+
+impl Debug for TlsSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TlsSettings")
+            .field("trusted_root_certs", &"OMITTED")
+            .field("enabled", &self.enabled)
+            .finish()
+    }
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Settings {
     pub source: SourceSettings,
     pub sink: SinkSettings,
     pub batch: BatchSettings,
+    pub tls: TlsSettings,
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
@@ -171,7 +190,10 @@ impl TryFrom<String> for Environment {
 
 #[cfg(test)]
 mod tests {
-    use crate::{configuration::Settings, BatchSettings, SinkSettings, SourceSettings};
+    use crate::{
+        configuration::{Settings, TlsSettings},
+        BatchSettings, SinkSettings, SourceSettings,
+    };
 
     #[test]
     pub fn deserialize_settings_test() {
@@ -197,6 +219,10 @@ mod tests {
             "batch": {
                 "max_size": 1000,
                 "max_fill_secs": 10
+            },
+            "tls": {
+                "trusted_root_certs": "",
+                "enabled": false
             }
         }"#;
         let actual = serde_json::from_str::<Settings>(settings);
@@ -219,6 +245,10 @@ mod tests {
             batch: BatchSettings {
                 max_size: 1000,
                 max_fill_secs: 10,
+            },
+            tls: TlsSettings {
+                trusted_root_certs: String::new(),
+                enabled: false,
             },
         };
         assert!(actual.is_ok());
@@ -247,8 +277,12 @@ mod tests {
                 max_size: 1000,
                 max_fill_secs: 10,
             },
+            tls: TlsSettings {
+                trusted_root_certs: String::new(),
+                enabled: false,
+            },
         };
-        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","password":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"key"}},"batch":{"max_size":1000,"max_fill_secs":10}}"#;
+        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","password":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"key"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false}}"#;
         let actual = serde_json::to_string(&actual);
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());

@@ -1,6 +1,6 @@
-use std::{error::Error, time::Duration};
+use std::{error::Error, io::BufReader, time::Duration, vec};
 
-use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings};
+use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings, TlsSettings};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
@@ -64,14 +64,32 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         publication,
     } = settings.source;
 
+    let TlsSettings {
+        trusted_root_certs,
+        enabled,
+    } = settings.tls;
+
+    let mut trusted_root_certs_vec = vec![];
+    let ssl_mode = if enabled {
+        let mut root_certs_reader = BufReader::new(trusted_root_certs.as_bytes());
+        for cert in rustls_pemfile::certs(&mut root_certs_reader) {
+            let cert = cert?;
+            trusted_root_certs_vec.push(cert);
+        }
+
+        SslMode::VerifyFull
+    } else {
+        SslMode::Disable
+    };
+
     let postgres_source = PostgresSource::new(
         &host,
         port,
         &name,
         &username,
         password,
-        SslMode::Disable,
-        None,
+        ssl_mode,
+        trusted_root_certs_vec,
         Some(slot_name),
         TableNamesFrom::Publication(publication),
     )

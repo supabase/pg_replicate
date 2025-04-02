@@ -125,7 +125,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
                 &db_args.db_username,
                 db_args.db_password,
                 SslMode::Disable,
-                None,
+                vec![],
                 None,
                 TableNamesFrom::Vec(table_names),
             )
@@ -143,7 +143,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
                 &db_args.db_username,
                 db_args.db_password,
                 SslMode::Disable,
-                None,
+                vec![],
                 Some(slot_name),
                 TableNamesFrom::Publication(publication),
             )

@@ -7,9 +7,9 @@ use std::{
 
 use async_trait::async_trait;
 use futures::{ready, Stream};
-use native_tls::Certificate;
 use pin_project_lite::pin_project;
 use postgres_replication::LogicalReplicationStream;
+use rustls::pki_types::CertificateDer;
 use thiserror::Error;
 use tokio_postgres::{config::SslMode, types::PgLsn, CopyOutStream};
 use tracing::info;
@@ -60,7 +60,7 @@ impl PostgresSource {
         username: &str,
         password: Option<String>,
         ssl_mode: SslMode,
-        trusted_root_cert: Option<Certificate>,
+        trusted_root_certs: Vec<CertificateDer<'static>>,
         slot_name: Option<String>,
         table_names_from: TableNamesFrom,
     ) -> Result<PostgresSource, PostgresSourceError> {
@@ -74,7 +74,7 @@ impl PostgresSource {
                 username,
                 password,
                 ssl_mode,
-                trusted_root_cert,
+                trusted_root_certs,
             )
             .await?
         };
