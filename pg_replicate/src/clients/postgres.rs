@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
+use native_tls::{Certificate, TlsConnector};
 use pg_escape::{quote_identifier, quote_literal};
+use postgres_native_tls::MakeTlsConnector;
 use postgres_replication::LogicalReplicationStream;
 use thiserror::Error;
 use tokio_postgres::{
@@ -63,9 +65,49 @@ impl ReplicationClient {
         database: &str,
         username: &str,
         password: Option<String>,
-        ssl_mode: SslMode,
     ) -> Result<ReplicationClient, ReplicationClientError> {
-        info!("connecting to postgres");
+        info!("connecting to postgres without TLS");
+
+        let mut config = Config::new();
+        config
+            .host(host)
+            .port(port)
+            .dbname(database)
+            .user(username)
+            .replication_mode(ReplicationMode::Logical);
+
+        if let Some(password) = password {
+            config.password(password);
+        }
+
+        let (postgres_client, connection) = config.connect(NoTls).await?;
+
+        tokio::spawn(async move {
+            info!("waiting for connection to terminate");
+            if let Err(e) = connection.await {
+                warn!("connection error: {}", e);
+            }
+        });
+
+        info!("successfully connected to postgres");
+
+        Ok(ReplicationClient {
+            postgres_client,
+            in_txn: false,
+        })
+    }
+
+    /// Connect to a postgres database in logical replication mode without TLS
+    pub async fn connect_tls(
+        host: &str,
+        port: u16,
+        database: &str,
+        username: &str,
+        password: Option<String>,
+        ssl_mode: SslMode,
+        trusted_root_cert: Option<Certificate>,
+    ) -> Result<ReplicationClient, ReplicationClientError> {
+        info!("connecting to postgres with TLS");
 
         let mut config = Config::new();
         config
@@ -80,7 +122,14 @@ impl ReplicationClient {
             config.password(password);
         }
 
-        let (postgres_client, connection) = config.connect(NoTls).await?;
+        let mut connector = TlsConnector::builder();
+        if let Some(trusted_root_cert) = trusted_root_cert {
+            connector.add_root_certificate(trusted_root_cert);
+        }
+        let connector = connector.build().unwrap();
+        let connector = MakeTlsConnector::new(connector);
+
+        let (postgres_client, connection) = config.connect(connector).await?;
 
         tokio::spawn(async move {
             info!("waiting for connection to terminate");

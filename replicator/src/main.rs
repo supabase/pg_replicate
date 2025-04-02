@@ -70,8 +70,9 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         &name,
         &username,
         password,
-        Some(slot_name),
         SslMode::Disable,
+        None,
+        Some(slot_name),
         TableNamesFrom::Publication(publication),
     )
     .await?;

@@ -29,9 +29,11 @@ gcp-bigquery-client = { workspace = true, optional = true, features = [
     "rust-tls",
     "aws-lc-rs",
 ] }
+native-tls = { workspace = true }
 pg_escape = { workspace = true }
 pin-project-lite = { workspace = true }
 postgres-protocol = { workspace = true }
+postgres-native-tls = { workspace = true, features = ["runtime"] }
 postgres-replication = { workspace = true }
 prost = { workspace = true, optional = true }
 rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
@@ -45,7 +47,6 @@ tokio-postgres = { workspace = true, features = [
     "with-uuid-1",
     "with-serde_json-1",
 ] }
-# tokio-postgres-rustls = { workspace = true }
 tracing = { workspace = true, default-features = true }
 uuid = { workspace = true, features = ["v4"] }
 
