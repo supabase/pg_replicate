@@ -102,7 +102,7 @@ impl ReplicationClient {
         })
     }
 
-    /// Connect to a postgres database in logical replication mode without TLS
+    /// Connect to a postgres database in logical replication mode with TLS
     pub async fn connect_tls(
         host: &str,
         port: u16,
