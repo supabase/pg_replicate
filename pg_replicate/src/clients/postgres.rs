@@ -9,12 +9,10 @@ use tokio_postgres::{
     types::{Kind, PgLsn, Type},
     Client as PostgresClient, Config, CopyOutStream, NoTls, SimpleQueryMessage,
 };
+use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{info, warn};
 
-use crate::{
-    table::{ColumnSchema, TableId, TableName, TableSchema},
-    tls::MakeRustlsConnect,
-};
+use crate::table::{ColumnSchema, TableId, TableName, TableSchema};
 
 pub struct SlotInfo {
     pub confirmed_flush_lsn: PgLsn,
