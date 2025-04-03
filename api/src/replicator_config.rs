@@ -90,15 +90,25 @@ pub struct BatchConfig {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct TlsConfig {
+    /// trusted root certificates in PEM format
+    pub trusted_root_certs: String,
+
+    /// true when TLS is enabled
+    pub enabled: bool,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Config {
     pub source: SourceConfig,
     pub sink: SinkConfig,
     pub batch: BatchConfig,
+    pub tls: TlsConfig,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::replicator_config::{BatchConfig, Config, SinkConfig, SourceConfig};
+    use crate::replicator_config::{BatchConfig, Config, SinkConfig, SourceConfig, TlsConfig};
 
     #[test]
     pub fn deserialize_settings_test() {
@@ -122,6 +132,10 @@ mod tests {
             "batch": {
                 "max_size": 1000,
                 "max_fill_secs": 10
+            },
+            "tls": {
+                "trusted_root_certs": "",
+                "enabled": false
             }
         }"#;
         let actual = serde_json::from_str::<Config>(settings);
@@ -142,6 +156,10 @@ mod tests {
             batch: BatchConfig {
                 max_size: 1000,
                 max_fill_secs: 10,
+            },
+            tls: TlsConfig {
+                trusted_root_certs: "".to_string(),
+                enabled: false,
             },
         };
         assert!(actual.is_ok());
@@ -168,8 +186,12 @@ mod tests {
                 max_size: 1000,
                 max_fill_secs: 10,
             },
+            tls: TlsConfig {
+                trusted_root_certs: "".to_string(),
+                enabled: false,
+            },
         };
-        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id"}},"batch":{"max_size":1000,"max_fill_secs":10}}"#;
+        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false}}"#;
         let actual = serde_json::to_string(&actual);
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());

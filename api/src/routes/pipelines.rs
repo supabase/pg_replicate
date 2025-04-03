@@ -22,7 +22,7 @@ use crate::{
         sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
-    k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase},
+    k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase, TRUSTED_ROOT_CERT_CONFIG_MAP_NAME},
     replicator_config,
     routes::extract_tenant_id,
 };
@@ -72,6 +72,9 @@ enum PipelineError {
 
     #[error("sinks db error: {0}")]
     SinksDb(#[from] SinksDbError),
+
+    #[error("trusted root certs config not found")]
+    TrustedRootCertsConfigMissing,
 }
 
 impl PipelineError {
@@ -95,7 +98,8 @@ impl ResponseError for PipelineError {
             | PipelineError::NoDefaultImageFound
             | PipelineError::SourcesDb(_)
             | PipelineError::SinksDb(_)
-            | PipelineError::K8sError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | PipelineError::K8sError(_)
+            | PipelineError::TrustedRootCertsConfigMissing => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantId(_)
             | PipelineError::SourceNotFound(_)
@@ -362,7 +366,8 @@ pub async fn start_pipeline(
     let (pipeline, replicator, image, source, sink) =
         read_data(&pool, tenant_id, pipeline_id, &encryption_key).await?;
 
-    let (secrets, config) = create_configs(source.config, sink.config, pipeline)?;
+    let (secrets, config) =
+        create_configs(&k8s_client, source.config, sink.config, pipeline).await?;
     let prefix = create_prefix(tenant_id, replicator.id);
 
     create_or_update_secrets(&k8s_client, &prefix, secrets).await?;
@@ -497,7 +502,8 @@ async fn read_data(
     Ok((pipeline, replicator, image, source, sink))
 }
 
-fn create_configs(
+async fn create_configs(
+    k8s_client: &Arc<HttpK8sClient>,
     source_config: SourceConfig,
     sink_config: SinkConfig,
     pipeline: Pipeline,
@@ -546,10 +552,26 @@ fn create_configs(
         max_fill_secs: batch_config.max_fill_secs,
     };
 
+    let trusted_root_certs_cm = k8s_client
+        .get_config_map(TRUSTED_ROOT_CERT_CONFIG_MAP_NAME)
+        .await?;
+    let data = trusted_root_certs_cm
+        .data
+        .ok_or(PipelineError::TrustedRootCertsConfigMissing)?;
+    let trusted_root_certs = data
+        .get("trusted_root_certs")
+        .ok_or(PipelineError::TrustedRootCertsConfigMissing)?;
+
+    let tls_config = replicator_config::TlsConfig {
+        trusted_root_certs: trusted_root_certs.clone(),
+        enabled: true,
+    };
+
     let config = replicator_config::Config {
         source: source_config,
         sink: sink_config,
         batch: batch_config,
+        tls: tls_config,
     };
 
     Ok((secrets, config))
