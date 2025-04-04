@@ -60,6 +60,8 @@ pub trait K8sClient {
 
     async fn delete_bq_secret(&self, prefix: &str) -> Result<(), K8sError>;
 
+    async fn get_config_map(&self, config_map_name: &str) -> Result<ConfigMap, K8sError>;
+
     async fn create_or_update_config_map(
         &self,
         prefix: &str,
@@ -95,6 +97,7 @@ const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
 const STATEFUL_SET_NAME_SUFFIX: &str = "replicator";
 const CONTAINER_NAME_SUFFIX: &str = "replicator";
 const NAMESPACE_NAME: &str = "replicator-data-plane";
+pub const TRUSTED_ROOT_CERT_CONFIG_MAP_NAME: &str = "trusted-root-certs-config";
 
 impl HttpK8sClient {
     pub async fn new() -> Result<HttpK8sClient, K8sError> {
@@ -216,6 +219,18 @@ impl K8sClient for HttpK8sClient {
         }
         info!("deleted bq secret");
         Ok(())
+    }
+
+    async fn get_config_map(&self, config_map_name: &str) -> Result<ConfigMap, K8sError> {
+        info!("getting config map");
+        let config_map = match self.config_maps_api.get(config_map_name).await {
+            Ok(config_map) => config_map,
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
+        info!("got config map");
+        Ok(config_map)
     }
 
     async fn create_or_update_config_map(

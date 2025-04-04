@@ -32,6 +32,7 @@ prost = { version = "0.13.1", default-features = false }
 rand = { version = "0.8.5", default-features = false }
 reqwest = { version = "0.12", default-features = false }
 rustls = { version = "0.23.12", default-features = false }
+rustls-pemfile = { version = "2.2.0", default-features = false }
 rustyline = { version = "14.0.0", default-features = false }
 secrecy = { version = "0.8.0", default-features = false }
 serde = { version = "1.0", default-features = false }
@@ -40,6 +41,7 @@ sqlx = { version = "0.8.2", default-features = false }
 thiserror = "1.0"
 tokio = { version = "1.38", default-features = false }
 tokio-postgres = { git = "https://github.com/imor/rust-postgres", default-features = false, rev = "20265ef38e32a06f76b6f9b678e2077fc2211f6b" }
+tokio-postgres-rustls = { git = "https://github.com/imor/tokio-postgres-rustls", default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-actix-web = { version = "0.7", default-features = false }
 tracing-bunyan-formatter = { version = "0.3", default-features = false }

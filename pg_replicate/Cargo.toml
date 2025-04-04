@@ -45,6 +45,7 @@ tokio-postgres = { workspace = true, features = [
     "with-uuid-1",
     "with-serde_json-1",
 ] }
+tokio-postgres-rustls = { workspace = true }
 tracing = { workspace = true, default-features = true }
 uuid = { workspace = true, features = ["v4"] }
 

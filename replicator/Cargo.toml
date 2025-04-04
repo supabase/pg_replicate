@@ -10,6 +10,7 @@ rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
+rustls-pemfile = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tracing = { workspace = true, default-features = true }
 tracing-subscriber = { workspace = true, default-features = true, features = [

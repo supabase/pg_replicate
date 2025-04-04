@@ -9,6 +9,7 @@ use pg_replicate::{
         PipelineAction,
     },
     table::TableName,
+    SslMode,
 };
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -123,6 +124,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
                 &db_args.db_name,
                 &db_args.db_username,
                 db_args.db_password,
+                SslMode::Disable,
+                vec![],
                 None,
                 TableNamesFrom::Vec(table_names),
             )
@@ -139,6 +142,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
                 &db_args.db_name,
                 &db_args.db_username,
                 db_args.db_password,
+                SslMode::Disable,
+                vec![],
                 Some(slot_name),
                 TableNamesFrom::Publication(publication),
             )

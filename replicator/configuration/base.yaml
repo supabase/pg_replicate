@@ -1,3 +1,6 @@
 batch:
   max_size: 1000
   max_fill_secs: 10
+tls:
+  trusted_root_certs: ""
+  enabled: false

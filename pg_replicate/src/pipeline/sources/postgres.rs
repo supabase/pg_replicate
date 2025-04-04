@@ -9,8 +9,9 @@ use async_trait::async_trait;
 use futures::{ready, Stream};
 use pin_project_lite::pin_project;
 use postgres_replication::LogicalReplicationStream;
+use rustls::pki_types::CertificateDer;
 use thiserror::Error;
-use tokio_postgres::{types::PgLsn, CopyOutStream};
+use tokio_postgres::{config::SslMode, types::PgLsn, CopyOutStream};
 use tracing::info;
 
 use crate::{
@@ -51,17 +52,32 @@ pub struct PostgresSource {
 }
 
 impl PostgresSource {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         host: &str,
         port: u16,
         database: &str,
         username: &str,
         password: Option<String>,
+        ssl_mode: SslMode,
+        trusted_root_certs: Vec<CertificateDer<'static>>,
         slot_name: Option<String>,
         table_names_from: TableNamesFrom,
     ) -> Result<PostgresSource, PostgresSourceError> {
-        let mut replication_client =
-            ReplicationClient::connect_no_tls(host, port, database, username, password).await?;
+        let mut replication_client = if ssl_mode == SslMode::Disable {
+            ReplicationClient::connect_no_tls(host, port, database, username, password).await?
+        } else {
+            ReplicationClient::connect_tls(
+                host,
+                port,
+                database,
+                username,
+                password,
+                ssl_mode,
+                trusted_root_certs,
+            )
+            .await?
+        };
         replication_client.begin_readonly_transaction().await?;
         if let Some(ref slot_name) = slot_name {
             replication_client.get_or_create_slot(slot_name).await?;
