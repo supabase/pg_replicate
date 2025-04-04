@@ -54,6 +54,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
 
     info!("settings: {settings:#?}");
 
+    settings.tls.validate()?;
+
     let SourceSettings::Postgres {
         host,
         port,

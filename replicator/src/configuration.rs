@@ -117,6 +117,18 @@ impl Debug for TlsSettings {
     }
 }
 
+impl TlsSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.enabled && self.trusted_root_certs.is_empty() {
+            return Err(
+                "Invalid TLS settings: `trusted_root_certs` must be set when `enabled` is true"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Settings {
     pub source: SourceSettings,
