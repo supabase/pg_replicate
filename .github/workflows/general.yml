@@ -6,6 +6,9 @@ on: [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   fmt:
     name: Rustfmt
@@ -33,6 +36,9 @@ jobs:
   coverage:
     name: Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     services:
       postgres:
         image: postgres:15
