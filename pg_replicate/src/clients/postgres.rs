@@ -557,7 +557,7 @@ impl ReplicationClient {
     ) -> Result<LogicalReplicationStream, ReplicationClientError> {
         let options = format!(
             r#"("proto_version" '1', "publication_names" {})"#,
-            quote_literal(publication),
+            quote_literal(quote_identifier(publication).as_ref()),
         );
 
         let query = format!(
