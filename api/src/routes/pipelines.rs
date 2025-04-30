@@ -186,7 +186,7 @@ pub async fn create_pipeline(
         pipeline.source_id,
         pipeline.sink_id,
         image.id,
-        pipeline.publication_name,
+        &pipeline.publication_name,
         &config,
     )
     .await?;

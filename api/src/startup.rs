@@ -31,6 +31,9 @@ use crate::{
             create_sink, delete_sink, read_all_sinks, read_sink, update_sink, GetSinkResponse,
             PostSinkRequest, PostSinkResponse,
         },
+        sinks_pipelines::{
+            create_sinks_and_pipelines, CreateSinkPipelineRequest, PostSinkPipelineResponse,
+        },
         sources::{
             create_source, delete_source,
             publications::{
@@ -181,6 +184,7 @@ pub async fn run(
             crate::routes::sinks::delete_sink,
             crate::routes::sinks::read_all_sinks,
             crate::routes::tenants_sources::create_tenant_and_source,
+            crate::routes::sinks_pipelines::create_sinks_and_pipelines,
         ),
         components(schemas(
             PostImageRequest,
@@ -203,6 +207,8 @@ pub async fn run(
             GetSinkResponse,
             CreateTenantSourceRequest,
             PostTenantSourceResponse,
+            CreateSinkPipelineRequest,
+            PostSinkPipelineResponse,
         ))
     )]
     struct ApiDoc;
@@ -266,7 +272,9 @@ pub async fn run(
                     .service(delete_image)
                     .service(read_all_images)
                     //tenants_sources
-                    .service(create_tenant_and_source),
+                    .service(create_tenant_and_source)
+                    // sinks-pipelines
+                    .service(create_sinks_and_pipelines),
             )
             .app_data(connection_pool.clone())
             .app_data(encryption_key.clone())

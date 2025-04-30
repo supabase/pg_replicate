@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-fn new_pipeline_config() -> PipelineConfig {
+pub fn new_pipeline_config() -> PipelineConfig {
     PipelineConfig {
         config: BatchConfig {
             max_size: 1000,

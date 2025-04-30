@@ -1,6 +1,7 @@
 use aws_lc_rs::{aead::Nonce, error::Unspecified};
 use base64::{prelude::BASE64_STANDARD, DecodeError, Engine};
-use sqlx::PgPool;
+use serde_json::Value;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::{
     fmt::{Debug, Formatter},
     str::{from_utf8, Utf8Error},
@@ -29,7 +30,10 @@ pub enum SinkConfig {
 }
 
 impl SinkConfig {
-    fn into_db_config(self, encryption_key: &EncryptionKey) -> Result<SinkConfigInDb, Unspecified> {
+    pub fn into_db_config(
+        self,
+        encryption_key: &EncryptionKey,
+    ) -> Result<SinkConfigInDb, Unspecified> {
         let SinkConfig::BigQuery {
             project_id,
             dataset_id,
@@ -166,6 +170,18 @@ pub async fn create_sink(
 ) -> Result<i64, SinksDbError> {
     let db_config = config.into_db_config(encryption_key)?;
     let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
+    let mut txn = pool.begin().await?;
+    let res = create_sink_txn(&mut txn, tenant_id, name, db_config).await;
+    txn.commit().await?;
+    res
+}
+
+pub async fn create_sink_txn(
+    txn: &mut Transaction<'_, Postgres>,
+    tenant_id: &str,
+    name: &str,
+    sink_config: Value,
+) -> Result<i64, SinksDbError> {
     let record = sqlx::query!(
         r#"
         insert into app.sinks (tenant_id, name, config)
@@ -174,9 +190,9 @@ pub async fn create_sink(
         "#,
         tenant_id,
         name,
-        db_config
+        sink_config
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **txn)
     .await?;
 
     Ok(record.id)

@@ -1,4 +1,5 @@
-use sqlx::PgPool;
+use serde_json::Value;
+use sqlx::{PgPool, Postgres, Transaction};
 
 use super::replicators::create_replicator_txn;
 
@@ -34,12 +35,35 @@ pub async fn create_pipeline(
     source_id: i64,
     sink_id: i64,
     image_id: i64,
-    publication_name: String,
+    publication_name: &str,
     config: &PipelineConfig,
 ) -> Result<i64, sqlx::Error> {
     let config = serde_json::to_value(config).expect("failed to serialize config");
     let mut txn = pool.begin().await?;
-    let replicator_id = create_replicator_txn(&mut txn, tenant_id, image_id).await?;
+    let res = create_pipeline_txn(
+        &mut txn,
+        tenant_id,
+        source_id,
+        sink_id,
+        image_id,
+        publication_name,
+        config,
+    )
+    .await;
+    txn.commit().await?;
+    res
+}
+
+pub async fn create_pipeline_txn(
+    txn: &mut Transaction<'_, Postgres>,
+    tenant_id: &str,
+    source_id: i64,
+    sink_id: i64,
+    image_id: i64,
+    publication_name: &str,
+    pipeline_config: Value,
+) -> Result<i64, sqlx::Error> {
+    let replicator_id = create_replicator_txn(txn, tenant_id, image_id).await?;
     let record = sqlx::query!(
         r#"
         insert into app.pipelines (tenant_id, source_id, sink_id, replicator_id, publication_name, config)
@@ -51,11 +75,10 @@ pub async fn create_pipeline(
         sink_id,
         replicator_id,
         publication_name,
-        config
+        pipeline_config
     )
-    .fetch_one(&mut *txn)
+    .fetch_one(&mut **txn)
     .await?;
-    txn.commit().await?;
 
     Ok(record.id)
 }
