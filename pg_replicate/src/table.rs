@@ -82,7 +82,7 @@ mod tests {
             schema: "public".to_string(),
             name: "users".to_string(),
         };
-        
+
         let column = ColumnSchema {
             name: "id".to_string(),
             typ: Type::INT4,
@@ -90,13 +90,13 @@ mod tests {
             nullable: false,
             identity: true,
         };
-        
+
         let table_schema = TableSchema {
             table_name,
             table_id: 12345,
             column_schemas: vec![column],
         };
-        
+
         assert_eq!(table_schema.table_id, 12345);
         assert_eq!(table_schema.table_name.schema, "public");
         assert_eq!(table_schema.table_name.name, "users");

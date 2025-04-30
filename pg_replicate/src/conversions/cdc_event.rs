@@ -249,3 +249,121 @@ impl BatchBoundary for CdcEvent {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pipeline::batching::BatchBoundary;
+    use bytes::Bytes;
+
+    #[test]
+    fn test_cdc_event_is_last_in_batch() {
+        // For testing we'll skip BeginBody, CommitBody and RelationBody and only
+        // test TableRow-based events plus KeepAliveRequested
+
+        // Test that KeepAliveRequested is marked as last in batch
+        let keep_alive_event = CdcEvent::KeepAliveRequested { reply: true };
+        assert!(keep_alive_event.is_last_in_batch());
+
+        // Test that other events are not last in batch
+        let dummy_table_row = TableRow { values: vec![] };
+
+        let insert_event = CdcEvent::Insert((123, TableRow { values: vec![] }));
+        assert!(!insert_event.is_last_in_batch());
+
+        let update_event = CdcEvent::Update((123, TableRow { values: vec![] }));
+        assert!(!update_event.is_last_in_batch());
+
+        let delete_event = CdcEvent::Delete((123, dummy_table_row));
+        assert!(!delete_event.is_last_in_batch());
+    }
+
+    #[test]
+    fn test_cell_conversion_from_tuple_data() {
+        // Test null conversion
+        let null_result = CdcEventConverter::from_tuple_data(&Type::BOOL, &TupleData::Null);
+        assert!(matches!(null_result, Ok(Cell::Null)));
+
+        // Test unchanged toast error
+        let toast_result =
+            CdcEventConverter::from_tuple_data(&Type::BOOL, &TupleData::UnchangedToast);
+        assert!(matches!(
+            toast_result,
+            Err(CdcEventConversionError::UnchangedToastNotSupported)
+        ));
+
+        // Test string conversion - since most types are handled similarly in the from_tuple_data method
+        let string_bytes = Bytes::from("test_string");
+        let string_result =
+            CdcEventConverter::from_tuple_data(&Type::TEXT, &TupleData::Text(string_bytes));
+        assert!(matches!(string_result, Ok(Cell::String(s)) if s == "test_string"));
+
+        // Test i16 conversion
+        let i16_bytes = Bytes::from("42");
+        let i16_result =
+            CdcEventConverter::from_tuple_data(&Type::INT2, &TupleData::Text(i16_bytes));
+        assert!(matches!(i16_result, Ok(Cell::I16(42))));
+
+        // Test i32 conversion
+        let i32_bytes = Bytes::from("12345");
+        let i32_result =
+            CdcEventConverter::from_tuple_data(&Type::INT4, &TupleData::Text(i32_bytes));
+        assert!(matches!(i32_result, Ok(Cell::I32(12345))));
+
+        // Test i64 conversion
+        let i64_bytes = Bytes::from("9876543210");
+        let i64_result =
+            CdcEventConverter::from_tuple_data(&Type::INT8, &TupleData::Text(i64_bytes));
+        assert!(matches!(i64_result, Ok(Cell::I64(9876543210))));
+    }
+
+    #[test]
+    fn test_from_tuple_data_slice() {
+        // Create column schemas
+        let column_schemas = vec![
+            ColumnSchema {
+                name: "id".to_string(),
+                typ: Type::INT4,
+                modifier: 0,
+                nullable: false,
+                identity: true,
+            },
+            ColumnSchema {
+                name: "name".to_string(),
+                typ: Type::TEXT,
+                modifier: 0,
+                nullable: true,
+                identity: false,
+            },
+            ColumnSchema {
+                name: "active".to_string(),
+                typ: Type::BOOL,
+                modifier: 0,
+                nullable: true,
+                identity: false,
+            },
+        ];
+
+        // Create tuple data
+        let tuple_data = vec![
+            TupleData::Text(Bytes::from("123")),
+            TupleData::Text(Bytes::from("test_name")),
+            TupleData::Null,
+        ];
+
+        // Test conversion
+        let result = CdcEventConverter::from_tuple_data_slice(&column_schemas, &tuple_data);
+
+        // Assert the result
+        assert!(result.is_ok());
+
+        // Check the contents of the TableRow
+        let table_row = result.unwrap();
+        assert_eq!(table_row.values.len(), 3);
+
+        // Check each value
+        assert!(matches!(table_row.values[0], Cell::I32(123)));
+        assert!(matches!(table_row.values[1], Cell::String(ref s) if s == "test_name"));
+        assert!(matches!(table_row.values[2], Cell::Null));
+    }
+}

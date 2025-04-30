@@ -240,47 +240,49 @@ mod tests {
             Cell::TimeStamp("2021-01-01 12:00:00.000000".to_string()),
             Cell::Bytes(vec![1, 2, 3]),
         ];
-        
-        let row = TableRow { values: values.clone() };
-        
+
+        let row = TableRow {
+            values: values.clone(),
+        };
+
         // Check that all values were stored correctly
         assert_eq!(row.values.len(), values.len());
-        
+
         match &row.values[0] {
             Cell::Null => (),
             _ => panic!("Expected Null"),
         }
-        
+
         match &row.values[1] {
             Cell::Bool(val) => assert_eq!(*val, true),
             _ => panic!("Expected Bool"),
         }
-        
+
         match &row.values[2] {
             Cell::String(val) => assert_eq!(val, "test"),
             _ => panic!("Expected String"),
         }
-        
+
         match &row.values[3] {
             Cell::I16(val) => assert_eq!(*val, 123),
             _ => panic!("Expected I16"),
         }
-        
+
         match &row.values[4] {
             Cell::I32(val) => assert_eq!(*val, 123456),
             _ => panic!("Expected I32"),
         }
-        
+
         match &row.values[5] {
             Cell::I64(val) => assert_eq!(*val, 123456789),
             _ => panic!("Expected I64"),
         }
-        
+
         match &row.values[6] {
             Cell::TimeStamp(val) => assert_eq!(val, "2021-01-01 12:00:00.000000"),
             _ => panic!("Expected TimeStamp"),
         }
-        
+
         match &row.values[7] {
             Cell::Bytes(val) => assert_eq!(val, &vec![1, 2, 3]),
             _ => panic!("Expected Bytes"),
