@@ -95,7 +95,7 @@ impl Application {
     pub async fn delete_all_test_databases(config: Settings) -> Result<(), anyhow::Error> {
         let mut connection = PgConnection::connect_with(&config.database.without_db()).await?;
         let databases = connection
-        .fetch_all(&*r#"select datname from pg_database where datname not in ('postgres', 'template0', 'template1');"#.to_string())
+        .fetch_all(&*r#"select datname from pg_catalog.pg_database where datname not in ('postgres', 'template0', 'template1');"#.to_string())
         .await?;
         for database in databases {
             let database_name: String = database.get("datname");
