@@ -1,5 +1,5 @@
-use api::configuration::{get_settings, DatabaseSettings, Settings};
-use sqlx::{Connection, Executor, PgConnection, PgPool, Row};
+use api::configuration::DatabaseSettings;
+use sqlx::{Connection, Executor, PgConnection, PgPool};
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
     // Create database
@@ -21,32 +21,4 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("Failed to migrate the database");
 
     connection_pool
-}
-
-// This is not an actual test. It is only used to delete test databases.
-// Enabling it might interfere with other running tests, so keep the
-// #[ignore] attribute. But remember to temporarily comment it out before
-// running the test when you do want to cleanup the database.
-#[ignore]
-#[tokio::test]
-async fn delete_test_databases() {
-    delete_all_test_databases().await;
-}
-
-async fn delete_all_test_databases() {
-    let config = get_settings::<'_, Settings>().expect("Failed to read configuration");
-    let mut connection = PgConnection::connect_with(&config.database.without_db())
-        .await
-        .expect("Failed to connect to Postgres");
-    let databases = connection
-        .fetch_all(&*r#"select datname from pg_database where datname not in ('postgres', 'template0', 'template1');"#.to_string())
-        .await
-        .expect("Failed to get databases.");
-    for database in databases {
-        let database_name: String = database.get("datname");
-        connection
-            .execute(&*format!(r#"drop database "{database_name}""#))
-            .await
-            .expect("Failed to delete database");
-    }
 }

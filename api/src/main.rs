@@ -23,6 +23,14 @@ pub async fn main() -> anyhow::Result<()> {
             info!("{configuration}");
             Application::migrate_database(configuration).await?;
             info!("database migrated successfullly");
+        } else if command == "delete-test-databases" {
+            // The cargo test command generates a lot of test databases
+            // and this command deletes them all.
+            let configuration =
+                get_settings::<'_, Settings>().expect("Failed to read configuration.");
+            info!("{configuration}");
+            let num_deleted = Application::delete_all_test_databases(configuration).await?;
+            info!("{num_deleted} test databases deleted successfullly");
         } else {
             let message = "invalid command line arguments";
             error!("{message}");

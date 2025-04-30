@@ -1,13 +1,14 @@
-use std::{net::TcpListener, sync::Arc};
+use std::{net::TcpListener, str::FromStr, sync::Arc};
 
 use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
 use base64::{prelude::BASE64_STANDARD, Engine};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, Connection, Executor, PgConnection, PgPool, Row};
 use tracing_actix_web::TracingLogger;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use uuid::Uuid;
 
 use crate::{
     authentication::auth_validator,
@@ -90,6 +91,25 @@ impl Application {
         sqlx::migrate!("./migrations").run(&connection_pool).await?;
 
         Ok(())
+    }
+
+    pub async fn delete_all_test_databases(config: Settings) -> Result<i32, anyhow::Error> {
+        let mut connection = PgConnection::connect_with(&config.database.without_db()).await?;
+        let databases = connection
+        .fetch_all(&*r#"select datname from pg_catalog.pg_database where datname not in ('postgres', 'template0', 'template1');"#.to_string())
+        .await?;
+        let mut count = 0;
+        for database in databases {
+            let database_name: String = database.get("datname");
+            if Uuid::from_str(&database_name).is_ok() {
+                connection
+                    .execute(&*format!(r#"drop database "{database_name}""#))
+                    .await?;
+                count += 1;
+            }
+        }
+
+        Ok(count)
     }
 
     pub fn port(&self) -> u16 {
