@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 pub struct Tenant {
     pub id: String,
@@ -7,6 +7,17 @@ pub struct Tenant {
 
 pub async fn create_tenant(
     pool: &PgPool,
+    tenant_id: &str,
+    tenant_name: &str,
+) -> Result<String, sqlx::Error> {
+    let mut txn = pool.begin().await?;
+    let res = create_tenant_txn(&mut txn, tenant_id, tenant_name).await;
+    txn.commit().await?;
+    res
+}
+
+pub async fn create_tenant_txn(
+    txn: &mut Transaction<'_, Postgres>,
     tenant_id: &str,
     tenant_name: &str,
 ) -> Result<String, sqlx::Error> {
@@ -19,7 +30,7 @@ pub async fn create_tenant(
         tenant_id,
         tenant_name,
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **txn)
     .await?;
 
     Ok(record.id)

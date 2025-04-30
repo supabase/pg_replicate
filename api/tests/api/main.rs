@@ -5,4 +5,5 @@ mod pipelines;
 mod sinks;
 mod sources;
 mod tenants;
+mod tenants_sources;
 mod test_app;

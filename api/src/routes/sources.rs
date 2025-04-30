@@ -24,7 +24,7 @@ pub mod publications;
 pub mod tables;
 
 #[derive(Debug, Error)]
-enum SourceError {
+pub enum SourceError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -39,7 +39,7 @@ enum SourceError {
 }
 
 impl SourceError {
-    fn to_message(&self) -> String {
+    pub fn to_message(&self) -> String {
         match self {
             // Do not expose internal database details in error messages
             SourceError::DatabaseError(_) => "internal server error".to_string(),
