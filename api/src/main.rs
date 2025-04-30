@@ -29,8 +29,8 @@ pub async fn main() -> anyhow::Result<()> {
             let configuration =
                 get_settings::<'_, Settings>().expect("Failed to read configuration.");
             info!("{configuration}");
-            Application::delete_all_test_databases(configuration).await?;
-            info!("test databases deleted successfullly");
+            let num_deleted = Application::delete_all_test_databases(configuration).await?;
+            info!("{num_deleted} test databases deleted successfullly");
         } else {
             let message = "invalid command line arguments";
             error!("{message}");
