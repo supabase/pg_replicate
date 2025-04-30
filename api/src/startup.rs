@@ -4,7 +4,7 @@ use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
 use base64::{prelude::BASE64_STANDARD, Engine};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, Connection, Executor, PgConnection, PgPool, Row};
 use tracing_actix_web::TracingLogger;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -88,6 +88,21 @@ impl Application {
         let connection_pool = get_connection_pool(&database_settings);
 
         sqlx::migrate!("./migrations").run(&connection_pool).await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_all_test_databases(config: Settings) -> Result<(), anyhow::Error> {
+        let mut connection = PgConnection::connect_with(&config.database.without_db()).await?;
+        let databases = connection
+        .fetch_all(&*r#"select datname from pg_database where datname not in ('postgres', 'template0', 'template1');"#.to_string())
+        .await?;
+        for database in databases {
+            let database_name: String = database.get("datname");
+            connection
+                .execute(&*format!(r#"drop database "{database_name}""#))
+                .await?;
+        }
 
         Ok(())
     }
