@@ -1,0 +1,63 @@
+use crate::{
+    images::create_default_image,
+    pipelines::new_pipeline_config,
+    sinks::{new_name, new_sink_config},
+    sources::create_source,
+    tenants::create_tenant,
+    test_app::{
+        spawn_app, CreateSinkPipelineRequest, CreateSinkPipelineResponse, PipelineResponse,
+        SinkResponse,
+    },
+};
+
+#[tokio::test]
+async fn sink_and_pipeline_can_be_created() {
+    // Arrange
+    let app = spawn_app().await;
+    let tenant_id = &create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
+    create_default_image(&app).await;
+
+    // Act
+    let sink_pipeline = CreateSinkPipelineRequest {
+        sink_name: new_name(),
+        sink_config: new_sink_config(),
+        source_id,
+        publication_name: "publication".to_string(),
+        pipeline_config: new_pipeline_config(),
+    };
+    let response = app.create_sink_pipeline(tenant_id, &sink_pipeline).await;
+
+    // Assert
+    assert!(response.status().is_success());
+    let response: CreateSinkPipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    assert_eq!(response.sink_id, 1);
+    assert_eq!(response.pipeline_id, 1);
+
+    let sink_id = response.sink_id;
+    let pipeline_id = response.pipeline_id;
+
+    let response = app.read_sink(tenant_id, sink_id).await;
+    let response: SinkResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    assert_eq!(response.id, sink_id);
+    assert_eq!(response.name, sink_pipeline.sink_name);
+
+    let response = app.read_pipeline(tenant_id, pipeline_id).await;
+    let response: PipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    assert_eq!(response.id, pipeline_id);
+    assert_eq!(&response.tenant_id, tenant_id);
+    assert_eq!(response.source_id, source_id);
+    assert_eq!(response.sink_id, sink_id);
+    assert_eq!(response.publication_name, "publication");
+    assert_eq!(response.replicator_id, 1);
+    assert_eq!(response.config, sink_pipeline.pipeline_config);
+}

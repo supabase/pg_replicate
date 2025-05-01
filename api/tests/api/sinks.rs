@@ -9,11 +9,11 @@ use crate::{
     },
 };
 
-fn new_name() -> String {
+pub fn new_name() -> String {
     "BigQuery Sink".to_string()
 }
 
-fn new_sink_config() -> SinkConfig {
+pub fn new_sink_config() -> SinkConfig {
     SinkConfig::BigQuery {
         project_id: "project-id".to_string(),
         dataset_id: "dataset-id".to_string(),

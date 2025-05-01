@@ -22,7 +22,7 @@ use crate::{
 use super::{ErrorMessage, TenantIdError};
 
 #[derive(Debug, Error)]
-enum SinkError {
+pub enum SinkError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -37,7 +37,7 @@ enum SinkError {
 }
 
 impl SinkError {
-    fn to_message(&self) -> String {
+    pub fn to_message(&self) -> String {
         match self {
             // Do not expose internal database details in error messages
             SinkError::DatabaseError(_) => "internal server error".to_string(),
