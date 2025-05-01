@@ -34,7 +34,7 @@ pub struct PostTenantResponse {
 }
 
 #[derive(Debug, Error)]
-enum TenantError {
+pub enum TenantError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -43,7 +43,7 @@ enum TenantError {
 }
 
 impl TenantError {
-    fn to_message(&self) -> String {
+    pub fn to_message(&self) -> String {
         match self {
             // Do not expose internal database details in error messages
             TenantError::DatabaseError(_) => "internal server error".to_string(),

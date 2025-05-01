@@ -8,6 +8,7 @@ pub mod pipelines;
 pub mod sinks;
 pub mod sources;
 pub mod tenants;
+pub mod tenants_sources;
 
 #[derive(Serialize)]
 pub struct ErrorMessage {
@@ -15,7 +16,7 @@ pub struct ErrorMessage {
 }
 
 #[derive(Debug, Error)]
-enum TenantIdError {
+pub enum TenantIdError {
     #[error("tenant id missing in request")]
     TenantIdMissing,
 

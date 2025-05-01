@@ -9,11 +9,11 @@ use crate::{
     },
 };
 
-fn new_name() -> String {
+pub fn new_name() -> String {
     "Postgres Source".to_string()
 }
 
-fn new_source_config() -> SourceConfig {
+pub fn new_source_config() -> SourceConfig {
     SourceConfig::Postgres {
         host: "localhost".to_string(),
         port: 5432,

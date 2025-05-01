@@ -76,6 +76,20 @@ pub struct SourcesResponse {
 }
 
 #[derive(Serialize)]
+pub struct CreateTenantSourceRequest {
+    pub tenant_id: String,
+    pub tenant_name: String,
+    pub source_name: String,
+    pub source_config: SourceConfig,
+}
+
+#[derive(Deserialize)]
+pub struct CreateTenantSourceResponse {
+    pub tenant_id: String,
+    pub source_id: i64,
+}
+
+#[derive(Serialize)]
 pub struct CreateSinkRequest {
     pub name: String,
     pub config: SinkConfig,
@@ -193,6 +207,17 @@ impl TestApp {
     pub async fn create_tenant(&self, tenant: &CreateTenantRequest) -> reqwest::Response {
         self.post_authenticated(format!("{}/v1/tenants", &self.address))
             .json(tenant)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn create_tenant_source(
+        &self,
+        tenant_source: &CreateTenantSourceRequest,
+    ) -> reqwest::Response {
+        self.post_authenticated(format!("{}/v1/tenants-sources", &self.address))
+            .json(tenant_source)
             .send()
             .await
             .expect("Failed to execute request.")

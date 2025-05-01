@@ -1,8 +1,9 @@
 use aws_lc_rs::{aead::Nonce, error::Unspecified};
 use base64::{prelude::BASE64_STANDARD, DecodeError, Engine};
+use serde_json::Value;
 use sqlx::{
     postgres::{PgConnectOptions, PgSslMode},
-    PgPool,
+    PgPool, Postgres, Transaction,
 };
 use std::{
     fmt::{Debug, Formatter},
@@ -14,7 +15,7 @@ use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-enum SourceConfigInDb {
+pub enum SourceConfigInDb {
     Postgres {
         /// Host on which Postgres is running
         host: String,
@@ -132,7 +133,7 @@ impl SourceConfig {
         }
     }
 
-    fn into_db_config(
+    pub fn into_db_config(
         self,
         encryption_key: &EncryptionKey,
     ) -> Result<SourceConfigInDb, Unspecified> {
@@ -230,6 +231,18 @@ pub async fn create_source(
 ) -> Result<i64, SourcesDbError> {
     let db_config = config.into_db_config(encryption_key)?;
     let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
+    let mut txn = pool.begin().await?;
+    let res = create_source_txn(&mut txn, tenant_id, name, db_config).await;
+    txn.commit().await?;
+    res
+}
+
+pub async fn create_source_txn(
+    txn: &mut Transaction<'_, Postgres>,
+    tenant_id: &str,
+    name: &str,
+    db_config: Value,
+) -> Result<i64, SourcesDbError> {
     let record = sqlx::query!(
         r#"
         insert into app.sources (tenant_id, name, config)
@@ -240,7 +253,7 @@ pub async fn create_source(
         name,
         db_config
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **txn)
     .await?;
 
     Ok(record.id)
