@@ -109,7 +109,6 @@ impl<'de> Deserialize<'de> for ApiKey {
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
-    pub worker: WorkerSettings,
     pub encryption_key: EncryptionKey,
     pub api_key: String,
 }
@@ -119,7 +118,6 @@ impl Display for Settings {
         writeln!(f, "configuration:")?;
         writeln!(f, "  database:\n{}", self.database)?;
         writeln!(f, "  application:\n{}", self.application)?;
-        writeln!(f, "  worker:\n{}", self.worker)?;
         writeln!(f, "  encryption_key:\n{}", self.encryption_key)?;
         writeln!(f, "  api_key: REDACTED")
     }
@@ -194,18 +192,6 @@ impl Display for ApplicationSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "    host: {}", self.host)?;
         writeln!(f, "    port: {}", self.port)
-    }
-}
-
-#[derive(serde::Deserialize, Clone)]
-pub struct WorkerSettings {
-    /// interval after which the worker looks in the queue for tasks
-    pub poll_interval_secs: u64,
-}
-
-impl Display for WorkerSettings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "    poll_interval_secs: {}", self.poll_interval_secs)
     }
 }
 
