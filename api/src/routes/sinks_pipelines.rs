@@ -58,6 +58,9 @@ enum SinkPipelineError {
     #[error("sink with id {0} not found")]
     SinkNotFound(i64),
 
+    #[error("pipeline with id {0} not found")]
+    PipelineNotFound(i64),
+
     #[error("sinks error: {0}")]
     Sink(#[from] SinkError),
 
@@ -87,7 +90,8 @@ impl ResponseError for SinkPipelineError {
             | SinkPipelineError::SinkPipelineDb(_) => StatusCode::INTERNAL_SERVER_ERROR,
             SinkPipelineError::TenantId(_)
             | SinkPipelineError::SourceNotFound(_)
-            | SinkPipelineError::SinkNotFound(_) => StatusCode::BAD_REQUEST,
+            | SinkPipelineError::SinkNotFound(_)
+            | SinkPipelineError::PipelineNotFound(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -208,7 +212,14 @@ pub async fn update_sinks_and_pipelines(
         pipeline_config,
         &encryption_key,
     )
-    .await?;
+    .await
+    .map_err(|e| match e {
+        SinkPipelineDbError::SinkNotFound(sink_id) => SinkPipelineError::SinkNotFound(sink_id),
+        SinkPipelineDbError::PipelineNotFound(pipeline_id) => {
+            SinkPipelineError::PipelineNotFound(pipeline_id)
+        }
+        e => e.into(),
+    })?;
 
     let response = PostSinkPipelineResponse {
         sink_id,
