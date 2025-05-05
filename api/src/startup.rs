@@ -32,7 +32,8 @@ use crate::{
             PostSinkRequest, PostSinkResponse,
         },
         sinks_pipelines::{
-            create_sinks_and_pipelines, CreateSinkPipelineRequest, PostSinkPipelineResponse,
+            create_sinks_and_pipelines, update_sinks_and_pipelines, PostSinkPipelineRequest,
+            PostSinkPipelineResponse,
         },
         sources::{
             create_source, delete_source,
@@ -185,6 +186,7 @@ pub async fn run(
             crate::routes::sinks::read_all_sinks,
             crate::routes::tenants_sources::create_tenant_and_source,
             crate::routes::sinks_pipelines::create_sinks_and_pipelines,
+            crate::routes::sinks_pipelines::update_sinks_and_pipelines,
         ),
         components(schemas(
             PostImageRequest,
@@ -207,7 +209,7 @@ pub async fn run(
             GetSinkResponse,
             CreateTenantSourceRequest,
             PostTenantSourceResponse,
-            CreateSinkPipelineRequest,
+            PostSinkPipelineRequest,
             PostSinkPipelineResponse,
         ))
     )]
@@ -274,7 +276,8 @@ pub async fn run(
                     //tenants_sources
                     .service(create_tenant_and_source)
                     // sinks-pipelines
-                    .service(create_sinks_and_pipelines),
+                    .service(create_sinks_and_pipelines)
+                    .service(update_sinks_and_pipelines),
             )
             .app_data(connection_pool.clone())
             .app_data(encryption_key.clone())

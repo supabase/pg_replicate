@@ -22,7 +22,7 @@ pub fn new_pipeline_config() -> PipelineConfig {
     }
 }
 
-fn updated_pipeline_config() -> PipelineConfig {
+pub fn updated_pipeline_config() -> PipelineConfig {
     PipelineConfig {
         config: BatchConfig {
             max_size: 2000,

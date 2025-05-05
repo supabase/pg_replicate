@@ -129,10 +129,36 @@ pub async fn update_pipeline(
     pipeline_id: i64,
     source_id: i64,
     sink_id: i64,
-    publication_name: String,
-    config: &PipelineConfig,
+    publication_name: &str,
+    pipeline_config: &PipelineConfig,
 ) -> Result<Option<i64>, sqlx::Error> {
-    let config = serde_json::to_value(config).expect("failed to serialize config");
+    let pipeline_config =
+        serde_json::to_value(pipeline_config).expect("failed to serialize config");
+    let mut txn = pool.begin().await?;
+    let res = update_pipeline_txn(
+        &mut txn,
+        tenant_id,
+        pipeline_id,
+        source_id,
+        sink_id,
+        publication_name,
+        pipeline_config,
+    )
+    .await?;
+    txn.commit().await?;
+
+    Ok(res)
+}
+
+pub async fn update_pipeline_txn(
+    txn: &mut Transaction<'_, Postgres>,
+    tenant_id: &str,
+    pipeline_id: i64,
+    source_id: i64,
+    sink_id: i64,
+    publication_name: &str,
+    pipeline_config: Value,
+) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         update app.pipelines
@@ -143,11 +169,11 @@ pub async fn update_pipeline(
         source_id,
         sink_id,
         publication_name,
-        config,
+        pipeline_config,
         tenant_id,
         pipeline_id
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut **txn)
     .await?;
 
     Ok(record.map(|r| r.id))

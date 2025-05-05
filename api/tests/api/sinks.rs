@@ -22,11 +22,11 @@ pub fn new_sink_config() -> SinkConfig {
     }
 }
 
-fn updated_name() -> String {
+pub fn updated_name() -> String {
     "BigQuery Sink (Updated)".to_string()
 }
 
-fn updated_sink_config() -> SinkConfig {
+pub fn updated_sink_config() -> SinkConfig {
     SinkConfig::BigQuery {
         project_id: "project-id-updated".to_string(),
         dataset_id: "dataset-id-updated".to_string(),
