@@ -71,14 +71,14 @@ pub async fn update_sink_and_pipeline(
     publication_name: &str,
     pipeline_config: PipelineConfig,
     encryption_key: &EncryptionKey,
-) -> Result<(i64, i64), SinkPipelineDbError> {
+) -> Result<(), SinkPipelineDbError> {
     let sink_config = sink_config.into_db_config(encryption_key)?;
     let sink_config = serde_json::to_value(sink_config).expect("failed to serialize config");
     let pipeline_config =
         serde_json::to_value(pipeline_config).expect("failed to serialize config");
     let mut txn = pool.begin().await?;
     let sink_id_res = update_sink_txn(&mut txn, tenant_id, sink_name, sink_id, sink_config).await?;
-    let Some(sink_id_res) = sink_id_res else {
+    if sink_id_res.is_none() {
         txn.rollback().await?;
         return Err(SinkPipelineDbError::SinkNotFound(sink_id));
     };
@@ -93,12 +93,12 @@ pub async fn update_sink_and_pipeline(
     )
     .await?;
 
-    let Some(pipeline_id_res) = pipeline_id_res else {
+    if pipeline_id_res.is_none() {
         txn.rollback().await?;
         return Err(SinkPipelineDbError::PipelineNotFound(pipeline_id));
     };
 
     txn.commit().await?;
 
-    Ok((sink_id_res, pipeline_id_res))
+    Ok(())
 }

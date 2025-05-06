@@ -136,15 +136,6 @@ async fn an_existing_sink_and_pipeline_can_be_updated() {
 
     // Assert
     assert!(response.status().is_success());
-    let response: CreateSinkPipelineResponse = response
-        .json()
-        .await
-        .expect("failed to deserialize response");
-    assert_eq!(response.sink_id, 1);
-    assert_eq!(response.pipeline_id, 1);
-
-    let sink_id = response.sink_id;
-    let pipeline_id = response.pipeline_id;
 
     let response = app.read_sink(tenant_id, sink_id).await;
     let response: SinkResponse = response

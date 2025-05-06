@@ -200,7 +200,7 @@ pub async fn update_sinks_and_pipelines(
         return Err(SinkPipelineError::SinkNotFound(sink_id));
     }
 
-    let (sink_id, pipeline_id) = db::sinks_pipelines::update_sink_and_pipeline(
+    db::sinks_pipelines::update_sink_and_pipeline(
         &pool,
         tenant_id,
         sink_id,
@@ -221,10 +221,5 @@ pub async fn update_sinks_and_pipelines(
         e => e.into(),
     })?;
 
-    let response = PostSinkPipelineResponse {
-        sink_id,
-        pipeline_id,
-    };
-
-    Ok(Json(response))
+    Ok(HttpResponse::Ok().finish())
 }
