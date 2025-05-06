@@ -459,3 +459,63 @@ async fn all_pipelines_can_be_read() {
         }
     }
 }
+
+#[tokio::test]
+async fn deleting_a_source_cascade_deletes_the_pipeline() {
+    // Arrange
+    let app = spawn_app().await;
+    create_default_image(&app).await;
+    let tenant_id = &create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
+    let sink_id = create_sink(&app, tenant_id).await;
+
+    let pipeline = CreatePipelineRequest {
+        source_id,
+        sink_id,
+        publication_name: "publication".to_string(),
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant_id, &pipeline).await;
+    let response: CreatePipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let pipeline_id = response.id;
+
+    // Act
+    app.delete_source(tenant_id, source_id).await;
+
+    // Assert
+    let response = app.read_pipeline(tenant_id, pipeline_id).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn deleting_a_sink_cascade_deletes_the_pipeline() {
+    // Arrange
+    let app = spawn_app().await;
+    create_default_image(&app).await;
+    let tenant_id = &create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
+    let sink_id = create_sink(&app, tenant_id).await;
+
+    let pipeline = CreatePipelineRequest {
+        source_id,
+        sink_id,
+        publication_name: "publication".to_string(),
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant_id, &pipeline).await;
+    let response: CreatePipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let pipeline_id = response.id;
+
+    // Act
+    app.delete_sink(tenant_id, sink_id).await;
+
+    // Assert
+    let response = app.read_pipeline(tenant_id, pipeline_id).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
