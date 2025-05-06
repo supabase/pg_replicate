@@ -1,9 +1,11 @@
+use reqwest::StatusCode;
+
 use crate::{
     images::create_default_image,
     pipelines::new_pipeline_config,
     sinks::{new_name, new_sink_config},
     sources::create_source,
-    tenants::create_tenant,
+    tenants::{create_tenant, create_tenant_with_id_and_name},
     test_app::{
         spawn_app, CreateSinkPipelineRequest, CreateSinkPipelineResponse, PipelineResponse,
         SinkResponse,
@@ -60,4 +62,36 @@ async fn sink_and_pipeline_can_be_created() {
     assert_eq!(response.publication_name, "publication");
     assert_eq!(response.replicator_id, 1);
     assert_eq!(response.config, sink_pipeline.pipeline_config);
+}
+
+#[tokio::test]
+async fn sink_and_pipeline_with_another_tenants_source_cant_be_created() {
+    // Arrange
+    let app = spawn_app().await;
+    create_default_image(&app).await;
+    let tenant1_id = &create_tenant_with_id_and_name(
+        &app,
+        "abcdefghijklmnopqrst".to_string(),
+        "tenant_1".to_string(),
+    )
+    .await;
+    let tenant2_id = &create_tenant_with_id_and_name(
+        &app,
+        "tsrqponmlkjihgfedcba".to_string(),
+        "tenant_2".to_string(),
+    )
+    .await;
+    let source2_id = create_source(&app, tenant2_id).await;
+
+    let sink_pipeline = CreateSinkPipelineRequest {
+        sink_name: new_name(),
+        sink_config: new_sink_config(),
+        source_id: source2_id,
+        publication_name: "publication".to_string(),
+        pipeline_config: new_pipeline_config(),
+    };
+    let response = app.create_sink_pipeline(tenant1_id, &sink_pipeline).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

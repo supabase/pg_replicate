@@ -12,6 +12,7 @@ use utoipa::ToSchema;
 use crate::{
     db::{
         self, pipelines::PipelineConfig, sinks::SinkConfig, sinks_pipelines::SinkPipelineDbError,
+        sources::source_exists,
     },
     encryption::EncryptionKey,
     routes::extract_tenant_id,
@@ -48,6 +49,9 @@ enum SinkPipelineError {
     #[error("tenant id error: {0}")]
     TenantId(#[from] TenantIdError),
 
+    #[error("source with id {0} not found")]
+    SourceNotFound(i64),
+
     #[error("sinks error: {0}")]
     Sink(#[from] SinkError),
 
@@ -75,7 +79,9 @@ impl ResponseError for SinkPipelineError {
             SinkPipelineError::DatabaseError(_)
             | SinkPipelineError::NoDefaultImageFound
             | SinkPipelineError::SinkPipelineDb(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            SinkPipelineError::TenantId(_) => StatusCode::BAD_REQUEST,
+            SinkPipelineError::TenantId(_) | SinkPipelineError::SourceNotFound(_) => {
+                StatusCode::BAD_REQUEST
+            }
         }
     }
 
@@ -121,6 +127,11 @@ pub async fn create_sinks_and_pipelines(
         pipeline_config,
     } = sink_and_pipeline;
     let tenant_id = extract_tenant_id(&req)?;
+
+    if !source_exists(&pool, tenant_id, source_id).await? {
+        return Err(SinkPipelineError::SourceNotFound(source_id));
+    }
+
     let image = db::images::read_default_image(&pool)
         .await?
         .ok_or(SinkPipelineError::NoDefaultImageFound)?;
