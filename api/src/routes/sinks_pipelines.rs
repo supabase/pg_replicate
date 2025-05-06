@@ -1,7 +1,7 @@
 use actix_web::{
     http::{header::ContentType, StatusCode},
     post,
-    web::{Data, Json},
+    web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,10 @@ use utoipa::ToSchema;
 
 use crate::{
     db::{
-        self, pipelines::PipelineConfig, sinks::SinkConfig, sinks_pipelines::SinkPipelineDbError,
+        self,
+        pipelines::PipelineConfig,
+        sinks::{sink_exists, SinkConfig},
+        sinks_pipelines::SinkPipelineDbError,
         sources::source_exists,
     },
     encryption::EncryptionKey,
@@ -21,7 +24,7 @@ use crate::{
 use super::{sinks::SinkError, ErrorMessage, TenantIdError};
 
 #[derive(Deserialize, ToSchema)]
-pub struct CreateSinkPipelineRequest {
+pub struct PostSinkPipelineRequest {
     #[schema(example = "Sink Name", required = true)]
     pub sink_name: String,
 
@@ -52,6 +55,12 @@ enum SinkPipelineError {
     #[error("source with id {0} not found")]
     SourceNotFound(i64),
 
+    #[error("sink with id {0} not found")]
+    SinkNotFound(i64),
+
+    #[error("pipeline with id {0} not found")]
+    PipelineNotFound(i64),
+
     #[error("sinks error: {0}")]
     Sink(#[from] SinkError),
 
@@ -79,9 +88,10 @@ impl ResponseError for SinkPipelineError {
             SinkPipelineError::DatabaseError(_)
             | SinkPipelineError::NoDefaultImageFound
             | SinkPipelineError::SinkPipelineDb(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            SinkPipelineError::TenantId(_) | SinkPipelineError::SourceNotFound(_) => {
-                StatusCode::BAD_REQUEST
-            }
+            SinkPipelineError::TenantId(_)
+            | SinkPipelineError::SourceNotFound(_)
+            | SinkPipelineError::SinkNotFound(_)
+            | SinkPipelineError::PipelineNotFound(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -105,7 +115,7 @@ pub struct PostSinkPipelineResponse {
 
 #[utoipa::path(
     context_path = "/v1",
-    request_body = CreateSinkPipelineRequest,
+    request_body = PostSinkPipelineRequest,
     responses(
         (status = 200, description = "Create a new sink and a pipeline", body = PostSinkPipelineResponse),
         (status = 500, description = "Internal server error")
@@ -115,11 +125,11 @@ pub struct PostSinkPipelineResponse {
 pub async fn create_sinks_and_pipelines(
     req: HttpRequest,
     pool: Data<PgPool>,
-    sink_and_pipeline: Json<CreateSinkPipelineRequest>,
+    sink_and_pipeline: Json<PostSinkPipelineRequest>,
     encryption_key: Data<EncryptionKey>,
 ) -> Result<impl Responder, SinkPipelineError> {
     let sink_and_pipeline = sink_and_pipeline.0;
-    let CreateSinkPipelineRequest {
+    let PostSinkPipelineRequest {
         sink_name,
         sink_config,
         source_id,
@@ -152,4 +162,64 @@ pub async fn create_sinks_and_pipelines(
         pipeline_id,
     };
     Ok(Json(response))
+}
+
+#[utoipa::path(
+    context_path = "/v1",
+    request_body = PostSinkPipelineRequest,
+    responses(
+        (status = 200, description = "Update a sink and a pipeline", body = PostSinkPipelineResponse),
+        (status = 404, description = "Pipeline or sink not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+#[post("/sinks-pipelines/{sink_id}/{pipeline_id}")]
+pub async fn update_sinks_and_pipelines(
+    req: HttpRequest,
+    pool: Data<PgPool>,
+    sink_and_pipeline_ids: Path<(i64, i64)>,
+    sink_and_pipeline: Json<PostSinkPipelineRequest>,
+    encryption_key: Data<EncryptionKey>,
+) -> Result<impl Responder, SinkPipelineError> {
+    let sink_and_pipeline = sink_and_pipeline.0;
+    let PostSinkPipelineRequest {
+        sink_name,
+        sink_config,
+        source_id,
+        publication_name,
+        pipeline_config,
+    } = sink_and_pipeline;
+    let tenant_id = extract_tenant_id(&req)?;
+    let (sink_id, pipeline_id) = sink_and_pipeline_ids.into_inner();
+
+    if !source_exists(&pool, tenant_id, source_id).await? {
+        return Err(SinkPipelineError::SourceNotFound(source_id));
+    }
+
+    if !sink_exists(&pool, tenant_id, sink_id).await? {
+        return Err(SinkPipelineError::SinkNotFound(sink_id));
+    }
+
+    db::sinks_pipelines::update_sink_and_pipeline(
+        &pool,
+        tenant_id,
+        sink_id,
+        pipeline_id,
+        source_id,
+        &sink_name,
+        sink_config,
+        &publication_name,
+        pipeline_config,
+        &encryption_key,
+    )
+    .await
+    .map_err(|e| match e {
+        SinkPipelineDbError::SinkNotFound(sink_id) => SinkPipelineError::SinkNotFound(sink_id),
+        SinkPipelineDbError::PipelineNotFound(pipeline_id) => {
+            SinkPipelineError::PipelineNotFound(pipeline_id)
+        }
+        e => e.into(),
+    })?;
+
+    Ok(HttpResponse::Ok().finish())
 }

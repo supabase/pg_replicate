@@ -90,7 +90,7 @@ pub struct CreateTenantSourceResponse {
 }
 
 #[derive(Serialize)]
-pub struct CreateSinkPipelineRequest {
+pub struct PostSinkPipelineRequest {
     pub sink_name: String,
     pub sink_config: SinkConfig,
     pub source_id: i64,
@@ -439,7 +439,7 @@ impl TestApp {
     pub async fn create_sink_pipeline(
         &self,
         tenant_id: &str,
-        sink_pipeline: &CreateSinkPipelineRequest,
+        sink_pipeline: &PostSinkPipelineRequest,
     ) -> reqwest::Response {
         self.post_authenticated(format!("{}/v1/sinks-pipelines", &self.address))
             .header("tenant_id", tenant_id)
@@ -447,6 +447,24 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn update_sink_pipeline(
+        &self,
+        tenant_id: &str,
+        sink_id: i64,
+        pipeline_id: i64,
+        sink_pipeline: &PostSinkPipelineRequest,
+    ) -> reqwest::Response {
+        self.post_authenticated(format!(
+            "{}/v1/sinks-pipelines/{sink_id}/{pipeline_id}",
+            &self.address
+        ))
+        .header("tenant_id", tenant_id)
+        .json(sink_pipeline)
+        .send()
+        .await
+        .expect("Failed to execute request.")
     }
 
     pub async fn create_image(&self, image: &CreateImageRequest) -> reqwest::Response {

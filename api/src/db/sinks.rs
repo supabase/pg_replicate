@@ -237,11 +237,24 @@ pub async fn update_sink(
     tenant_id: &str,
     name: &str,
     sink_id: i64,
-    config: SinkConfig,
+    sink_config: SinkConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<Option<i64>, SinksDbError> {
-    let db_config = config.into_db_config(encryption_key)?;
-    let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
+    let sink_config = sink_config.into_db_config(encryption_key)?;
+    let sink_config = serde_json::to_value(sink_config).expect("failed to serialize config");
+    let mut txn = pool.begin().await?;
+    let res = update_sink_txn(&mut txn, tenant_id, name, sink_id, sink_config).await;
+    txn.commit().await?;
+    res
+}
+
+pub async fn update_sink_txn(
+    txn: &mut Transaction<'_, Postgres>,
+    tenant_id: &str,
+    name: &str,
+    sink_id: i64,
+    sink_config: Value,
+) -> Result<Option<i64>, SinksDbError> {
     let record = sqlx::query!(
         r#"
         update app.sinks
@@ -249,12 +262,12 @@ pub async fn update_sink(
         where tenant_id = $3 and id = $4
         returning id
         "#,
-        db_config,
+        sink_config,
         name,
         tenant_id,
         sink_id
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut **txn)
     .await?;
 
     Ok(record.map(|r| r.id))
