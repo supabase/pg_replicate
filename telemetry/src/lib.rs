@@ -32,7 +32,7 @@ pub enum LogFlusher {
 }
 
 /// Initializes tracing for the application.
-pub fn init_tracing() -> Result<LogFlusher, TracingError> {
+pub fn init_tracing(app_name: &str) -> Result<LogFlusher, TracingError> {
     // Initialize the log tracer to capture logs from the `log` crate
     // and send them to the `tracing` subscriber. This captures logs
     // from libraries that use the `log` crate.
@@ -45,7 +45,7 @@ pub fn init_tracing() -> Result<LogFlusher, TracingError> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
 
     let log_flusher = if is_prod {
-        configure_prod_tracing(filter)?
+        configure_prod_tracing(filter, app_name)?
     } else {
         configure_dev_tracing(filter)?
     };
@@ -55,8 +55,7 @@ pub fn init_tracing() -> Result<LogFlusher, TracingError> {
     Ok(log_flusher)
 }
 
-fn configure_prod_tracing(filter: EnvFilter) -> Result<LogFlusher, TracingError> {
-    let app_name = env!("CARGO_CRATE_NAME");
+fn configure_prod_tracing(filter: EnvFilter, app_name: &str) -> Result<LogFlusher, TracingError> {
     let filename_suffix = "log";
     let log_dir = "logs";
     let file_appender = rolling::Builder::new()

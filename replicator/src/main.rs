@@ -19,7 +19,8 @@ mod configuration;
 // before running because these are sensitive values which can't be configured in the config files
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _log_flusher = init_tracing()?;
+    let app_name = env!("CARGO_BIN_NAME");
+    let _log_flusher = init_tracing(app_name)?;
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("failed to install default crypto provider");

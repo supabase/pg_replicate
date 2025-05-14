@@ -10,7 +10,8 @@ use tracing::{error, info};
 
 #[actix_web::main]
 pub async fn main() -> anyhow::Result<()> {
-    let _log_flusher = init_tracing()?;
+    let app_name = env!("CARGO_BIN_NAME");
+    let _log_flusher = init_tracing(app_name)?;
     let mut args = env::args();
 
     if args.len() == 2 {
