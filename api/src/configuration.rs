@@ -15,13 +15,6 @@ pub struct EncryptionKey {
     pub key: String,
 }
 
-impl Display for EncryptionKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "    id: {}", self.id)?;
-        writeln!(f, "    key: REDACTED")
-    }
-}
-
 const API_KEY_LENGTH_IN_BYTES: usize = 32;
 
 pub struct ApiKey {
@@ -113,16 +106,6 @@ pub struct Settings {
     pub api_key: String,
 }
 
-impl Display for Settings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "configuration:")?;
-        writeln!(f, "  database:\n{}", self.database)?;
-        writeln!(f, "  application:\n{}", self.application)?;
-        writeln!(f, "  encryption_key:\n{}", self.encryption_key)?;
-        writeln!(f, "  api_key: REDACTED")
-    }
-}
-
 #[derive(serde::Deserialize, Clone)]
 pub struct DatabaseSettings {
     /// Host on which Postgres is running
@@ -142,17 +125,6 @@ pub struct DatabaseSettings {
 
     /// Whether to enable ssl or not
     pub require_ssl: bool,
-}
-
-impl Display for DatabaseSettings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "    host: {}", self.host)?;
-        writeln!(f, "    port: {}", self.port)?;
-        writeln!(f, "    name: {}", self.name)?;
-        writeln!(f, "    username: {}", self.username)?;
-        writeln!(f, "    password: REDACTED")?;
-        writeln!(f, "    require_ssl: {}", self.require_ssl)
-    }
 }
 
 impl DatabaseSettings {
@@ -226,8 +198,8 @@ pub fn get_settings<'a, T: serde::Deserialize<'a>>() -> Result<T, config::Config
     settings.try_deserialize::<T>()
 }
 
-const DEV_ENV_NAME: &str = "dev";
-const PROD_ENV_NAME: &str = "prod";
+pub const DEV_ENV_NAME: &str = "dev";
+pub const PROD_ENV_NAME: &str = "prod";
 
 /// The possible runtime environment for our application.
 pub enum Environment {
