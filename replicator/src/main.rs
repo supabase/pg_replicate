@@ -35,7 +35,15 @@ async fn main() -> anyhow::Result<()> {
         slot_name,
         publication,
     } = &settings.source;
-    info!("source settings: host: {host}, port: {port}, dbname: {name}, username: {username}, slot_name: {slot_name}, publication: {publication}");
+    info!(
+        host,
+        port,
+        dbname = name,
+        username,
+        slot_name,
+        publication,
+        "source settings"
+    );
 
     let SinkSettings::BigQuery {
         project_id,
@@ -44,19 +52,19 @@ async fn main() -> anyhow::Result<()> {
         max_staleness_mins,
     } = &settings.sink;
 
-    info!("sink settings: project_id: {project_id}, dataset_id: {dataset_id}, max_staleness_mins: {max_staleness_mins:?}");
+    info!(project_id, dataset_id, max_staleness_mins, "sink settings");
 
     let BatchSettings {
         max_size,
         max_fill_secs,
     } = &settings.batch;
-    info!("batch settings: max_size: {max_size}, max_fill_secs: {max_fill_secs}");
+    info!(max_size, max_fill_secs, "batch settings");
 
     let TlsSettings {
         trusted_root_certs: _,
         enabled,
     } = &settings.tls;
-    info!("tls settings: tls_enabled: {enabled}");
+    info!(tls_enabled = enabled, "tls settings");
 
     settings.tls.validate()?;
 

@@ -25,7 +25,14 @@ pub async fn main() -> anyhow::Result<()> {
                 password: _,
                 require_ssl,
             } = &configuration;
-            info!("database: host: {host}, port: {port}, dbname: {name}, username: {username}, require_ssl: {require_ssl}");
+            info!(
+                host,
+                port,
+                dbname = name,
+                username,
+                require_ssl,
+                "database details",
+            );
             Application::migrate_database(configuration).await?;
             info!("database migrated successfullly");
         } else if command == "delete-test-databases" {
@@ -40,11 +47,18 @@ pub async fn main() -> anyhow::Result<()> {
                 password: _,
                 require_ssl,
             } = &configuration.database;
-            info!("database: host: {host}, port: {port}, dbname: {name}, username: {username}, require_ssl: {require_ssl}");
+            info!(
+                host,
+                port,
+                dbname = name,
+                username,
+                require_ssl,
+                "database details",
+            );
             let num_deleted = Application::delete_all_test_databases(configuration).await?;
             info!("{num_deleted} test databases deleted successfullly");
         } else {
-            let message = "invalid command line arguments";
+            let message = "invalid command: {command}";
             error!("{message}");
             return Err(anyhow!(message));
         }
@@ -58,7 +72,14 @@ pub async fn main() -> anyhow::Result<()> {
             password: _,
             require_ssl,
         } = &configuration.database;
-        info!("database: host: {host}, port: {port}, dbname: {name}, username: {username}, require_ssl: {require_ssl}");
+        info!(
+            host,
+            port,
+            dbname = name,
+            username,
+            require_ssl,
+            "database details",
+        );
         let application = Application::build(configuration.clone()).await?;
         application.run_until_stopped().await?;
     } else {
