@@ -6,5 +6,4 @@ pub mod k8s_client;
 pub mod replicator_config;
 pub mod routes;
 pub mod startup;
-pub mod telemetry;
 pub mod utils;

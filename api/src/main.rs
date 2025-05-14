@@ -4,10 +4,9 @@ use anyhow::anyhow;
 use api::{
     configuration::{get_settings, DatabaseSettings, Settings},
     startup::Application,
-    telemetry::init_tracing,
 };
-use tracing::info;
-use tracing_log::log::error;
+use telemetry::init_tracing;
+use tracing::{error, info};
 
 #[actix_web::main]
 pub async fn main() -> anyhow::Result<()> {

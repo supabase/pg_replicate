@@ -10,7 +10,8 @@ use tracing_subscriber::{
     EnvFilter, FmtSubscriber,
 };
 
-use crate::configuration::{DEV_ENV_NAME, PROD_ENV_NAME};
+const DEV_ENV_NAME: &str = "dev";
+const PROD_ENV_NAME: &str = "prod";
 
 #[derive(Debug, Error)]
 pub enum TracingError {

@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use thiserror::Error;
+
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceSettings {
@@ -117,13 +119,16 @@ impl Debug for TlsSettings {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum TlsSettingsError {
+    #[error("Invalid TLS settings: `trusted_root_certs` must be set when `enabled` is true")]
+    MissingTrustedRootCerts,
+}
+
 impl TlsSettings {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), TlsSettingsError> {
         if self.enabled && self.trusted_root_certs.is_empty() {
-            return Err(
-                "Invalid TLS settings: `trusted_root_certs` must be set when `enabled` is true"
-                    .to_string(),
-            );
+            return Err(TlsSettingsError::MissingTrustedRootCerts);
         }
         Ok(())
     }
@@ -168,8 +173,8 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     settings.try_deserialize::<Settings>()
 }
 
-const DEV_ENV_NAME: &str = "dev";
-const PROD_ENV_NAME: &str = "prod";
+pub const DEV_ENV_NAME: &str = "dev";
+pub const PROD_ENV_NAME: &str = "prod";
 
 /// The possible runtime environment for our application.
 pub enum Environment {
