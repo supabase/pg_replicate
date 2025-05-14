@@ -2,7 +2,7 @@
 
 resolver = "2"
 
-members = ["api", "pg_replicate", "replicator"]
+members = ["api", "pg_replicate", "replicator", "telemetry"]
 
 [workspace.dependencies]
 actix-web = { version = "4", default-features = false }
@@ -44,8 +44,8 @@ tokio-postgres = { git = "https://github.com/imor/rust-postgres", default-featur
 tokio-postgres-rustls = { git = "https://github.com/imor/tokio-postgres-rustls", default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-actix-web = { version = "0.7", default-features = false }
-tracing-bunyan-formatter = { version = "0.3", default-features = false }
-tracing-log = { version = "0.1.1", default-features = false }
+tracing-appender = { version = "0.2.3", default-features = false }
+tracing-log = { version = "0.2.0", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
 utoipa = { version = "4.2.3", default-features = false }
 utoipa-swagger-ui = { version = "7.1.0", default-features = false }

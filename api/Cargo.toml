@@ -41,12 +41,10 @@ sqlx = { workspace = true, features = [
     "migrate",
 ] }
 thiserror = { workspace = true }
+telemetry = { path = "../telemetry" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tracing = { workspace = true, default-features = false }
 tracing-actix-web = { workspace = true, features = ["emit_event_on_error"] }
-tracing-bunyan-formatter = { workspace = true }
-tracing-log = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["registry", "env-filter"] }
 utoipa = { workspace = true, features = ["actix_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["actix-web", "reqwest"] }
 uuid = { version = "1.10.0", features = ["v4"] }

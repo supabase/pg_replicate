@@ -1,4 +1,4 @@
-use std::{error::Error, io::BufReader, time::Duration, vec};
+use std::{io::BufReader, time::Duration, vec};
 
 use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings, TlsSettings};
 use pg_replicate::{
@@ -10,49 +10,62 @@ use pg_replicate::{
     },
     SslMode,
 };
-use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use telemetry::init_tracing;
+use tracing::info;
 
 mod configuration;
 
 // APP_SOURCE__POSTGRES__PASSWORD and APP_SINK__BIG_QUERY__PROJECT_ID environment variables must be set
 // before running because these are sensitive values which can't be configured in the config files
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    if let Err(e) = main_impl().await {
-        error!("{e}");
-    }
-
-    Ok(())
-}
-
-fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "replicator=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-}
-
-fn set_log_level() {
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-}
-
-async fn main_impl() -> Result<(), Box<dyn Error>> {
-    set_log_level();
-    init_tracing();
-
+async fn main() -> anyhow::Result<()> {
+    let app_name = env!("CARGO_BIN_NAME");
+    let _log_flusher = init_tracing(app_name)?;
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("failed to install default crypto provider");
 
     let settings = get_configuration()?;
 
-    info!("settings: {settings:#?}");
+    let SourceSettings::Postgres {
+        host,
+        port,
+        name,
+        username,
+        password: _,
+        slot_name,
+        publication,
+    } = &settings.source;
+    info!(
+        host,
+        port,
+        dbname = name,
+        username,
+        slot_name,
+        publication,
+        "source settings"
+    );
+
+    let SinkSettings::BigQuery {
+        project_id,
+        dataset_id,
+        service_account_key: _,
+        max_staleness_mins,
+    } = &settings.sink;
+
+    info!(project_id, dataset_id, max_staleness_mins, "sink settings");
+
+    let BatchSettings {
+        max_size,
+        max_fill_secs,
+    } = &settings.batch;
+    info!(max_size, max_fill_secs, "batch settings");
+
+    let TlsSettings {
+        trusted_root_certs: _,
+        enabled,
+    } = &settings.tls;
+    info!(tls_enabled = enabled, "tls settings");
 
     settings.tls.validate()?;
 
