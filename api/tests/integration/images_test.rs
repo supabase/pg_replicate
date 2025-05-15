@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 
-use crate::test_app::{
-    spawn_app, CreateImageRequest, CreateImageResponse, ImageResponse, ImagesResponse, TestApp,
+use crate::common::test_app::{
+    spawn_test_app, CreateImageRequest, CreateImageResponse, ImageResponse, ImagesResponse, TestApp,
     UpdateImageRequest,
 };
 
@@ -22,7 +22,7 @@ pub async fn create_image_with_name(app: &TestApp, name: String, is_default: boo
 #[tokio::test]
 async fn image_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let image = CreateImageRequest {
@@ -43,7 +43,7 @@ async fn image_can_be_created() {
 #[tokio::test]
 async fn an_existing_image_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     let name = "some/image".to_string();
     let is_default = true;
@@ -75,7 +75,7 @@ async fn an_existing_image_can_be_read() {
 #[tokio::test]
 async fn a_non_existing_image_cant_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let response = app.read_image(42).await;
@@ -87,7 +87,7 @@ async fn a_non_existing_image_cant_be_read() {
 #[tokio::test]
 async fn an_existing_image_can_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     let name = "some/image".to_string();
     let is_default = true;
@@ -126,7 +126,7 @@ async fn an_existing_image_can_be_updated() {
 #[tokio::test]
 async fn a_non_existing_source_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let name = "some/image".to_string();
@@ -144,7 +144,7 @@ async fn a_non_existing_source_cant_be_updated() {
 #[tokio::test]
 async fn an_existing_image_can_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     let name = "some/image".to_string();
     let is_default = true;
@@ -171,7 +171,7 @@ async fn an_existing_image_can_be_deleted() {
 #[tokio::test]
 async fn a_non_existing_image_cant_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let response = app.delete_image(42).await;
@@ -183,7 +183,7 @@ async fn a_non_existing_image_cant_be_deleted() {
 #[tokio::test]
 async fn all_images_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let image1_id = create_image_with_name(&app, "some/image".to_string(), true).await;
     let image2_id = create_image_with_name(&app, "other/image".to_string(), false).await;
 

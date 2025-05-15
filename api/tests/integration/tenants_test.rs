@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 
-use crate::test_app::{
-    spawn_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, TenantsResponse, TestApp,
+use crate::common::test_app::{
+    spawn_test_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, TenantsResponse, TestApp,
     UpdateTenantRequest,
 };
 
@@ -27,7 +27,7 @@ pub async fn create_tenant_with_id_and_name(app: &TestApp, id: String, name: Str
 #[tokio::test]
 async fn tenant_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let tenant = CreateTenantRequest {
@@ -58,7 +58,7 @@ async fn tenant_can_be_created() {
 #[tokio::test]
 async fn create_or_update_tenant_creates_a_new_tenant() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let tenant_id = "abcdefghijklmnopqrst";
@@ -89,7 +89,7 @@ async fn create_or_update_tenant_creates_a_new_tenant() {
 #[tokio::test]
 async fn create_or_update_tenant_updates_an_existing_tenant() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let tenant_id = "abcdefghijklmnopqrst";
@@ -125,7 +125,7 @@ async fn create_or_update_tenant_updates_an_existing_tenant() {
 #[tokio::test]
 async fn an_existing_tenant_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant = CreateTenantRequest {
         id: "abcdefghijklmnopqrst".to_string(),
         name: "NewTenant".to_string(),
@@ -153,7 +153,7 @@ async fn an_existing_tenant_can_be_read() {
 #[tokio::test]
 async fn a_non_existing_tenant_cant_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let response = app.read_tenant("42").await;
@@ -165,7 +165,7 @@ async fn a_non_existing_tenant_cant_be_read() {
 #[tokio::test]
 async fn an_existing_tenant_can_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant = CreateTenantRequest {
         id: "abcdefghijklmnopqrst".to_string(),
         name: "NewTenant".to_string(),
@@ -197,7 +197,7 @@ async fn an_existing_tenant_can_be_updated() {
 #[tokio::test]
 async fn a_non_existing_tenant_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let updated_tenant = UpdateTenantRequest {
@@ -212,7 +212,7 @@ async fn a_non_existing_tenant_cant_be_updated() {
 #[tokio::test]
 async fn an_existing_tenant_can_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant = CreateTenantRequest {
         id: "abcdefghijklmnopqrst".to_string(),
         name: "NewTenant".to_string(),
@@ -236,7 +236,7 @@ async fn an_existing_tenant_can_be_deleted() {
 #[tokio::test]
 async fn a_non_existing_tenant_returns_ok_when_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let response = app.delete_tenant("42").await;
@@ -248,7 +248,7 @@ async fn a_non_existing_tenant_returns_ok_when_deleted() {
 #[tokio::test]
 async fn all_tenants_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant1_id = create_tenant_with_id_and_name(
         &app,
         "abcdefghijklmnopqrst".to_string(),

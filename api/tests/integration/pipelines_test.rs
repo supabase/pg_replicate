@@ -2,13 +2,13 @@ use api::db::pipelines::{BatchConfig, PipelineConfig};
 use reqwest::StatusCode;
 
 use crate::{
-    images::create_default_image,
-    sinks::create_sink,
-    sources::create_source,
-    tenants::create_tenant,
-    tenants::create_tenant_with_id_and_name,
-    test_app::{
-        spawn_app, CreatePipelineRequest, CreatePipelineResponse, PipelineResponse,
+    integration::images_test::create_default_image,
+    integration::sinks_test::create_sink,
+    integration::sources_test::create_source,
+    integration::tenants_test::create_tenant,
+    integration::tenants_test::create_tenant_with_id_and_name,
+    common::test_app::{
+        spawn_test_app, CreatePipelineRequest, CreatePipelineResponse, PipelineResponse,
         PipelinesResponse, TestApp, UpdatePipelineRequest,
     },
 };
@@ -56,7 +56,7 @@ pub async fn create_pipeline_with_config(
 #[tokio::test]
 async fn pipeline_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
@@ -83,7 +83,7 @@ async fn pipeline_can_be_created() {
 #[tokio::test]
 async fn pipeline_with_another_tenants_source_cant_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,
@@ -116,7 +116,7 @@ async fn pipeline_with_another_tenants_source_cant_be_created() {
 #[tokio::test]
 async fn pipeline_with_another_tenants_sink_cant_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,
@@ -149,7 +149,7 @@ async fn pipeline_with_another_tenants_sink_cant_be_created() {
 #[tokio::test]
 async fn an_existing_pipeline_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
@@ -188,7 +188,7 @@ async fn an_existing_pipeline_can_be_read() {
 #[tokio::test]
 async fn a_non_existing_pipeline_cant_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -201,7 +201,7 @@ async fn a_non_existing_pipeline_cant_be_read() {
 #[tokio::test]
 async fn an_existing_pipeline_can_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
@@ -251,7 +251,7 @@ async fn an_existing_pipeline_can_be_updated() {
 #[tokio::test]
 async fn pipeline_with_another_tenants_source_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,
@@ -300,7 +300,7 @@ async fn pipeline_with_another_tenants_source_cant_be_updated() {
 #[tokio::test]
 async fn pipeline_with_another_tenants_sink_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,
@@ -349,7 +349,7 @@ async fn pipeline_with_another_tenants_sink_cant_be_updated() {
 #[tokio::test]
 async fn a_non_existing_pipeline_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     let sink_id = create_sink(&app, tenant_id).await;
@@ -370,7 +370,7 @@ async fn a_non_existing_pipeline_cant_be_updated() {
 #[tokio::test]
 async fn an_existing_pipeline_can_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
@@ -401,7 +401,7 @@ async fn an_existing_pipeline_can_be_deleted() {
 #[tokio::test]
 async fn a_non_existing_pipeline_cant_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -414,7 +414,7 @@ async fn a_non_existing_pipeline_cant_be_deleted() {
 #[tokio::test]
 async fn all_pipelines_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source1_id = create_source(&app, tenant_id).await;
@@ -463,7 +463,7 @@ async fn all_pipelines_can_be_read() {
 #[tokio::test]
 async fn deleting_a_source_cascade_deletes_the_pipeline() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
@@ -493,7 +493,7 @@ async fn deleting_a_source_cascade_deletes_the_pipeline() {
 #[tokio::test]
 async fn deleting_a_sink_cascade_deletes_the_pipeline() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;

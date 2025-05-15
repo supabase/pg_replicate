@@ -9,8 +9,7 @@ use api::{
 use reqwest::{IntoUrl, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-use crate::database::configure_database;
+use crate::common::database::configure_database;
 
 pub struct TestApp {
     pub address: String,
@@ -509,16 +508,20 @@ impl TestApp {
     }
 }
 
-pub async fn spawn_app() -> TestApp {
+pub async fn spawn_test_app() -> TestApp {
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind random port");
     let port = listener.local_addr().unwrap().port();
+    
     let mut configuration = get_settings::<'_, Settings>().expect("Failed to read configuration");
     configuration.database.name = Uuid::new_v4().to_string();
+    
     let connection_pool = get_connection_pool(&configuration.database);
     configure_database(&configuration.database).await;
+    
     let key = generate_random_key::<32>().expect("failed to generate random key");
     let encryption_key = encryption::EncryptionKey { id: 0, key };
     let api_key = "XOUbHmWbt9h7nWl15wWwyWQnctmFGNjpawMc3lT5CFs=".to_string();
+    
     let server = run(
         listener,
         connection_pool.clone(),
@@ -529,8 +532,10 @@ pub async fn spawn_app() -> TestApp {
     .await
     .expect("failed to bind address");
     tokio::spawn(server);
+    
     let address = format!("http://127.0.0.1:{port}");
     let api_client = reqwest::Client::new();
+    
     TestApp {
         address,
         api_client,

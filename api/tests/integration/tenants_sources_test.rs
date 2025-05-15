@@ -1,7 +1,7 @@
 use crate::{
-    sources::{new_name, new_source_config},
-    test_app::{
-        spawn_app, CreateTenantSourceRequest, CreateTenantSourceResponse, SourceResponse,
+    integration::sources_test::{new_name, new_source_config},
+    common::test_app::{
+        spawn_test_app, CreateTenantSourceRequest, CreateTenantSourceResponse, SourceResponse,
         TenantResponse,
     },
 };
@@ -9,7 +9,7 @@ use crate::{
 #[tokio::test]
 async fn tenant_and_source_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let tenant_source = CreateTenantSourceRequest {

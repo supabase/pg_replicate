@@ -2,9 +2,9 @@ use api::db::sinks::SinkConfig;
 use reqwest::StatusCode;
 
 use crate::{
-    tenants::create_tenant,
-    test_app::{
-        spawn_app, CreateSinkRequest, CreateSinkResponse, SinkResponse, SinksResponse, TestApp,
+    integration::tenants_test::create_tenant,
+    common::test_app::{
+        spawn_test_app, CreateSinkRequest, CreateSinkResponse, SinkResponse, SinksResponse, TestApp,
         UpdateSinkRequest,
     },
 };
@@ -57,7 +57,7 @@ pub async fn create_sink(app: &TestApp, tenant_id: &str) -> i64 {
 #[tokio::test]
 async fn sink_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -79,7 +79,7 @@ async fn sink_can_be_created() {
 #[tokio::test]
 async fn an_existing_sink_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     let sink = CreateSinkRequest {
@@ -111,7 +111,7 @@ async fn an_existing_sink_can_be_read() {
 #[tokio::test]
 async fn a_non_existing_sink_cant_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -124,7 +124,7 @@ async fn a_non_existing_sink_cant_be_read() {
 #[tokio::test]
 async fn an_existing_sink_can_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     let sink = CreateSinkRequest {
@@ -161,7 +161,7 @@ async fn an_existing_sink_can_be_updated() {
 #[tokio::test]
 async fn a_non_existing_sink_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -178,7 +178,7 @@ async fn a_non_existing_sink_cant_be_updated() {
 #[tokio::test]
 async fn an_existing_sink_can_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     let sink = CreateSinkRequest {
@@ -204,7 +204,7 @@ async fn an_existing_sink_can_be_deleted() {
 #[tokio::test]
 async fn a_non_existing_sink_cant_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -217,7 +217,7 @@ async fn a_non_existing_sink_cant_be_deleted() {
 #[tokio::test]
 async fn all_sinks_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
     let sink1_id = create_sink_with_config(&app, tenant_id, new_name(), new_sink_config()).await;
     let sink2_id =
