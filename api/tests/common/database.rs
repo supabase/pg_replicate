@@ -9,12 +9,12 @@ pub async fn create_and_configure_database(settings: &DatabaseSettings) -> PgPoo
     connection
         .execute(&*format!(r#"CREATE DATABASE "{}";"#, settings.name))
         .await
-        .expect("Failed to create database.");
+        .expect("Failed to create database");
 
     // Create a connection pool to the database and run the migration.
     let connection_pool = PgPool::connect_with(settings.with_db())
         .await
-        .expect("Failed to connect to Postgres.");
+        .expect("Failed to connect to Postgres");
     sqlx::migrate!("./migrations")
         .run(&connection_pool)
         .await
@@ -29,8 +29,8 @@ pub async fn destroy_database(settings: &DatabaseSettings) {
         .await
         .expect("Failed to connect to Postgres");
 
-    // Terminate any remaining connections to the database. This code assumes that those connections
-    // are not used anymore and do not outlive the `TestApp` instance.
+    // Forcefully terminate any remaining connections to the database. This code assumes that those
+    // connections are not used anymore and do not outlive the `TestApp` instance.
     connection
         .execute(&*format!(
             r#"
@@ -43,9 +43,9 @@ pub async fn destroy_database(settings: &DatabaseSettings) {
         .await
         .expect("Failed to terminate database connections");
     
-    // Drop the database
+    // Drop the database.
     connection
         .execute(&*format!(r#"DROP DATABASE IF EXISTS "{}";"#, settings.name))
         .await
-        .expect("Failed to destroy database.");
+        .expect("Failed to destroy database");
 }
