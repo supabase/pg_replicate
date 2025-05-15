@@ -6,7 +6,7 @@ use crate::{
     integration::sources_test::{new_name, new_source_config},
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn tenant_and_source_can_be_created() {
     // Arrange
     let app = spawn_test_app().await;

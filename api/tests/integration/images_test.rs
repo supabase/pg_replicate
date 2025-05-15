@@ -19,7 +19,7 @@ pub async fn create_image_with_name(app: &TestApp, name: String, is_default: boo
     response.id
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn image_can_be_created() {
     // Arrange
     let app = spawn_test_app().await;
@@ -40,7 +40,7 @@ async fn image_can_be_created() {
     assert_eq!(response.id, 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_image_can_be_read() {
     // Arrange
     let app = spawn_test_app().await;
@@ -72,7 +72,7 @@ async fn an_existing_image_can_be_read() {
     assert_eq!(response.is_default, is_default);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_image_cant_be_read() {
     // Arrange
     let app = spawn_test_app().await;
@@ -84,7 +84,7 @@ async fn a_non_existing_image_cant_be_read() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_image_can_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -123,7 +123,7 @@ async fn an_existing_image_can_be_updated() {
     assert_eq!(response.is_default, is_default);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -141,7 +141,7 @@ async fn a_non_existing_source_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_image_can_be_deleted() {
     // Arrange
     let app = spawn_test_app().await;
@@ -168,7 +168,7 @@ async fn an_existing_image_can_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_image_cant_be_deleted() {
     // Arrange
     let app = spawn_test_app().await;
@@ -180,7 +180,7 @@ async fn a_non_existing_image_cant_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn all_images_can_be_read() {
     // Arrange
     let app = spawn_test_app().await;

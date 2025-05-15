@@ -53,7 +53,7 @@ pub async fn create_pipeline_with_config(
     response.id
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn pipeline_can_be_created() {
     // Arrange
     let app = spawn_test_app().await;
@@ -80,7 +80,7 @@ async fn pipeline_can_be_created() {
     assert_eq!(response.id, 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn pipeline_with_another_tenants_source_cant_be_created() {
     // Arrange
     let app = spawn_test_app().await;
@@ -113,7 +113,7 @@ async fn pipeline_with_another_tenants_source_cant_be_created() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn pipeline_with_another_tenants_sink_cant_be_created() {
     // Arrange
     let app = spawn_test_app().await;
@@ -146,7 +146,7 @@ async fn pipeline_with_another_tenants_sink_cant_be_created() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_pipeline_can_be_read() {
     // Arrange
     let app = spawn_test_app().await;
@@ -185,7 +185,7 @@ async fn an_existing_pipeline_can_be_read() {
     assert_eq!(response.config, pipeline.config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_pipeline_cant_be_read() {
     // Arrange
     let app = spawn_test_app().await;
@@ -198,7 +198,7 @@ async fn a_non_existing_pipeline_cant_be_read() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_pipeline_can_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -248,7 +248,7 @@ async fn an_existing_pipeline_can_be_updated() {
     assert_eq!(response.config, updated_config.config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn pipeline_with_another_tenants_source_cant_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -297,7 +297,7 @@ async fn pipeline_with_another_tenants_source_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn pipeline_with_another_tenants_sink_cant_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -346,7 +346,7 @@ async fn pipeline_with_another_tenants_sink_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_pipeline_cant_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -367,7 +367,7 @@ async fn a_non_existing_pipeline_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_pipeline_can_be_deleted() {
     // Arrange
     let app = spawn_test_app().await;
@@ -398,7 +398,7 @@ async fn an_existing_pipeline_can_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_pipeline_cant_be_deleted() {
     // Arrange
     let app = spawn_test_app().await;
@@ -411,7 +411,7 @@ async fn a_non_existing_pipeline_cant_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn all_pipelines_can_be_read() {
     // Arrange
     let app = spawn_test_app().await;
@@ -460,7 +460,7 @@ async fn all_pipelines_can_be_read() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn deleting_a_source_cascade_deletes_the_pipeline() {
     // Arrange
     let app = spawn_test_app().await;
@@ -490,7 +490,7 @@ async fn deleting_a_source_cascade_deletes_the_pipeline() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn deleting_a_sink_cascade_deletes_the_pipeline() {
     // Arrange
     let app = spawn_test_app().await;

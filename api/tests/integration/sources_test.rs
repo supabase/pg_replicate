@@ -58,7 +58,7 @@ pub async fn create_source_with_config(
     response.id
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn source_can_be_created() {
     // Arrange
     let app = spawn_test_app().await;
@@ -80,7 +80,7 @@ async fn source_can_be_created() {
     assert_eq!(response.id, 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_source_can_be_read() {
     // Arrange
     let app = spawn_test_app().await;
@@ -112,7 +112,7 @@ async fn an_existing_source_can_be_read() {
     assert_eq!(response.config, source.config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_read() {
     // Arrange
     let app = spawn_test_app().await;
@@ -125,7 +125,7 @@ async fn a_non_existing_source_cant_be_read() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_source_can_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -164,7 +164,7 @@ async fn an_existing_source_can_be_updated() {
     assert_eq!(response.config, updated_config.config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
@@ -181,7 +181,7 @@ async fn a_non_existing_source_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_source_can_be_deleted() {
     // Arrange
     let app = spawn_test_app().await;
@@ -207,7 +207,7 @@ async fn an_existing_source_can_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_deleted() {
     // Arrange
     let app = spawn_test_app().await;
@@ -220,7 +220,7 @@ async fn a_non_existing_source_cant_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn all_sources_can_be_read() {
     // Arrange
     let app = spawn_test_app().await;
