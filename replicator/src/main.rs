@@ -1,6 +1,8 @@
 use std::{io::BufReader, time::Duration, vec};
 
-use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings, TlsSettings};
+use configuration::{
+    get_configuration, BatchSettings, Settings, SinkSettings, SourceSettings, TlsSettings,
+};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
@@ -11,7 +13,7 @@ use pg_replicate::{
     SslMode,
 };
 use telemetry::init_tracing;
-use tracing::info;
+use tracing::{info, instrument};
 
 mod configuration;
 
@@ -21,11 +23,15 @@ mod configuration;
 async fn main() -> anyhow::Result<()> {
     let app_name = env!("CARGO_BIN_NAME");
     let _log_flusher = init_tracing(app_name)?;
+    let settings = get_configuration()?;
+    main_impl(settings).await
+}
+
+#[instrument(name = "main", skip(settings), fields(project = settings.project))]
+async fn main_impl(settings: Settings) -> anyhow::Result<()> {
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("failed to install default crypto provider");
-
-    let settings = get_configuration()?;
 
     let SourceSettings::Postgres {
         host,
