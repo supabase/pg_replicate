@@ -1,6 +1,13 @@
-# PostgreSQL Replicate API
+# `pg_replicate` API
 
-This API service provides functionality for PostgreSQL replication and management.
+This API service provides a RESTful interface for managing PostgreSQL replication pipelines. It enables you to:
+
+- Create and manage replication pipelines between PostgreSQL sources and sinks
+- Handle multi-tenant replication configurations
+- Manage publications and tables for replication
+- Control pipeline lifecycle (start/stop/status)
+- Secure configuration with encryption
+- Deploy and manage replicators in Kubernetes
 
 ## Table of Contents
 - [Local Setup](#local-setup)
@@ -34,10 +41,10 @@ This script will:
 ### Environment Variables
 You can customize the database setup using these environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `POSTGRES_DATA_VOLUME` | Data volume path | ./postgres_data |
-| `SKIP_DOCKER` | Skip Docker container creation | false |
+| Variable               | Description                    | Default         |
+|------------------------|--------------------------------|-----------------|
+| `POSTGRES_DATA_VOLUME` | Data volume path               | ./postgres_data |
+| `SKIP_DOCKER`          | Skip Docker container creation | false           |
 
 Example usage:
 ```bash
