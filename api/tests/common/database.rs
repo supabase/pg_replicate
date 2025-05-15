@@ -42,7 +42,7 @@ pub async fn destroy_database(settings: &DatabaseSettings) {
         ))
         .await
         .expect("Failed to terminate database connections");
-    
+
     // Drop the database.
     connection
         .execute(&*format!(r#"DROP DATABASE IF EXISTS "{}";"#, settings.name))

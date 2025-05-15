@@ -6,7 +6,7 @@ use api::{
     configuration::{get_settings, Settings},
     db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
     encryption::{self, generate_random_key},
-    startup::{run},
+    startup::run,
 };
 use reqwest::{IntoUrl, RequestBuilder};
 use serde::{Deserialize, Serialize};
@@ -18,20 +18,19 @@ pub struct TestApp {
     pub api_client: reqwest::Client,
     pub api_key: String,
     settings: Settings,
-    server_handle: tokio::task::JoinHandle<io::Result<()>>
+    server_handle: tokio::task::JoinHandle<io::Result<()>>,
 }
 
 impl Drop for TestApp {
     fn drop(&mut self) {
         // First, abort the server task to ensure it's terminated.
         self.server_handle.abort();
-        
+
         // To use `block_in_place,` we need a multithreaded runtime since when a blocking
         // task is issued, the runtime will offload existing tasks to another worker.
         tokio::task::block_in_place(move || {
-            Handle::current().block_on(async move {
-                destroy_database(&self.settings.database).await
-            });
+            Handle::current()
+                .block_on(async move { destroy_database(&self.settings.database).await });
         });
     }
 }
@@ -529,18 +528,19 @@ impl TestApp {
 
 pub async fn spawn_test_app() -> TestApp {
     let base_address = "127.0.0.1";
-    let listener = TcpListener::bind(format!("{base_address}:0")).expect("failed to bind random port");
+    let listener =
+        TcpListener::bind(format!("{base_address}:0")).expect("failed to bind random port");
     let port = listener.local_addr().unwrap().port();
 
     let mut settings = get_settings::<'_, Settings>().expect("Failed to read configuration");
     settings.database.name = Uuid::new_v4().to_string();
-    
+
     let connection_pool = create_and_configure_database(&settings.database).await;
 
     let key = generate_random_key::<32>().expect("failed to generate random key");
     let encryption_key = encryption::EncryptionKey { id: 0, key };
     let api_key = "XOUbHmWbt9h7nWl15wWwyWQnctmFGNjpawMc3lT5CFs=".to_string();
-    
+
     let server = run(
         listener,
         connection_pool,
@@ -550,7 +550,7 @@ pub async fn spawn_test_app() -> TestApp {
     )
     .await
     .expect("failed to bind address");
-    
+
     let server_handle = tokio::spawn(server);
 
     TestApp {
@@ -558,6 +558,6 @@ pub async fn spawn_test_app() -> TestApp {
         api_client: reqwest::Client::new(),
         api_key,
         settings,
-        server_handle
+        server_handle,
     }
 }

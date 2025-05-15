@@ -134,13 +134,13 @@ impl DatabaseSettings {
         } else {
             PgSslMode::Prefer
         };
-        
+
         let options = PgConnectOptions::new_without_pgpass()
             .host(&self.host)
             .username(&self.username)
             .port(self.port)
             .ssl_mode(ssl_mode);
-        
+
         if let Some(password) = &self.password {
             options.password(password.expose_secret())
         } else {
