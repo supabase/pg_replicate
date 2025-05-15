@@ -53,6 +53,7 @@ use crate::{
             create_tenant_and_source, CreateTenantSourceRequest, PostTenantSourceResponse,
         },
     },
+    span_builder::ApiRootSpanBuilder,
 };
 
 pub struct Application {
@@ -220,9 +221,10 @@ pub async fn run(
     let openapi = ApiDoc::openapi();
 
     let server = HttpServer::new(move || {
+        let tracing_middleware = TracingLogger::<ApiRootSpanBuilder>::new();
         let authentication = HttpAuthentication::bearer(auth_validator);
         let app = App::new()
-            .wrap(TracingLogger::default())
+            .wrap(tracing_middleware)
             .service(health_check)
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),

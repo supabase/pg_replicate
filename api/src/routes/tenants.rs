@@ -8,6 +8,7 @@ use actix_web::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
+use tracing_actix_web::RootSpan;
 use utoipa::ToSchema;
 
 use crate::db;
@@ -98,9 +99,11 @@ pub struct GetTenantsResponse {
 pub async fn create_tenant(
     pool: Data<PgPool>,
     tenant: Json<CreateTenantRequest>,
+    root_span: RootSpan,
 ) -> Result<impl Responder, TenantError> {
     let tenant = tenant.0;
     let id = tenant.id;
+    root_span.record("project", &id);
     let name = tenant.name;
     let id = db::tenants::create_tenant(&pool, &id, &name).await?;
     let response = PostTenantResponse { id };
@@ -120,9 +123,11 @@ pub async fn create_or_update_tenant(
     pool: Data<PgPool>,
     tenant_id: Path<String>,
     tenant: Json<UpdateTenantRequest>,
+    root_span: RootSpan,
 ) -> Result<impl Responder, TenantError> {
     let tenant = tenant.0;
     let tenant_id = tenant_id.into_inner();
+    root_span.record("project", &tenant_id);
     let name = tenant.name;
     let id = db::tenants::create_or_update_tenant(&pool, &tenant_id, &name).await?;
     let response = PostTenantResponse { id };
@@ -144,8 +149,10 @@ pub async fn create_or_update_tenant(
 pub async fn read_tenant(
     pool: Data<PgPool>,
     tenant_id: Path<String>,
+    root_span: RootSpan,
 ) -> Result<impl Responder, TenantError> {
     let tenant_id = tenant_id.into_inner();
+    root_span.record("project", &tenant_id);
     let response = db::tenants::read_tenant(&pool, &tenant_id)
         .await?
         .map(|t| GetTenantResponse {
@@ -173,8 +180,10 @@ pub async fn update_tenant(
     pool: Data<PgPool>,
     tenant_id: Path<String>,
     tenant: Json<UpdateTenantRequest>,
+    root_span: RootSpan,
 ) -> Result<impl Responder, TenantError> {
     let tenant_id = tenant_id.into_inner();
+    root_span.record("project", &tenant_id);
     db::tenants::update_tenant(&pool, &tenant_id, &tenant.0.name)
         .await?
         .ok_or(TenantError::TenantNotFound(tenant_id))?;
@@ -196,8 +205,10 @@ pub async fn update_tenant(
 pub async fn delete_tenant(
     pool: Data<PgPool>,
     tenant_id: Path<String>,
+    root_span: RootSpan,
 ) -> Result<impl Responder, TenantError> {
     let tenant_id = tenant_id.into_inner();
+    root_span.record("project", &tenant_id);
     db::tenants::delete_tenant(&pool, &tenant_id).await?;
     Ok(HttpResponse::Ok().finish())
 }

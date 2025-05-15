@@ -7,6 +7,7 @@ use actix_web::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
+use tracing_actix_web::RootSpan;
 use utoipa::ToSchema;
 
 use crate::{
@@ -87,6 +88,7 @@ pub async fn create_tenant_and_source(
     pool: Data<PgPool>,
     tenant_and_source: Json<CreateTenantSourceRequest>,
     encryption_key: Data<EncryptionKey>,
+    root_span: RootSpan,
 ) -> Result<impl Responder, TenantSourceError> {
     let tenant_and_source = tenant_and_source.0;
     let CreateTenantSourceRequest {
@@ -95,6 +97,7 @@ pub async fn create_tenant_and_source(
         source_name,
         source_config,
     } = tenant_and_source;
+    root_span.record("project", &tenant_id);
     let (tenant_id, source_id) = db::tenants_sources::create_tenant_and_source(
         &pool,
         &tenant_id,
