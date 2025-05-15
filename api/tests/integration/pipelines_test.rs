@@ -2,15 +2,15 @@ use api::db::pipelines::{BatchConfig, PipelineConfig};
 use reqwest::StatusCode;
 
 use crate::{
+    common::test_app::{
+        spawn_test_app, CreatePipelineRequest, CreatePipelineResponse, PipelineResponse,
+        PipelinesResponse, TestApp, UpdatePipelineRequest,
+    },
     integration::images_test::create_default_image,
     integration::sinks_test::create_sink,
     integration::sources_test::create_source,
     integration::tenants_test::create_tenant,
     integration::tenants_test::create_tenant_with_id_and_name,
-    common::test_app::{
-        spawn_test_app, CreatePipelineRequest, CreatePipelineResponse, PipelineResponse,
-        PipelinesResponse, TestApp, UpdatePipelineRequest,
-    },
 };
 
 pub fn new_pipeline_config() -> PipelineConfig {

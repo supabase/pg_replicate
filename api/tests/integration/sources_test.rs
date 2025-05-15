@@ -2,11 +2,11 @@ use api::db::sources::SourceConfig;
 use reqwest::StatusCode;
 
 use crate::{
-    integration::tenants_test::create_tenant,
     common::test_app::{
         spawn_test_app, CreateSourceRequest, CreateSourceResponse, SourceResponse, SourcesResponse,
         TestApp, UpdateSourceRequest,
     },
+    integration::tenants_test::create_tenant,
 };
 
 pub fn new_name() -> String {

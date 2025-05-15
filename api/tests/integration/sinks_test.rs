@@ -2,11 +2,11 @@ use api::db::sinks::SinkConfig;
 use reqwest::StatusCode;
 
 use crate::{
-    integration::tenants_test::create_tenant,
     common::test_app::{
-        spawn_test_app, CreateSinkRequest, CreateSinkResponse, SinkResponse, SinksResponse, TestApp,
-        UpdateSinkRequest,
+        spawn_test_app, CreateSinkRequest, CreateSinkResponse, SinkResponse, SinksResponse,
+        TestApp, UpdateSinkRequest,
     },
+    integration::tenants_test::create_tenant,
 };
 
 pub fn new_name() -> String {

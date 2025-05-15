@@ -1,15 +1,17 @@
 use reqwest::StatusCode;
 
 use crate::{
-    integration::images_test::create_default_image,
-    integration::pipelines_test::{new_pipeline_config, updated_pipeline_config},
-    integration::sinks_test::{create_sink, new_name, new_sink_config, updated_name, updated_sink_config},
-    integration::sources_test::create_source,
-    integration::tenants_test::{create_tenant, create_tenant_with_id_and_name},
     common::test_app::{
         spawn_test_app, CreateSinkPipelineResponse, PipelineResponse, PostSinkPipelineRequest,
         SinkResponse,
     },
+    integration::images_test::create_default_image,
+    integration::pipelines_test::{new_pipeline_config, updated_pipeline_config},
+    integration::sinks_test::{
+        create_sink, new_name, new_sink_config, updated_name, updated_sink_config,
+    },
+    integration::sources_test::create_source,
+    integration::tenants_test::{create_tenant, create_tenant_with_id_and_name},
 };
 
 #[tokio::test]

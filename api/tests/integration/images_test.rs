@@ -1,8 +1,8 @@
 use reqwest::StatusCode;
 
 use crate::common::test_app::{
-    spawn_test_app, CreateImageRequest, CreateImageResponse, ImageResponse, ImagesResponse, TestApp,
-    UpdateImageRequest,
+    spawn_test_app, CreateImageRequest, CreateImageResponse, ImageResponse, ImagesResponse,
+    TestApp, UpdateImageRequest,
 };
 
 pub async fn create_default_image(app: &TestApp) -> i64 {

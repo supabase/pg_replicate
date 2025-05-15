@@ -15,5 +15,5 @@
 //!
 //! These utilities help maintain consistency across tests and reduce code duplication.
 
-pub mod test_app;
 pub mod database;
+pub mod test_app;

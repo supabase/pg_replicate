@@ -1,8 +1,8 @@
 use reqwest::StatusCode;
 
 use crate::common::test_app::{
-    spawn_test_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, TenantsResponse, TestApp,
-    UpdateTenantRequest,
+    spawn_test_app, CreateTenantRequest, CreateTenantResponse, TenantResponse, TenantsResponse,
+    TestApp, UpdateTenantRequest,
 };
 
 pub async fn create_tenant(app: &TestApp) -> String {

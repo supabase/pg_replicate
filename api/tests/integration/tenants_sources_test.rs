@@ -1,9 +1,9 @@
 use crate::{
-    integration::sources_test::{new_name, new_source_config},
     common::test_app::{
         spawn_test_app, CreateTenantSourceRequest, CreateTenantSourceResponse, SourceResponse,
         TenantResponse,
     },
+    integration::sources_test::{new_name, new_source_config},
 };
 
 #[tokio::test]
