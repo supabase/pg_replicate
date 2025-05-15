@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 set -eo pipefail
 
 if [ ! -d "migrations" ]; then
@@ -53,6 +52,8 @@ then
       mkdir -p "${POSTGRES_DATA_VOLUME}"
       DOCKER_RUN_CMD="${DOCKER_RUN_CMD} \
         -v "${POSTGRES_DATA_VOLUME}":/var/lib/postgresql/data"
+    else
+      echo "📁 No storage path specified, using default Docker volume"
     fi
 
     # Complete the docker run command
