@@ -2,62 +2,84 @@
 set -x
 set -eo pipefail
 
+if [ ! -d "migrations" ]; then
+  echo >&2 "❌ Error: '/migrations' folder not found."
+  echo >&2 "Please run this script from the 'pg_replicate/api' directory."
+  exit 1
+fi
+
 if ! [ -x "$(command -v psql)" ]; then
-  echo >&2 "Error: psql is not installed."
+  echo >&2 "❌ Error: PostgreSQL client (psql) is not installed."
+  echo >&2 "Please install it using your system's package manager."
   exit 1
 fi
 
 if ! [ -x "$(command -v sqlx)" ]; then
-  echo >&2 "Error: sqlx is not installed."
-  echo >&2 "Use:"
+  echo >&2 "❌ Error: SQLx CLI is not installed."
+  echo >&2 "To install it, run:"
   echo >&2 "    cargo install --version='~0.7' sqlx-cli --no-default-features --features rustls,postgres"
-  echo >&2 "to install it."
   exit 1
 fi
 
-# Check if a custom user has been set, otherwise default to 'postgres'
+# Database configuration (should be the same as '/configuration/dev.yaml')
+echo "🔧 Configuring database settings..."
 DB_USER="${POSTGRES_USER:=postgres}"
-# Check if a custom password has been set, otherwise default to 'postgres'
 DB_PASSWORD="${POSTGRES_PASSWORD:=postgres}"
-# Check if a custom database name has been set, otherwise default to 'postgres'
 DB_NAME="${POSTGRES_DB:=postgres}"
-# Check if a custom port has been set, otherwise default to '5430'
 DB_PORT="${POSTGRES_PORT:=5430}"
-# Check if a custom host has been set, otherwise default to 'localhost'
 DB_HOST="${POSTGRES_HOST:=localhost}"
 
-# Allow to skip Docker if a dockerized Postgres database is already running
+# Docker container setup
 if [[ -z "${SKIP_DOCKER}" ]]
 then
-  # if a postgres container is running, print instructions to kill it and exit
+  echo "🐳 Checking Docker container status..."
   RUNNING_POSTGRES_CONTAINER=$(docker ps --filter 'name=postgres' --format '{{.ID}}')
   if [[ -n $RUNNING_POSTGRES_CONTAINER ]]; then
-    echo >&2 "there is a postgres container already running, kill it with"
-    echo >&2 "    docker kill ${RUNNING_POSTGRES_CONTAINER}"
-    exit 1
+    echo "✅ PostgreSQL container is already running"
+  else
+    echo "🚀 Starting new PostgreSQL container..."
+    
+    # Prepare docker run command
+    DOCKER_RUN_CMD="docker run \
+        -e POSTGRES_USER=${DB_USER} \
+        -e POSTGRES_PASSWORD=${DB_PASSWORD} \
+        -e POSTGRES_DB=${DB_NAME} \
+        -p "${DB_PORT}":5432 \
+        -d"
+
+    # Handle persistent storage
+    if [[ -n "${POSTGRES_DATA_VOLUME}" ]]; then
+      echo "📁 Setting up persistent storage at ${POSTGRES_DATA_VOLUME}"
+      mkdir -p "${POSTGRES_DATA_VOLUME}"
+      DOCKER_RUN_CMD="${DOCKER_RUN_CMD} \
+        -v "${POSTGRES_DATA_VOLUME}":/var/lib/postgresql/data"
+    fi
+
+    # Complete the docker run command
+    DOCKER_RUN_CMD="${DOCKER_RUN_CMD} \
+        --name "postgres_$(date '+%s')" \
+        postgres -N 1000"
+        # Increased maximum number of connections for testing purposes
+
+    # Start the container
+    eval "${DOCKER_RUN_CMD}"
+    echo "✅ PostgreSQL container started"
   fi
-  # Launch postgres using Docker
-  docker run \
-      -e POSTGRES_USER=${DB_USER} \
-      -e POSTGRES_PASSWORD=${DB_PASSWORD} \
-      -e POSTGRES_DB=${DB_NAME} \
-      -p "${DB_PORT}":5432 \
-      -d \
-      --name "postgres_$(date '+%s')" \
-      postgres -N 1000
-      # ^ Increased maximum number of connections for testing purposes
 fi
 
-# Keep pinging Postgres until it's ready to accept commands
+# Wait for PostgreSQL to be ready
+echo "⏳ Waiting for PostgreSQL to be ready..."
 until PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -U "${DB_USER}" -p "${DB_PORT}" -d "postgres" -c '\q'; do
-  >&2 echo "Postgres is still unavailable - sleeping"
+  echo "⏳ PostgreSQL is still starting up... waiting"
   sleep 1
 done
 
->&2 echo "Postgres is up and running on port ${DB_PORT} - running migrations now!"
+echo "✅ PostgreSQL is up and running on port ${DB_PORT}"
 
+# Set up the database
+echo "🔄 Setting up the database..."
 export DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
 sqlx database create
 sqlx migrate run
 
->&2 echo "Postgres has been migrated, ready to go!"
+echo "✨ Database setup complete! Ready to go!"
