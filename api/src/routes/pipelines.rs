@@ -366,8 +366,14 @@ pub async fn start_pipeline(
     let (pipeline, replicator, image, source, sink) =
         read_data(&pool, tenant_id, pipeline_id, &encryption_key).await?;
 
-    let (secrets, config) =
-        create_configs(&k8s_client, source.config, sink.config, pipeline).await?;
+    let (secrets, config) = create_configs(
+        &k8s_client,
+        source.config,
+        sink.config,
+        pipeline,
+        tenant_id.to_string(),
+    )
+    .await?;
     let prefix = create_prefix(tenant_id, replicator.id);
 
     create_or_update_secrets(&k8s_client, &prefix, secrets).await?;
@@ -507,6 +513,7 @@ async fn create_configs(
     source_config: SourceConfig,
     sink_config: SinkConfig,
     pipeline: Pipeline,
+    project: String,
 ) -> Result<(Secrets, replicator_config::Config), PipelineError> {
     let SourceConfig::Postgres {
         host,
@@ -572,6 +579,7 @@ async fn create_configs(
         sink: sink_config,
         batch: batch_config,
         tls: tls_config,
+        project,
     };
 
     Ok((secrets, config))
