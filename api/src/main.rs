@@ -11,8 +11,6 @@ use tracing::{error, info};
 #[actix_web::main]
 pub async fn main() -> anyhow::Result<()> {
     let app_name = env!("CARGO_BIN_NAME");
-    let _log_flusher = init_tracing(app_name)?;
-    let args: Vec<String> = env::args().collect();
     // We pass emit_on_span_close = true to emit logs on span close
     // for the api because it is a web server and we need to emit logs
     // for every closing request. This is a bit of a hack, but it works
@@ -31,7 +29,7 @@ pub async fn main() -> anyhow::Result<()> {
         }
         // Handle single command commands
         2 => {
-            let command = &args[1];
+            let command = args.nth(1).unwrap();
             match command.as_str() {
                 "migrate" => {
                     let configuration = get_settings::<'_, DatabaseSettings>()?;
