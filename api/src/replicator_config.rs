@@ -137,7 +137,8 @@ mod tests {
             "tls": {
                 "trusted_root_certs": "",
                 "enabled": false
-            }
+            },
+            "project": "abcdefghijklmnopqrst"
         }"#;
         let actual = serde_json::from_str::<Config>(settings);
         let expected = Config {
