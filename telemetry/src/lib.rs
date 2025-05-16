@@ -32,7 +32,7 @@ pub enum LogFlusher {
 }
 
 /// Initializes tracing for the application.
-pub fn init_tracing(app_name: &str) -> Result<LogFlusher, TracingError> {
+pub fn init_tracing(app_name: &str, emit_on_span_close: bool) -> Result<LogFlusher, TracingError> {
     // Initialize the log tracer to capture logs from the `log` crate
     // and send them to the `tracing` subscriber. This captures logs
     // from libraries that use the `log` crate.
@@ -45,9 +45,9 @@ pub fn init_tracing(app_name: &str) -> Result<LogFlusher, TracingError> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
 
     let log_flusher = if is_prod {
-        configure_prod_tracing(filter, app_name)?
+        configure_prod_tracing(filter, app_name, emit_on_span_close)?
     } else {
-        configure_dev_tracing(filter)?
+        configure_dev_tracing(filter, emit_on_span_close)?
     };
 
     // Return the log flusher to ensure logs are flushed before the application exits
@@ -55,7 +55,11 @@ pub fn init_tracing(app_name: &str) -> Result<LogFlusher, TracingError> {
     Ok(log_flusher)
 }
 
-fn configure_prod_tracing(filter: EnvFilter, app_name: &str) -> Result<LogFlusher, TracingError> {
+fn configure_prod_tracing(
+    filter: EnvFilter,
+    app_name: &str,
+    emit_on_span_close: bool,
+) -> Result<LogFlusher, TracingError> {
     let filename_suffix = "log";
     let log_dir = "logs";
     let file_appender = rolling::Builder::new()
@@ -78,22 +82,29 @@ fn configure_prod_tracing(filter: EnvFilter, app_name: &str) -> Result<LogFlushe
         // Disable target to reduce noise in the logs
         .with_target(false);
 
-    let subscriber = FmtSubscriber::builder()
+    let subscriber_builder = FmtSubscriber::builder()
         .event_format(format)
         .with_writer(file_appender)
         .json()
-        // emit a log event when a span is closed
-        // since a request is a span, this will emit a log event
-        // when the request is completed
-        .with_span_events(FmtSpan::CLOSE)
-        .with_env_filter(filter)
-        .finish();
+        .with_env_filter(filter);
+
+    let subscriber_builder = if emit_on_span_close {
+        subscriber_builder.with_span_events(FmtSpan::CLOSE)
+    } else {
+        subscriber_builder
+    };
+
+    let subscriber = subscriber_builder.finish();
 
     set_global_default(subscriber)?;
+
     Ok(LogFlusher::Flusher(guard))
 }
 
-fn configure_dev_tracing(filter: EnvFilter) -> Result<LogFlusher, TracingError> {
+fn configure_dev_tracing(
+    filter: EnvFilter,
+    emit_on_span_close: bool,
+) -> Result<LogFlusher, TracingError> {
     let format = fmt::format()
         // Emit the log level in the log output
         .with_level(true)
@@ -107,15 +118,19 @@ fn configure_dev_tracing(filter: EnvFilter) -> Result<LogFlusher, TracingError> 
         .with_file(false)
         .with_target(false);
 
-    let subscriber = FmtSubscriber::builder()
+    let subscriber_builder = FmtSubscriber::builder()
         .event_format(format)
-        // emit a log event when a span is closed
-        // since a request is a span, this will emit a log event
-        // when the request is completed
-        .with_span_events(FmtSpan::CLOSE)
-        .with_env_filter(filter)
-        .finish();
+        .with_env_filter(filter);
+
+    let subscriber_builder = if emit_on_span_close {
+        subscriber_builder.with_span_events(FmtSpan::CLOSE)
+    } else {
+        subscriber_builder
+    };
+
+    let subscriber = subscriber_builder.finish();
 
     set_global_default(subscriber)?;
+
     Ok(LogFlusher::NullFlusher)
 }

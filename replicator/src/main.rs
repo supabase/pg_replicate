@@ -22,7 +22,10 @@ mod configuration;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let app_name = env!("CARGO_BIN_NAME");
-    let _log_flusher = init_tracing(app_name)?;
+    // We pass emit_on_span_close = false to avoid emitting logs on span close
+    // for replicator because it is not a web server and we don't need to emit logs
+    // for every closing span.
+    let _log_flusher = init_tracing(app_name, false)?;
     let settings = get_configuration()?;
     main_impl(settings).await
 }
