@@ -79,6 +79,7 @@ impl BigQueryBatchSink {
         })
     }
 
+    #[expect(clippy::result_large_err)]
     fn get_table_schema(&self, table_id: TableId) -> Result<&TableSchema, BigQuerySinkError> {
         self.table_schemas
             .as_ref()

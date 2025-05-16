@@ -104,6 +104,7 @@ pub struct Config {
     pub sink: SinkConfig,
     pub batch: BatchConfig,
     pub tls: TlsConfig,
+    pub project: String,
 }
 
 #[cfg(test)]
@@ -136,7 +137,8 @@ mod tests {
             "tls": {
                 "trusted_root_certs": "",
                 "enabled": false
-            }
+            },
+            "project": "abcdefghijklmnopqrst"
         }"#;
         let actual = serde_json::from_str::<Config>(settings);
         let expected = Config {
@@ -161,6 +163,7 @@ mod tests {
                 trusted_root_certs: "".to_string(),
                 enabled: false,
             },
+            project: "abcdefghijklmnopqrst".to_string(),
         };
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());
@@ -190,8 +193,9 @@ mod tests {
                 trusted_root_certs: "".to_string(),
                 enabled: false,
             },
+            project: "abcdefghijklmnopqrst".to_string(),
         };
-        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false}}"#;
+        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false},"project":"abcdefghijklmnopqrst"}"#;
         let actual = serde_json::to_string(&actual);
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());

@@ -1,6 +1,8 @@
 use std::{io::BufReader, time::Duration, vec};
 
-use configuration::{get_configuration, BatchSettings, SinkSettings, SourceSettings, TlsSettings};
+use configuration::{
+    get_configuration, BatchSettings, Settings, SinkSettings, SourceSettings, TlsSettings,
+};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
@@ -11,7 +13,7 @@ use pg_replicate::{
     SslMode,
 };
 use telemetry::init_tracing;
-use tracing::info;
+use tracing::{info, instrument};
 
 mod configuration;
 
@@ -20,12 +22,19 @@ mod configuration;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let app_name = env!("CARGO_BIN_NAME");
-    let _log_flusher = init_tracing(app_name)?;
+    // We pass emit_on_span_close = false to avoid emitting logs on span close
+    // for replicator because it is not a web server and we don't need to emit logs
+    // for every closing span.
+    let _log_flusher = init_tracing(app_name, false)?;
+    let settings = get_configuration()?;
+    start_replication(settings).await
+}
+
+#[instrument(name = "replication", skip(settings), fields(project = settings.project))]
+async fn start_replication(settings: Settings) -> anyhow::Result<()> {
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("failed to install default crypto provider");
-
-    let settings = get_configuration()?;
 
     let SourceSettings::Postgres {
         host,

@@ -13,6 +13,13 @@ pub async fn main() -> anyhow::Result<()> {
     let app_name = env!("CARGO_BIN_NAME");
     let _log_flusher = init_tracing(app_name)?;
     let args: Vec<String> = env::args().collect();
+    // We pass emit_on_span_close = true to emit logs on span close
+    // for the api because it is a web server and we need to emit logs
+    // for every closing request. This is a bit of a hack, but it works
+    // for now. Ideally the tracing middleware should emit a log on
+    // request end, but it doesn't do that yet.
+    let _log_flusher = init_tracing(app_name, true)?;
+    let mut args = env::args();
 
     match args.len() {
         // Run the application server
@@ -58,7 +65,7 @@ fn log_database_details(settings: &DatabaseSettings) {
         password: _,
         require_ssl,
     } = settings;
-    
+
     info!(
         host,
         port,
