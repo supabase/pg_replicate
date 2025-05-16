@@ -27,11 +27,11 @@ async fn main() -> anyhow::Result<()> {
     // for every closing span.
     let _log_flusher = init_tracing(app_name, false)?;
     let settings = get_configuration()?;
-    main_impl(settings).await
+    start_replication(settings).await
 }
 
-#[instrument(name = "main", skip(settings), fields(project = settings.project))]
-async fn main_impl(settings: Settings) -> anyhow::Result<()> {
+#[instrument(name = "replication", skip(settings), fields(project = settings.project))]
+async fn start_replication(settings: Settings) -> anyhow::Result<()> {
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("failed to install default crypto provider");
