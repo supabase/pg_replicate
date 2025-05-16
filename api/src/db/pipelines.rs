@@ -1,4 +1,3 @@
-use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use super::replicators::create_replicator_txn;
@@ -61,7 +60,7 @@ pub async fn create_pipeline_txn(
     sink_id: i64,
     image_id: i64,
     publication_name: &str,
-    pipeline_config: Value,
+    pipeline_config: serde_json::Value,
 ) -> Result<i64, sqlx::Error> {
     let replicator_id = create_replicator_txn(txn, tenant_id, image_id).await?;
     let record = sqlx::query!(
@@ -157,7 +156,7 @@ pub async fn update_pipeline_txn(
     source_id: i64,
     sink_id: i64,
     publication_name: &str,
-    pipeline_config: Value,
+    pipeline_config: serde_json::Value,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"

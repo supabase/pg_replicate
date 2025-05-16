@@ -1,21 +1,23 @@
 use reqwest::StatusCode;
 
 use crate::{
-    images::create_default_image,
-    pipelines::{new_pipeline_config, updated_pipeline_config},
-    sinks::{create_sink, new_name, new_sink_config, updated_name, updated_sink_config},
-    sources::create_source,
-    tenants::{create_tenant, create_tenant_with_id_and_name},
-    test_app::{
-        spawn_app, CreateSinkPipelineResponse, PipelineResponse, PostSinkPipelineRequest,
+    common::test_app::{
+        spawn_test_app, CreateSinkPipelineResponse, PipelineResponse, PostSinkPipelineRequest,
         SinkResponse,
     },
+    integration::images_test::create_default_image,
+    integration::pipelines_test::{new_pipeline_config, updated_pipeline_config},
+    integration::sinks_test::{
+        create_sink, new_name, new_sink_config, updated_name, updated_sink_config,
+    },
+    integration::sources_test::create_source,
+    integration::tenants_test::{create_tenant, create_tenant_with_id_and_name},
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sink_and_pipeline_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     create_default_image(&app).await;
@@ -65,10 +67,10 @@ async fn sink_and_pipeline_can_be_created() {
     assert_eq!(response.config, sink_pipeline.pipeline_config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sink_and_pipeline_with_another_tenants_source_cant_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,
@@ -97,10 +99,10 @@ async fn sink_and_pipeline_with_another_tenants_source_cant_be_created() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_sink_and_pipeline_can_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
     create_default_image(&app).await;
@@ -160,10 +162,10 @@ async fn an_existing_sink_and_pipeline_can_be_updated() {
     assert_eq!(response.config, sink_pipeline.pipeline_config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sink_and_pipeline_with_another_tenants_source_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,
@@ -213,10 +215,10 @@ async fn sink_and_pipeline_with_another_tenants_source_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sink_and_pipeline_with_another_tenants_sink_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,
@@ -263,10 +265,10 @@ async fn sink_and_pipeline_with_another_tenants_sink_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sink_and_pipeline_with_another_tenants_pipeline_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant1_id = &create_tenant_with_id_and_name(
         &app,

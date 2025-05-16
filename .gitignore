@@ -19,3 +19,6 @@ Cargo.lock
 # Added by cargo
 /target
 .env
+
+# macOS system files
+.DS_Store

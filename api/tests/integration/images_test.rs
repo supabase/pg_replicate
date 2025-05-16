@@ -1,8 +1,8 @@
 use reqwest::StatusCode;
 
-use crate::test_app::{
-    spawn_app, CreateImageRequest, CreateImageResponse, ImageResponse, ImagesResponse, TestApp,
-    UpdateImageRequest,
+use crate::common::test_app::{
+    spawn_test_app, CreateImageRequest, CreateImageResponse, ImageResponse, ImagesResponse,
+    TestApp, UpdateImageRequest,
 };
 
 pub async fn create_default_image(app: &TestApp) -> i64 {
@@ -19,10 +19,10 @@ pub async fn create_image_with_name(app: &TestApp, name: String, is_default: boo
     response.id
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn image_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let image = CreateImageRequest {
@@ -40,10 +40,10 @@ async fn image_can_be_created() {
     assert_eq!(response.id, 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_image_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     let name = "some/image".to_string();
     let is_default = true;
@@ -72,10 +72,10 @@ async fn an_existing_image_can_be_read() {
     assert_eq!(response.is_default, is_default);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_image_cant_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let response = app.read_image(42).await;
@@ -84,10 +84,10 @@ async fn a_non_existing_image_cant_be_read() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_image_can_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     let name = "some/image".to_string();
     let is_default = true;
@@ -123,10 +123,10 @@ async fn an_existing_image_can_be_updated() {
     assert_eq!(response.is_default, is_default);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let name = "some/image".to_string();
@@ -141,10 +141,10 @@ async fn a_non_existing_source_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_image_can_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     let name = "some/image".to_string();
     let is_default = true;
@@ -168,10 +168,10 @@ async fn an_existing_image_can_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_image_cant_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
 
     // Act
     let response = app.delete_image(42).await;
@@ -180,10 +180,10 @@ async fn a_non_existing_image_cant_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn all_images_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let image1_id = create_image_with_name(&app, "some/image".to_string(), true).await;
     let image2_id = create_image_with_name(&app, "other/image".to_string(), false).await;
 
