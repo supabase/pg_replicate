@@ -23,7 +23,7 @@ pub async fn main() -> anyhow::Result<()> {
         // Run the application server
         1 => {
             let configuration = get_settings::<'_, Settings>()?;
-            log_database_details(&configuration.database);
+            log_database_settings(&configuration.database);
             let application = Application::build(configuration.clone()).await?;
             application.run_until_stopped().await?;
         }
@@ -33,7 +33,7 @@ pub async fn main() -> anyhow::Result<()> {
             match command.as_str() {
                 "migrate" => {
                     let configuration = get_settings::<'_, DatabaseSettings>()?;
-                    log_database_details(&configuration);
+                    log_database_settings(&configuration);
                     Application::migrate_database(configuration).await?;
                     info!("database migrated successfully");
                 }
@@ -45,7 +45,7 @@ pub async fn main() -> anyhow::Result<()> {
             }
         }
         _ => {
-            let message = "invalid command line arguments";
+            let message = "invalid number of command line arguments";
             error!("{message}");
             return Err(anyhow!(message));
         }
@@ -54,22 +54,13 @@ pub async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn log_database_details(settings: &DatabaseSettings) {
-    let DatabaseSettings {
-        host,
-        port,
-        name,
-        username,
-        password: _,
-        require_ssl,
-    } = settings;
-
+fn log_database_settings(settings: &DatabaseSettings) {
     info!(
-        host,
-        port,
-        dbname = name,
-        username,
-        require_ssl,
+        host = settings.host,
+        port = settings.port,
+        dbname = settings.name,
+        username = settings.username,
+        require_ssl = settings.require_ssl,
         "database details",
     );
 }
