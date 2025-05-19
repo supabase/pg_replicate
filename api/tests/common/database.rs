@@ -1,5 +1,5 @@
-use postgres::options::PgDatabaseOptions;
-use postgres::test_utils::create_pg_database;
+use postgres::sqlx::options::PgDatabaseOptions;
+use postgres::sqlx::test_utils::create_pg_database;
 use sqlx::PgPool;
 
 /// Creates and configures a new PostgreSQL database for the API.

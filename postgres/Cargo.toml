@@ -14,6 +14,17 @@ sqlx = { workspace = true, features = [
     "json",
     "migrate",
 ] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio-postgres = { workspace = true, features = [
+    "runtime",
+    "with-chrono-0_4",
+    "with-uuid-1",
+    "with-serde_json-1",
+] }
+tokio-postgres-rustls = { workspace = true }
+
 
 [features]
 test_utils = []
+tokio = []
+sqlx = []

@@ -1,5 +1,29 @@
-use crate::options::PgDatabaseOptions;
+use crate::sqlx::options::PgDatabaseOptions;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
+use tokio::runtime::Handle;
+
+struct PgDatabase {
+    options: PgDatabaseOptions,
+    pool: PgPool,
+}
+
+impl PgDatabase {
+    pub async fn new(options: PgDatabaseOptions) -> Self {
+        let pool = create_pg_database(&options).await;
+
+        Self { options, pool }
+    }
+}
+
+impl Drop for PgDatabase {
+    fn drop(&mut self) {
+        // To use `block_in_place,` we need a multithreaded runtime since when a blocking
+        // task is issued, the runtime will offload existing tasks to another worker.
+        tokio::task::block_in_place(move || {
+            Handle::current().block_on(async move { drop_pg_database(&self.options).await });
+        });
+    }
+}
 
 /// Creates a new PostgreSQL database and returns a connection pool to it.
 ///

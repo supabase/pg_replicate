@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 
 use base64::{prelude::BASE64_STANDARD, Engine};
-use postgres::options::PgDatabaseOptions;
+use postgres::sqlx::options::PgDatabaseOptions;
 use serde::{
     de::{self, MapAccess, Unexpected, Visitor},
     Deserialize, Deserializer,

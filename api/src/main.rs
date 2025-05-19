@@ -5,7 +5,7 @@ use api::{
     configuration::{get_settings, Settings},
     startup::Application,
 };
-use postgres::options::PgDatabaseOptions;
+use postgres::sqlx::options::PgDatabaseOptions;
 use telemetry::init_tracing;
 use tracing::{error, info};
 
