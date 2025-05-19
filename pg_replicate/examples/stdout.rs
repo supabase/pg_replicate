@@ -8,9 +8,9 @@ use pg_replicate::{
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
-    table::TableName,
     SslMode,
 };
+use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseOptions;
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

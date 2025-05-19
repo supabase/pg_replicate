@@ -3,13 +3,13 @@ use std::{collections::HashMap, path::Path};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use async_trait::async_trait;
+use postgres::schema::{TableId, TableSchema};
 use tokio_postgres::types::PgLsn;
 
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
     pipeline::{sinks::BatchSink, PipelineResumptionState},
-    table::{TableId, TableSchema},
 };
 
 use super::{

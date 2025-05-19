@@ -1,10 +1,5 @@
 use std::{collections::HashSet, time::Instant};
 
-use futures::StreamExt;
-use tokio::pin;
-use tokio_postgres::types::PgLsn;
-use tracing::{debug, info};
-
 use crate::{
     conversions::cdc_event::{CdcEvent, CdcEventConversionError},
     pipeline::{
@@ -13,8 +8,12 @@ use crate::{
         sources::{postgres::CdcStreamError, CommonSourceError, Source},
         PipelineAction, PipelineError,
     },
-    table::TableId,
 };
+use futures::StreamExt;
+use postgres::schema::TableId;
+use tokio::pin;
+use tokio_postgres::types::PgLsn;
+use tracing::{debug, info};
 
 use super::BatchConfig;
 

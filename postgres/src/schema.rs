@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt;
 
 use pg_escape::quote_identifier;
 use tokio_postgres::types::Type;
@@ -17,8 +17,8 @@ impl TableName {
     }
 }
 
-impl Display for TableName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TableName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{0}.{1}", self.schema, self.name))
     }
 }

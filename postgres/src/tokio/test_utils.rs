@@ -1,10 +1,11 @@
+use crate::schema::TableName;
 use crate::tokio::options::PgDatabaseOptions;
 use tokio::runtime::Handle;
 use tokio_postgres::{Client, NoTls};
 
-struct PgDatabase {
-    options: PgDatabaseOptions,
-    client: Client,
+pub struct PgDatabase {
+    pub options: PgDatabaseOptions,
+    pub client: Client,
 }
 
 impl PgDatabase {
@@ -12,6 +13,31 @@ impl PgDatabase {
         let client = create_pg_database(&options).await;
 
         Self { options, client }
+    }
+
+    /// Creates a new publication for the specified tables.
+    pub async fn create_publication(
+        &self,
+        publication_name: &str,
+        table_names: &[TableName],
+    ) -> Result<String, tokio_postgres::Error> {
+        let table_names = table_names
+            .iter()
+            .map(|t| t.to_string())
+            .collect::<Vec<_>>();
+
+        let create_publication_query = format!(
+            "CREATE PUBLICATION {} FOR TABLE {}",
+            publication_name,
+            table_names
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        self.client.execute(&create_publication_query, &[]).await?;
+
+        Ok(publication_name.to_string())
     }
 }
 

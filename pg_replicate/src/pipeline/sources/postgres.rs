@@ -11,11 +11,12 @@ use crate::{
         cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
-    table::{ColumnSchema, TableId, TableName, TableSchema},
 };
+
 use async_trait::async_trait;
 use futures::{ready, Stream};
 use pin_project_lite::pin_project;
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::pki_types::CertificateDer;
@@ -52,7 +53,6 @@ pub struct PostgresSource {
 }
 
 impl PostgresSource {
-    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         options: PgDatabaseOptions,
         trusted_root_certs: Vec<CertificateDer<'static>>,

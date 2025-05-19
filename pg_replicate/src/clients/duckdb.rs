@@ -5,12 +5,10 @@ use duckdb::{
     types::{ToSqlOutput, Value},
     Config, Connection, ToSql,
 };
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use tokio_postgres::types::{PgLsn, Type};
 
-use crate::{
-    conversions::{table_row::TableRow, ArrayCell, Cell},
-    table::{ColumnSchema, TableId, TableName, TableSchema},
-};
+use crate::conversions::{table_row::TableRow, ArrayCell, Cell};
 
 pub struct DuckDbClient {
     conn: Connection,

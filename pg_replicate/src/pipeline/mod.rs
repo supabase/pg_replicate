@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
+use postgres::schema::TableId;
 use sinks::SinkError;
 use sources::SourceError;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
-
-use crate::table::TableId;
 
 pub mod batching;
 pub mod sinks;

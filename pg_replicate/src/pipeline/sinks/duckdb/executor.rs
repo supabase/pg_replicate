@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use thiserror::Error;
 use tokio::sync::mpsc::{error::SendError, Receiver, Sender};
 use tokio_postgres::types::{PgLsn, Type};
@@ -9,7 +10,6 @@ use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
     pipeline::{sinks::SinkError, PipelineResumptionState},
-    table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
 pub enum DuckDbRequest {

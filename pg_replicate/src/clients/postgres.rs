@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::table::{ColumnSchema, TableId, TableName, TableSchema};
 use pg_escape::{quote_identifier, quote_literal};
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};

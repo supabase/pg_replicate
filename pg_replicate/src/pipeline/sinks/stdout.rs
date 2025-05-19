@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
+use postgres::schema::{TableId, TableSchema};
 use tokio_postgres::types::PgLsn;
 use tracing::info;
 
 use crate::{
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
     pipeline::PipelineResumptionState,
-    table::{TableId, TableSchema},
 };
 
 use super::{BatchSink, InfallibleSinkError};

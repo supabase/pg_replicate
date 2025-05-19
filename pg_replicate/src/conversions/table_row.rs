@@ -1,6 +1,7 @@
 use core::str;
 use std::str::Utf8Error;
 
+use postgres::schema::ColumnSchema;
 use thiserror::Error;
 use tokio_postgres::types::Type;
 use tracing::error;
@@ -44,7 +45,7 @@ impl TableRowConverter {
     // parses text produced by this code in Postgres: https://github.com/postgres/postgres/blob/263a3f5f7f508167dbeafc2aefd5835b41d77481/src/backend/commands/copyto.c#L988-L1134
     pub fn try_from(
         row: &[u8],
-        column_schemas: &[crate::table::ColumnSchema],
+        column_schemas: &[ColumnSchema],
     ) -> Result<TableRow, TableRowConversionError> {
         let mut values = Vec::with_capacity(column_schemas.len());
 
