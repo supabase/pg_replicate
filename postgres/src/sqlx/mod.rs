@@ -1,3 +1,3 @@
 pub mod options;
-#[cfg(feature = "test_utils")]
+#[cfg(feature = "test-utils")]
 pub mod test_utils;

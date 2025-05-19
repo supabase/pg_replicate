@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 pg_replicate = { workspace = true, features = ["bigquery"] }
+postgres = { workspace = true, features = ["tokio"] }
 telemetry = { workspace = true }
 
 anyhow = { workspace = true, features = ["std"] }

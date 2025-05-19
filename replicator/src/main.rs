@@ -12,6 +12,7 @@ use pg_replicate::{
     },
     SslMode,
 };
+use postgres::tokio::options::PgDatabaseOptions;
 use telemetry::init_tracing;
 use tracing::{info, instrument};
 
@@ -106,13 +107,17 @@ async fn start_replication(settings: Settings) -> anyhow::Result<()> {
         SslMode::Disable
     };
 
-    let postgres_source = PostgresSource::new(
-        &host,
+    let options = PgDatabaseOptions {
+        host,
         port,
-        &name,
-        &username,
+        name,
+        username,
         password,
         ssl_mode,
+    };
+
+    let postgres_source = PostgresSource::new(
+        options,
         trusted_root_certs_vec,
         Some(slot_name),
         TableNamesFrom::Publication(publication),

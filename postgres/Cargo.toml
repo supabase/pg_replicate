@@ -25,6 +25,6 @@ tokio-postgres-rustls = { workspace = true }
 
 
 [features]
-test_utils = []
+test-utils = []
 tokio = []
 sqlx = []
