@@ -2,9 +2,10 @@ use std::env;
 
 use anyhow::anyhow;
 use api::{
-    configuration::{get_settings, DatabaseSettings, Settings},
+    configuration::{get_settings, Settings},
     startup::Application,
 };
+use postgres::options::PgDatabaseOptions;
 use telemetry::init_tracing;
 use tracing::{error, info};
 
@@ -23,7 +24,7 @@ pub async fn main() -> anyhow::Result<()> {
         // Run the application server
         1 => {
             let configuration = get_settings::<'_, Settings>()?;
-            log_database_settings(&configuration.database);
+            log_pg_database_options(&configuration.database);
             let application = Application::build(configuration.clone()).await?;
             application.run_until_stopped().await?;
         }
@@ -32,9 +33,9 @@ pub async fn main() -> anyhow::Result<()> {
             let command = args.nth(1).unwrap();
             match command.as_str() {
                 "migrate" => {
-                    let configuration = get_settings::<'_, DatabaseSettings>()?;
-                    log_database_settings(&configuration);
-                    Application::migrate_database(configuration).await?;
+                    let options = get_settings::<'_, PgDatabaseOptions>()?;
+                    log_pg_database_options(&options);
+                    Application::migrate_database(options).await?;
                     info!("database migrated successfully");
                 }
                 _ => {
@@ -54,13 +55,13 @@ pub async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn log_database_settings(settings: &DatabaseSettings) {
+fn log_pg_database_options(options: &PgDatabaseOptions) {
     info!(
-        host = settings.host,
-        port = settings.port,
-        dbname = settings.name,
-        username = settings.username,
-        require_ssl = settings.require_ssl,
-        "database details",
+        host = options.host,
+        port = options.port,
+        dbname = options.name,
+        username = options.username,
+        require_ssl = options.require_ssl,
+        "pg database options",
     );
 }

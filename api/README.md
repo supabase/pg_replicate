@@ -26,7 +26,7 @@ Before you begin, ensure you have the following installed:
 ## Database Management
 
 ### Initial Setup
-To set up and initialize the database, run the following command from the `api` directory:
+To set up and initialize the database, run the following command from the main directory:
 
 ```bash
 ./scripts/init_db.sh
