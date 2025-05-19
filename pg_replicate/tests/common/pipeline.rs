@@ -5,10 +5,7 @@ use pg_replicate::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
 use pg_replicate::pipeline::PipelineAction;
 use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseOptions;
-use postgres::tokio::test_utils::PgDatabase;
 use std::time::Duration;
-use tokio_postgres::config::SslMode;
-use uuid::Uuid;
 
 pub enum PipelineMode {
     /// In this mode the supplied tables will be copied.
@@ -20,31 +17,6 @@ pub enum PipelineMode {
         publication: String,
         slot_name: Option<String>,
     },
-}
-
-pub async fn spawn_database_with_publication(
-    table_names: Vec<TableName>,
-    publication_name: Option<String>,
-) -> PgDatabase {
-    let options = PgDatabaseOptions {
-        host: "localhost".to_owned(),
-        port: 540,
-        name: Uuid::new_v4().to_string(),
-        username: "postgres".to_owned(),
-        password: Some("postgres".to_owned()),
-        ssl_mode: SslMode::Disable,
-    };
-
-    let database = PgDatabase::new(options).await;
-
-    if let Some(publication_name) = publication_name {
-        database
-            .create_publication(&publication_name, &table_names)
-            .await
-            .expect("Error while creating a publication");
-    }
-
-    database
 }
 
 pub async fn spawn_pg_pipeline<Snk: BatchSink>(

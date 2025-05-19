@@ -39,6 +39,70 @@ impl PgDatabase {
 
         Ok(publication_name.to_string())
     }
+
+    /// Creates a new table with the specified name and columns.
+    pub async fn create_table(
+        &self,
+        table_name: TableName,
+        columns: &[(&str, &str)], // (column_name, column_type)
+    ) -> Result<(), tokio_postgres::Error> {
+        let columns_str = columns
+            .iter()
+            .map(|(name, typ)| format!("{} {}", name, typ.to_string()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let create_table_query = format!(
+            "CREATE TABLE {} (id BIGSERIAL PRIMARY KEY, {})",
+            table_name.as_quoted_identifier(),
+            columns_str
+        );
+        self.client.execute(&create_table_query, &[]).await?;
+        Ok(())
+    }
+
+    /// Inserts values into the specified table.
+    pub async fn insert_values(
+        &self,
+        table_name: TableName,
+        columns: &[&str],
+        values: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::Error> {
+        let columns_str = columns.join(", ");
+        let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${}", i)).collect();
+        let placeholders_str = placeholders.join(", ");
+        
+        let insert_query = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            table_name.as_quoted_identifier(),
+            columns_str,
+            placeholders_str
+        );
+        
+        self.client.execute(&insert_query, values).await
+    }
+
+    /// Queries rows from a single column of a table.
+    pub async fn query_table<T>(
+        &self,
+        table_name: &TableName,
+        column: &str,
+        where_clause: Option<&str>,
+    ) -> Result<Vec<T>, tokio_postgres::Error> 
+    where
+        T: for<'a> tokio_postgres::types::FromSql<'a>,
+    {
+        let where_str = where_clause.map_or(String::new(), |w| format!(" WHERE {}", w));
+        let query = format!(
+            "SELECT {} FROM {}{}",
+            column,
+            table_name.as_quoted_identifier(),
+            where_str
+        );
+        
+        let rows = self.client.query(&query, &[]).await?;
+        Ok(rows.iter().map(|row| row.get(0)).collect())
+    }
 }
 
 impl Drop for PgDatabase {
