@@ -19,80 +19,48 @@ pub async fn main() -> anyhow::Result<()> {
     let _log_flusher = init_tracing(app_name, true)?;
     let mut args = env::args();
 
-    if args.len() == 2 {
-        let command = args.nth(1).unwrap();
-        if command == "migrate" {
-            let configuration = get_settings::<'_, DatabaseSettings>()?;
-            let DatabaseSettings {
-                host,
-                port,
-                name,
-                username,
-                password: _,
-                require_ssl,
-            } = &configuration;
-            info!(
-                host,
-                port,
-                dbname = name,
-                username,
-                require_ssl,
-                "database details",
-            );
-            Application::migrate_database(configuration).await?;
-            info!("database migrated successfullly");
-        } else if command == "delete-test-databases" {
-            // The cargo test command generates a lot of test databases
-            // and this command deletes them all.
+    match args.len() {
+        // Run the application server
+        1 => {
             let configuration = get_settings::<'_, Settings>()?;
-            let DatabaseSettings {
-                host,
-                port,
-                name,
-                username,
-                password: _,
-                require_ssl,
-            } = &configuration.database;
-            info!(
-                host,
-                port,
-                dbname = name,
-                username,
-                require_ssl,
-                "database details",
-            );
-            let num_deleted = Application::delete_all_test_databases(configuration).await?;
-            info!("{num_deleted} test databases deleted successfullly");
-        } else {
-            let message = "invalid command: {command}";
+            log_database_settings(&configuration.database);
+            let application = Application::build(configuration.clone()).await?;
+            application.run_until_stopped().await?;
+        }
+        // Handle single command commands
+        2 => {
+            let command = args.nth(1).unwrap();
+            match command.as_str() {
+                "migrate" => {
+                    let configuration = get_settings::<'_, DatabaseSettings>()?;
+                    log_database_settings(&configuration);
+                    Application::migrate_database(configuration).await?;
+                    info!("database migrated successfully");
+                }
+                _ => {
+                    let message = format!("invalid command: {command}");
+                    error!("{message}");
+                    return Err(anyhow!(message));
+                }
+            }
+        }
+        _ => {
+            let message = "invalid number of command line arguments";
             error!("{message}");
             return Err(anyhow!(message));
         }
-    } else if args.len() == 1 {
-        let configuration = get_settings::<'_, Settings>()?;
-        let DatabaseSettings {
-            host,
-            port,
-            name,
-            username,
-            password: _,
-            require_ssl,
-        } = &configuration.database;
-        info!(
-            host,
-            port,
-            dbname = name,
-            username,
-            require_ssl,
-            "database details",
-        );
-        let application = Application::build(configuration.clone()).await?;
-        application.run_until_stopped().await?;
-    } else {
-        let message = "invalid command line arguments";
-        error!("{message}");
-        return Err(anyhow!(message));
     }
 
     Ok(())
+}
+
+fn log_database_settings(settings: &DatabaseSettings) {
+    info!(
+        host = settings.host,
+        port = settings.port,
+        dbname = settings.name,
+        username = settings.username,
+        require_ssl = settings.require_ssl,
+        "database details",
+    );
 }

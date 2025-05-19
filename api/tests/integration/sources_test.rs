@@ -2,11 +2,11 @@ use api::db::sources::SourceConfig;
 use reqwest::StatusCode;
 
 use crate::{
-    tenants::create_tenant,
-    test_app::{
-        spawn_app, CreateSourceRequest, CreateSourceResponse, SourceResponse, SourcesResponse,
+    common::test_app::{
+        spawn_test_app, CreateSourceRequest, CreateSourceResponse, SourceResponse, SourcesResponse,
         TestApp, UpdateSourceRequest,
     },
+    integration::tenants_test::create_tenant,
 };
 
 pub fn new_name() -> String {
@@ -58,10 +58,10 @@ pub async fn create_source_with_config(
     response.id
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn source_can_be_created() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -80,10 +80,10 @@ async fn source_can_be_created() {
     assert_eq!(response.id, 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_source_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     let source = CreateSourceRequest {
@@ -112,10 +112,10 @@ async fn an_existing_source_can_be_read() {
     assert_eq!(response.config, source.config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -125,10 +125,10 @@ async fn a_non_existing_source_cant_be_read() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_source_can_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     let source = CreateSourceRequest {
@@ -164,10 +164,10 @@ async fn an_existing_source_can_be_updated() {
     assert_eq!(response.config, updated_config.config);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_updated() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -181,10 +181,10 @@ async fn a_non_existing_source_cant_be_updated() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn an_existing_source_can_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     let source = CreateSourceRequest {
@@ -207,10 +207,10 @@ async fn an_existing_source_can_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn a_non_existing_source_cant_be_deleted() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
 
     // Act
@@ -220,10 +220,10 @@ async fn a_non_existing_source_cant_be_deleted() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn all_sources_can_be_read() {
     // Arrange
-    let app = spawn_app().await;
+    let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
     let source1_id =
         create_source_with_config(&app, tenant_id, new_name(), new_source_config()).await;
