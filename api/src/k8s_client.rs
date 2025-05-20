@@ -101,6 +101,8 @@ const NAMESPACE_NAME: &str = "replicator-data-plane";
 const LOGFLARE_SECRET_NAME: &str = "replicator-logflare-api-key";
 const VECTOR_IMAGE_NAME: &str = "timberio/vector:0.46.1-distroless-libc";
 const VECTOR_CONFIG_MAP_NAME: &str = "replicator-vector-config";
+const REPLICATOR_CONFIG_FILE_VOLUME_NAME: &str = "replicator-config-file";
+const VECTOR_CONFIG_FILE_VOLUME_NAME: &str = "vector-config-file";
 pub const TRUSTED_ROOT_CERT_CONFIG_MAP_NAME: &str = "trusted-root-certs-config";
 
 impl HttpK8sClient {
@@ -324,13 +326,13 @@ impl K8sClient for HttpK8sClient {
               "spec": {
                 "volumes": [
                   {
-                    "name": "replicator-config-file",
+                    "name": REPLICATOR_CONFIG_FILE_VOLUME_NAME,
                     "configMap": {
                       "name": replicator_config_map_name
                     }
                   },
                   {
-                    "name": "vector-config-file",
+                    "name": VECTOR_CONFIG_FILE_VOLUME_NAME,
                     "configMap": {
                       "name": VECTOR_CONFIG_MAP_NAME
                     }
@@ -365,7 +367,7 @@ impl K8sClient for HttpK8sClient {
                       }
                     ],
                     "volumeMounts": [{
-                      "name": "replicator-config-file",
+                      "name": REPLICATOR_CONFIG_FILE_VOLUME_NAME,
                       "mountPath": "/app/configuration"
                     }]
                   },
@@ -393,7 +395,7 @@ impl K8sClient for HttpK8sClient {
                       }
                     },
                     "volumeMounts": [{
-                      "name": "vector-config-file",
+                      "name": VECTOR_CONFIG_FILE_VOLUME_NAME,
                       "mountPath": "/etc/vector"
                     }],
                   }
