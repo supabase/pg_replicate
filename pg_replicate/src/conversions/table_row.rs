@@ -10,7 +10,7 @@ use crate::{conversions::text::TextFormatConverter, pipeline::batching::BatchBou
 
 use super::{text::FromTextError, Cell};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TableRow {
     pub values: Vec<Cell>,
 }

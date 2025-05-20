@@ -160,6 +160,7 @@ impl Source for PostgresSource {
         let slot_name = self
             .slot_name()
             .ok_or(PostgresSourceError::MissingSlotName)?;
+
         let stream = self
             .replication_client
             .get_logical_replication_stream(publication, slot_name, start_lsn)

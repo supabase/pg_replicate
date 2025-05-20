@@ -15,7 +15,7 @@ pub enum PipelineMode {
     /// If the slot is not supplied, a new one will be created on the supplied publication.
     Cdc {
         publication: String,
-        slot_name: Option<String>,
+        slot_name: String,
     },
 }
 
@@ -46,7 +46,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
             let source = PostgresSource::new(
                 options.clone(),
                 vec![],
-                slot_name,
+                Some(slot_name),
                 TableNamesFrom::Publication(publication),
             )
             .await

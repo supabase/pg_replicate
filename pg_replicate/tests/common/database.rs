@@ -49,28 +49,3 @@ pub async fn spawn_database() -> PgDatabase {
 
     database
 }
-
-/// Creates a new test database instance with an optional publication.
-///
-/// This function creates a test database and optionally sets up a publication
-/// for the specified tables. The publication can be used for testing replication
-/// scenarios.
-///
-/// # Panics
-///
-/// Panics if the publication cannot be created.
-pub async fn spawn_database_with_publication(
-    table_names: Vec<TableName>,
-    publication_name: Option<String>,
-) -> PgDatabase {
-    let database = spawn_database().await;
-
-    if let Some(publication_name) = publication_name {
-        database
-            .create_publication(&publication_name, &table_names)
-            .await
-            .expect("Error while creating a publication");
-    }
-
-    database
-}

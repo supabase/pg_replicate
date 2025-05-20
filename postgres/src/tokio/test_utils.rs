@@ -95,6 +95,29 @@ impl PgDatabase {
         self.client.execute(&insert_query, values).await
     }
 
+    /// Updates all rows in the specified table with the given values.
+    pub async fn update_values(
+        &self,
+        table_name: TableName,
+        columns: &[&str],
+        values: &[&str],
+    ) -> Result<u64, tokio_postgres::Error> {
+        let set_clauses: Vec<String> = columns
+            .iter()
+            .zip(values.iter())
+            .map(|(col, val)| format!("{} = {}", col, val))
+            .collect();
+        let set_clause = set_clauses.join(", ");
+
+        let update_query = format!(
+            "UPDATE {} SET {}",
+            table_name.as_quoted_identifier(),
+            set_clause
+        );
+
+        self.client.execute(&update_query, &[]).await
+    }
+
     /// Queries rows from a single column of a table.
     pub async fn query_table<T>(
         &self,
