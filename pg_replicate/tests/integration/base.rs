@@ -2,9 +2,11 @@ use crate::common::database::{spawn_database, test_table_name};
 use crate::common::pipeline::{spawn_pg_pipeline, PipelineMode};
 use crate::common::sink::TestSink;
 use crate::common::table::assert_table_schema;
+use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::Cell;
 use postgres::schema::{ColumnSchema, TableId};
 use postgres::tokio::test_utils::PgDatabase;
+use std::ops::Range;
 use tokio_postgres::types::Type;
 
 fn get_expected_ages_sum(num_users: usize) -> i32 {
@@ -78,7 +80,7 @@ fn assert_users_table_schema(sink: &TestSink, users_table_id: TableId, schema_in
     );
 }
 
-fn assert_users_age_sum(sink: &TestSink, users_table_id: TableId, expected_sum: i32) {
+fn assert_users_age_sum_from_rows(sink: &TestSink, users_table_id: TableId, expected_sum: i32) {
     let mut actual_sum = 0;
 
     let tables_rows = sink.get_tables_rows();
@@ -86,6 +88,33 @@ fn assert_users_age_sum(sink: &TestSink, users_table_id: TableId, expected_sum: 
     for table_row in table_rows {
         if let Cell::I32(age) = &table_row.values[1] {
             actual_sum += age;
+        }
+    }
+
+    assert_eq!(actual_sum, expected_sum);
+}
+
+fn assert_users_age_sum_from_events(
+    sink: &TestSink,
+    users_table_id: TableId,
+    // We use a range since events are not indexed by table id but just an ordered sequence which
+    // we want to slice through.
+    range: Range<usize>,
+    expected_sum: i32,
+) {
+    let mut actual_sum = 0;
+
+    let events = &sink.get_events()[range];
+    for event in events {
+        match event.as_ref() {
+            CdcEvent::Insert((table_id, table_row)) | CdcEvent::Update((table_id, table_row))
+                if table_id == &users_table_id =>
+            {
+                if let Cell::I32(age) = &table_row.values[1] {
+                    actual_sum += age;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -102,6 +131,8 @@ Tests to write:
 - Insert -> table copy -> crash while copying -> add new table -> check if new table is in the snapshot
 
 The main test we want to do is to check if resuming after a new table has been added causes problems
+
+insert -> cdc -> add table -> recreate pipeline and source -> check schema
  */
 
 #[tokio::test(flavor = "multi_thread")]
@@ -125,7 +156,7 @@ async fn test_table_copy_with_insert_and_update() {
 
     assert_users_table_schema(pipeline.sink(), users_table_id, 0);
     let expected_sum = get_expected_ages_sum(100);
-    assert_users_age_sum(pipeline.sink(), users_table_id, expected_sum);
+    assert_users_age_sum_from_rows(pipeline.sink(), users_table_id, expected_sum);
     assert_eq!(pipeline.sink().get_tables_copied(), 1);
     assert_eq!(pipeline.sink().get_tables_truncated(), 1);
 
@@ -145,7 +176,7 @@ async fn test_table_copy_with_insert_and_update() {
 
     assert_users_table_schema(pipeline.sink(), users_table_id, 0);
     let expected_sum = expected_sum * 2;
-    assert_users_age_sum(pipeline.sink(), users_table_id, expected_sum);
+    assert_users_age_sum_from_rows(pipeline.sink(), users_table_id, expected_sum);
     assert_eq!(pipeline.sink().get_tables_copied(), 1);
     assert_eq!(pipeline.sink().get_tables_truncated(), 1);
 }
@@ -172,10 +203,9 @@ async fn test_cdc_with_insert_and_update() {
     // We insert 100 rows.
     fill_users(&database, 100).await;
 
-    // assert_users_table_schema(pipeline.sink(), users_table_id, 0);
-    // let expected_sum = expected_sum * 2;
-    // assert_users_age_sum(pipeline.sink(), users_table_id, expected_sum);
-    println!("CDC {:?}", pipeline.sink().get_events());
+    assert_users_table_schema(pipeline.sink(), users_table_id, 0);
+    let expected_sum = get_expected_ages_sum(100);
+    assert_users_age_sum_from_events(pipeline.sink(), users_table_id, 0..100, expected_sum);
     assert_eq!(pipeline.sink().get_tables_copied(), 0);
     assert_eq!(pipeline.sink().get_tables_truncated(), 0);
 }
