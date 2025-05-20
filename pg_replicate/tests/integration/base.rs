@@ -219,6 +219,9 @@ async fn test_cdc_with_insert_and_update() {
     // We stop the pipeline and wait for it to finish.
     pipeline_handle.stop();
     pipeline_task_handle.await.unwrap();
+    
+    // TODO: figure out why the stopping causes the dropping of the db to start before the dropping
+    //  of the pipeline.
 
     assert_users_table_schema(&sink, users_table_id, 0);
     assert_eq!(sink.get_tables_copied(), 0);
