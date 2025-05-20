@@ -200,4 +200,12 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
         Ok(())
     }
+
+    pub fn source(&self) -> &Src {
+        &self.source
+    }
+
+    pub fn sink(&self) -> &Snk {
+        &self.sink
+    }
 }

@@ -7,7 +7,7 @@ use tokio_postgres::types::Type;
 ///
 /// This type represents a table identifier in PostgreSQL, which requires both a schema name
 /// and a table name. It provides methods for formatting the name in different contexts.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TableName {
     /// The schema name containing the table
     pub schema: String,

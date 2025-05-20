@@ -1,4 +1,4 @@
-use crate::schema::TableName;
+use crate::schema::{TableId, TableName};
 use crate::tokio::options::PgDatabaseOptions;
 use tokio::runtime::Handle;
 use tokio_postgres::{Client, NoTls};
@@ -45,7 +45,7 @@ impl PgDatabase {
         &self,
         table_name: TableName,
         columns: &[(&str, &str)], // (column_name, column_type)
-    ) -> Result<(), tokio_postgres::Error> {
+    ) -> Result<TableId, tokio_postgres::Error> {
         let columns_str = columns
             .iter()
             .map(|(name, typ)| format!("{} {}", name, typ.to_string()))
@@ -58,7 +58,20 @@ impl PgDatabase {
             columns_str
         );
         self.client.execute(&create_table_query, &[]).await?;
-        Ok(())
+
+        // Get the OID of the newly created table
+        let row = self
+            .client
+            .query_one(
+                "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
+            WHERE n.nspname = $1 AND c.relname = $2",
+                &[&table_name.schema, &table_name.name],
+            )
+            .await?;
+
+        let table_id: TableId = row.get(0);
+
+        Ok(table_id)
     }
 
     /// Inserts values into the specified table.
@@ -71,14 +84,14 @@ impl PgDatabase {
         let columns_str = columns.join(", ");
         let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${}", i)).collect();
         let placeholders_str = placeholders.join(", ");
-        
+
         let insert_query = format!(
             "INSERT INTO {} ({}) VALUES ({})",
             table_name.as_quoted_identifier(),
             columns_str,
             placeholders_str
         );
-        
+
         self.client.execute(&insert_query, values).await
     }
 
@@ -88,7 +101,7 @@ impl PgDatabase {
         table_name: &TableName,
         column: &str,
         where_clause: Option<&str>,
-    ) -> Result<Vec<T>, tokio_postgres::Error> 
+    ) -> Result<Vec<T>, tokio_postgres::Error>
     where
         T: for<'a> tokio_postgres::types::FromSql<'a>,
     {
@@ -99,7 +112,7 @@ impl PgDatabase {
             table_name.as_quoted_identifier(),
             where_str
         );
-        
+
         let rows = self.client.query(&query, &[]).await?;
         Ok(rows.iter().map(|row| row.get(0)).collect())
     }
