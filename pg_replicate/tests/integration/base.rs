@@ -2,13 +2,12 @@ use crate::common::database::{spawn_database, test_table_name};
 use crate::common::pipeline::{spawn_async_pg_pipeline, spawn_pg_pipeline, PipelineMode};
 use crate::common::sink::TestSink;
 use crate::common::table::assert_table_schema;
+use crate::common::wait_for_condition;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::Cell;
 use postgres::schema::{ColumnSchema, TableId};
 use postgres::tokio::test_utils::PgDatabase;
 use std::ops::Range;
-use std::time::Duration;
-use tokio::time::sleep;
 use tokio_postgres::types::Type;
 
 fn get_expected_ages_sum(num_users: usize) -> i32 {
@@ -82,7 +81,7 @@ fn assert_users_table_schema(sink: &TestSink, users_table_id: TableId, schema_in
     );
 }
 
-fn assert_users_age_sum_from_rows(sink: &TestSink, users_table_id: TableId, expected_sum: i32) {
+fn get_users_age_sum_from_rows(sink: &TestSink, users_table_id: TableId) -> i32 {
     let mut actual_sum = 0;
 
     let tables_rows = sink.get_tables_rows();
@@ -93,17 +92,16 @@ fn assert_users_age_sum_from_rows(sink: &TestSink, users_table_id: TableId, expe
         }
     }
 
-    assert_eq!(actual_sum, expected_sum);
+    actual_sum
 }
 
-fn assert_users_age_sum_from_events(
+fn get_users_age_sum_from_events(
     sink: &TestSink,
     users_table_id: TableId,
     // We use a range since events are not indexed by table id but just an ordered sequence which
     // we want to slice through.
     range: Range<usize>,
-    expected_sum: i32,
-) {
+) -> i32 {
     let mut actual_sum = 0;
 
     let mut i = 0;
@@ -121,7 +119,7 @@ fn assert_users_age_sum_from_events(
         }
     }
 
-    assert_eq!(actual_sum, expected_sum);
+    actual_sum
 }
 
 /*
@@ -159,7 +157,8 @@ async fn test_table_copy_with_insert_and_update() {
 
     assert_users_table_schema(pipeline.sink(), users_table_id, 0);
     let expected_sum = get_expected_ages_sum(100);
-    assert_users_age_sum_from_rows(pipeline.sink(), users_table_id, expected_sum);
+    let actual_sum = get_users_age_sum_from_rows(pipeline.sink(), users_table_id);
+    assert_eq!(actual_sum, expected_sum);
     assert_eq!(pipeline.sink().get_tables_copied(), 1);
     assert_eq!(pipeline.sink().get_tables_truncated(), 1);
 
@@ -179,7 +178,8 @@ async fn test_table_copy_with_insert_and_update() {
 
     assert_users_table_schema(pipeline.sink(), users_table_id, 0);
     let expected_sum = expected_sum * 2;
-    assert_users_age_sum_from_rows(pipeline.sink(), users_table_id, expected_sum);
+    let actual_sum = get_users_age_sum_from_rows(pipeline.sink(), users_table_id);
+    assert_eq!(actual_sum, expected_sum);
     assert_eq!(pipeline.sink().get_tables_copied(), 1);
     assert_eq!(pipeline.sink().get_tables_truncated(), 1);
 }
@@ -203,20 +203,24 @@ async fn test_cdc_with_insert_and_update() {
     )
     .await;
 
-    sleep(Duration::from_secs(5)).await;
-
     // We insert 100 rows.
     fill_users(&database, 100).await;
 
-    sleep(Duration::from_secs(5)).await;
+    // Wait for all events to be processed
+    let expected_sum = get_expected_ages_sum(100);
+    wait_for_condition(
+        || {
+            let actual_sum = get_users_age_sum_from_events(&sink, users_table_id, 0..100);
+            actual_sum == expected_sum
+        },
+    )
+    .await;
 
     // We stop the pipeline and wait for it to finish.
     pipeline_handle.stop();
     pipeline_task_handle.await.unwrap();
 
     assert_users_table_schema(&sink, users_table_id, 0);
-    let expected_sum = get_expected_ages_sum(100);
-    assert_users_age_sum_from_events(&sink, users_table_id, 0..100, expected_sum);
     assert_eq!(sink.get_tables_copied(), 0);
     assert_eq!(sink.get_tables_truncated(), 0);
 }

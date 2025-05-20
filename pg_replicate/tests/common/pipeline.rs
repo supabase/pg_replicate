@@ -2,13 +2,10 @@ use pg_replicate::pipeline::batching::data_pipeline::{BatchDataPipeline, BatchDa
 use pg_replicate::pipeline::batching::BatchConfig;
 use pg_replicate::pipeline::sinks::BatchSink;
 use pg_replicate::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
-use pg_replicate::pipeline::sources::Source;
 use pg_replicate::pipeline::PipelineAction;
 use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseOptions;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 
 pub enum PipelineMode {
@@ -73,10 +70,13 @@ pub async fn spawn_async_pg_pipeline<Snk: BatchSink + Send + 'static>(
     sink: Snk,
 ) -> (BatchDataPipelineHandle, JoinHandle<()>) {
     let mut pipeline = spawn_pg_pipeline(options, mode, sink).await;
-    
+
     let pipeline_handle = pipeline.handle();
     let pipeline_task_handle = tokio::spawn(async move {
-        pipeline.start().await.expect("The pipeline failed to start within a task");
+        pipeline
+            .start()
+            .await
+            .expect("The pipeline experienced an error");
     });
 
     (pipeline_handle, pipeline_task_handle)
