@@ -103,6 +103,7 @@ const VECTOR_IMAGE_NAME: &str = "timberio/vector:0.46.1-distroless-libc";
 const VECTOR_CONFIG_MAP_NAME: &str = "replicator-vector-config";
 const REPLICATOR_CONFIG_FILE_VOLUME_NAME: &str = "replicator-config-file";
 const VECTOR_CONFIG_FILE_VOLUME_NAME: &str = "vector-config-file";
+const LOGS_VOLUME_NAME: &str = "logs";
 pub const TRUSTED_ROOT_CERT_CONFIG_MAP_NAME: &str = "trusted-root-certs-config";
 
 impl HttpK8sClient {
@@ -337,6 +338,10 @@ impl K8sClient for HttpK8sClient {
                       "name": VECTOR_CONFIG_MAP_NAME
                     }
                   },
+                  {
+                    "name": LOGS_VOLUME_NAME,
+                    "emptyDir": {}
+                  }
                 ],
                 "containers": [
                   {
@@ -366,10 +371,16 @@ impl K8sClient for HttpK8sClient {
                         }
                       }
                     ],
-                    "volumeMounts": [{
-                      "name": REPLICATOR_CONFIG_FILE_VOLUME_NAME,
-                      "mountPath": "/app/configuration"
-                    }]
+                    "volumeMounts": [
+                      {
+                        "name": REPLICATOR_CONFIG_FILE_VOLUME_NAME,
+                        "mountPath": "/app/configuration"
+                      },
+                      {
+                        "name": LOGS_VOLUME_NAME,
+                        "mountPath": "/app/logs"
+                      },
+                    ]
                   },
                   {
                     "name": vector_container_name,
@@ -394,10 +405,16 @@ impl K8sClient for HttpK8sClient {
                         "cpu": "100m"
                       }
                     },
-                    "volumeMounts": [{
-                      "name": VECTOR_CONFIG_FILE_VOLUME_NAME,
-                      "mountPath": "/etc/vector"
-                    }],
+                    "volumeMounts": [
+                      {
+                        "name": VECTOR_CONFIG_FILE_VOLUME_NAME,
+                        "mountPath": "/etc/vector"
+                      },
+                      {
+                        "name": LOGS_VOLUME_NAME,
+                        "mountPath": "/var/log"
+                      }
+                    ],
                   }
                 ]
               }
