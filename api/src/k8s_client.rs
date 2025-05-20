@@ -389,10 +389,10 @@ impl K8sClient for HttpK8sClient {
                       {
                         "name": "LOGFLARE_API_KEY",
                         "valueFrom": {
-                        "secretKeyRef": {
-                          "name": LOGFLARE_SECRET_NAME,
-                          "key": "key"
-                        }
+                          "secretKeyRef": {
+                            "name": LOGFLARE_SECRET_NAME,
+                            "key": "key"
+                          }
                         }
                       }
                     ],
