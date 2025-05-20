@@ -19,6 +19,10 @@ pub enum PipelineMode {
     },
 }
 
+pub fn test_slot_name(slot_name: &str) -> String {
+    format!("test_{}", slot_name)
+}
+
 pub async fn spawn_pg_pipeline<Snk: BatchSink>(
     options: &PgDatabaseOptions,
     mode: PipelineMode,
@@ -46,7 +50,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
             let source = PostgresSource::new(
                 options.clone(),
                 vec![],
-                Some(slot_name),
+                Some(test_slot_name(&slot_name)),
                 TableNamesFrom::Publication(publication),
             )
             .await

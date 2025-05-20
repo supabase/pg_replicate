@@ -23,17 +23,13 @@ impl PgDatabase {
     ) -> Result<String, tokio_postgres::Error> {
         let table_names = table_names
             .iter()
-            .map(|t| t.to_string())
+            .map(TableName::as_quoted_identifier)
             .collect::<Vec<_>>();
 
         let create_publication_query = format!(
             "CREATE PUBLICATION {} FOR TABLE {}",
             publication_name,
-            table_names
-                .iter()
-                .map(|t| t.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            table_names.join(", ")
         );
         self.client.execute(&create_publication_query, &[]).await?;
 
@@ -230,6 +226,17 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
         )
         .await
         .expect("Failed to terminate database connections");
+
+    // Drop any test replication slots
+    client
+        .execute(
+            "SELECT pg_drop_replication_slot(slot_name) 
+             FROM pg_replication_slots 
+             WHERE slot_name LIKE 'test_%';",
+            &[],
+        )
+        .await
+        .expect("Failed to drop test replication slots");
 
     // Drop the database
     client

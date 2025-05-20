@@ -122,16 +122,15 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
         let mut last_lsn: u64 = last_lsn.into();
         last_lsn += 1;
+        
         let cdc_events = self
             .source
             .get_cdc_stream(last_lsn.into())
             .await
             .map_err(PipelineError::Source)?;
-
         pin!(cdc_events);
 
         let batch_timeout_stream = BatchTimeoutStream::new(cdc_events, self.batch_config.clone());
-
         pin!(batch_timeout_stream);
 
         while let Some(batch) = batch_timeout_stream.next().await {
