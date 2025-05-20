@@ -1,5 +1,5 @@
 use crate::common::database::{spawn_database, test_table_name};
-use crate::common::pipeline::{spawn_pg_pipeline, PipelineMode};
+use crate::common::pipeline::{spawn_async_pg_pipeline, spawn_pg_pipeline, PipelineMode};
 use crate::common::sink::TestSink;
 use crate::common::table::assert_table_schema;
 use pg_replicate::conversions::cdc_event::CdcEvent;
@@ -193,7 +193,7 @@ async fn test_cdc_with_insert_and_update() {
 
     // We create a pipeline that subscribes to the changes of the users table.
     let sink = TestSink::new();
-    let mut pipeline = spawn_pg_pipeline(
+    let (pipeline_handle, pipeline_task_handle) = spawn_async_pg_pipeline(
         &database.options,
         PipelineMode::Cdc {
             publication: "users_publication".to_owned(),
@@ -202,12 +202,6 @@ async fn test_cdc_with_insert_and_update() {
         sink.clone(),
     )
     .await;
-    let pipeline_handle = pipeline.handle();
-
-    // We start the pipeline in another task to not block.
-    let pipeline_task_handle = tokio::spawn(async move {
-        pipeline.start().await.unwrap();
-    });
 
     sleep(Duration::from_secs(5)).await;
 

@@ -1,4 +1,4 @@
-use pg_replicate::pipeline::batching::data_pipeline::BatchDataPipeline;
+use pg_replicate::pipeline::batching::data_pipeline::{BatchDataPipeline, BatchDataPipelineHandle};
 use pg_replicate::pipeline::batching::BatchConfig;
 use pg_replicate::pipeline::sinks::BatchSink;
 use pg_replicate::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
@@ -65,4 +65,19 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
     };
 
     pipeline
+}
+
+pub async fn spawn_async_pg_pipeline<Snk: BatchSink + Send + 'static>(
+    options: &PgDatabaseOptions,
+    mode: PipelineMode,
+    sink: Snk,
+) -> (BatchDataPipelineHandle, JoinHandle<()>) {
+    let mut pipeline = spawn_pg_pipeline(options, mode, sink).await;
+    
+    let pipeline_handle = pipeline.handle();
+    let pipeline_task_handle = tokio::spawn(async move {
+        pipeline.start().await.expect("The pipeline failed to start within a task");
+    });
+
+    (pipeline_handle, pipeline_task_handle)
 }
