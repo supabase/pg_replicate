@@ -93,10 +93,16 @@ pub struct HttpK8sClient {
 
 const BQ_SECRET_NAME_SUFFIX: &str = "bq-service-account-key";
 const POSTGRES_SECRET_NAME_SUFFIX: &str = "postgres-password";
-const CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
+const REPLICATOR_CONFIG_MAP_NAME_SUFFIX: &str = "replicator-config";
 const STATEFUL_SET_NAME_SUFFIX: &str = "replicator";
-const CONTAINER_NAME_SUFFIX: &str = "replicator";
+const REPLICATOR_CONTAINER_NAME_SUFFIX: &str = "replicator";
+const VECTOR_CONTAINER_NAME_SUFFIX: &str = "vector";
 const NAMESPACE_NAME: &str = "replicator-data-plane";
+const LOGFLARE_SECRET_NAME: &str = "replicator-logflare-api-key";
+const VECTOR_IMAGE_NAME: &str = "timberio/vector:0.46.1-distroless-libc";
+const VECTOR_CONFIG_MAP_NAME: &str = "replicator-vector-config";
+const REPLICATOR_CONFIG_FILE_VOLUME_NAME: &str = "replicator-config-file";
+const VECTOR_CONFIG_FILE_VOLUME_NAME: &str = "vector-config-file";
 pub const TRUSTED_ROOT_CERT_CONFIG_MAP_NAME: &str = "trusted-root-certs-config";
 
 impl HttpK8sClient {
@@ -241,7 +247,7 @@ impl K8sClient for HttpK8sClient {
     ) -> Result<(), K8sError> {
         info!("patching config map");
 
-        let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
+        let config_map_name = format!("{prefix}-{REPLICATOR_CONFIG_MAP_NAME_SUFFIX}");
         let config_map_json = json!({
           "kind": "ConfigMap",
           "apiVersion": "v1",
@@ -266,7 +272,7 @@ impl K8sClient for HttpK8sClient {
 
     async fn delete_config_map(&self, prefix: &str) -> Result<(), K8sError> {
         info!("deleting config map");
-        let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
+        let config_map_name = format!("{prefix}-{REPLICATOR_CONFIG_MAP_NAME_SUFFIX}");
         let dp = DeleteParams::default();
         match self.config_maps_api.delete(&config_map_name, &dp).await {
             Ok(_) => {}
@@ -291,10 +297,11 @@ impl K8sClient for HttpK8sClient {
         info!("patching stateful set");
 
         let stateful_set_name = format!("{prefix}-{STATEFUL_SET_NAME_SUFFIX}");
-        let container_name = format!("{prefix}-{CONTAINER_NAME_SUFFIX}");
+        let replicator_container_name = format!("{prefix}-{REPLICATOR_CONTAINER_NAME_SUFFIX}");
+        let vector_container_name = format!("{prefix}-{VECTOR_CONTAINER_NAME_SUFFIX}");
         let postgres_secret_name = format!("{prefix}-{POSTGRES_SECRET_NAME_SUFFIX}");
         let bq_secret_name = format!("{prefix}-{BQ_SECRET_NAME_SUFFIX}");
-        let config_map_name = format!("{prefix}-{CONFIG_MAP_NAME_SUFFIX}");
+        let replicator_config_map_name = format!("{prefix}-{REPLICATOR_CONFIG_MAP_NAME_SUFFIX}");
 
         let stateful_set_json = json!({
           "apiVersion": "apps/v1",
@@ -319,15 +326,21 @@ impl K8sClient for HttpK8sClient {
               "spec": {
                 "volumes": [
                   {
-                    "name": "config-file",
+                    "name": REPLICATOR_CONFIG_FILE_VOLUME_NAME,
                     "configMap": {
-                      "name": config_map_name
+                      "name": replicator_config_map_name
                     }
-                  }
+                  },
+                  {
+                    "name": VECTOR_CONFIG_FILE_VOLUME_NAME,
+                    "configMap": {
+                      "name": VECTOR_CONFIG_MAP_NAME
+                    }
+                  },
                 ],
                 "containers": [
                   {
-                    "name": container_name,
+                    "name": replicator_container_name,
                     "image": replicator_image,
                     "env": [
                       {
@@ -354,9 +367,37 @@ impl K8sClient for HttpK8sClient {
                       }
                     ],
                     "volumeMounts": [{
-                      "name": "config-file",
+                      "name": REPLICATOR_CONFIG_FILE_VOLUME_NAME,
                       "mountPath": "/app/configuration"
                     }]
+                  },
+                  {
+                    "name": vector_container_name,
+                    "image": VECTOR_IMAGE_NAME,
+                    "env": [
+                      {
+                        "name": "LOGFLARE_API_KEY",
+                        "valueFrom": {
+                        "secretKeyRef": {
+                          "name": LOGFLARE_SECRET_NAME,
+                          "key": "key"
+                        }
+                        }
+                      }
+                    ],
+                    "resources": {
+                      "limits": {
+                        "memory": "200Mi",
+                      },
+                      "requests": {
+                        "memory": "200Mi",
+                        "cpu": "100m"
+                      }
+                    },
+                    "volumeMounts": [{
+                      "name": VECTOR_CONFIG_FILE_VOLUME_NAME,
+                      "mountPath": "/etc/vector"
+                    }],
                   }
                 ]
               }
