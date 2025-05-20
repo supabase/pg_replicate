@@ -2,10 +2,13 @@ use futures::{ready, Future, Stream};
 use pin_project_lite::pin_project;
 use tokio::time::{sleep, Sleep};
 
+use super::{BatchBoundary, BatchConfig};
 use core::pin::Pin;
 use core::task::{Context, Poll};
-
-use super::{BatchBoundary, BatchConfig};
+use std::sync::Arc;
+use tokio::pin;
+use tokio::sync::Notify;
+use tracing::info;
 
 // Implementation adapted from https://github.com/tokio-rs/tokio/blob/master/tokio-stream/src/stream_ext/chunks_timeout.rs
 pin_project! {
@@ -24,11 +27,12 @@ pin_project! {
         batch_config: BatchConfig,
         reset_timer: bool,
         inner_stream_ended: bool,
+        stop: Arc<Notify>
     }
 }
 
 impl<B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<B, S> {
-    pub fn new(stream: S, batch_config: BatchConfig) -> Self {
+    pub fn new(stream: S, batch_config: BatchConfig, stop: Arc<Notify>) -> Self {
         BatchTimeoutStream {
             stream,
             deadline: None,
@@ -36,6 +40,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<B, S> {
             batch_config,
             reset_timer: true,
             inner_stream_ended: false,
+            stop,
         }
     }
 
@@ -49,10 +54,20 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<B, S> 
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.as_mut().project();
+
         if *this.inner_stream_ended {
             return Poll::Ready(None);
         }
+
         loop {
+            let notified = this.stop.notified();
+            pin!(notified);
+
+            if notified.poll(cx).is_ready() {
+                info!("the stream has been forcefully stopped");
+                return Poll::Ready(None);
+            }
+
             if *this.reset_timer {
                 this.deadline
                     .set(Some(sleep(this.batch_config.max_batch_fill_time)));

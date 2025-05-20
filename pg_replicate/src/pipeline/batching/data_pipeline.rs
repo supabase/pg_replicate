@@ -1,5 +1,3 @@
-use std::{collections::HashSet, time::Instant};
-
 use crate::{
     conversions::cdc_event::{CdcEvent, CdcEventConversionError},
     pipeline::{
@@ -11,17 +9,33 @@ use crate::{
 };
 use futures::StreamExt;
 use postgres::schema::TableId;
+use std::sync::Arc;
+use std::{collections::HashSet, time::Instant};
 use tokio::pin;
+use tokio::sync::Notify;
 use tokio_postgres::types::PgLsn;
 use tracing::{debug, info};
 
 use super::BatchConfig;
+
+#[derive(Debug, Clone)]
+pub struct BatchDataPipelineHandle {
+    stream_stop: Arc<Notify>,
+}
+
+impl BatchDataPipelineHandle {
+    pub fn stop(&self) {
+        // We want to notify all waiters that their streams have to be stopped.
+        self.stream_stop.notify_waiters();
+    }
+}
 
 pub struct BatchDataPipeline<Src: Source, Snk: BatchSink> {
     source: Src,
     sink: Snk,
     action: PipelineAction,
     batch_config: BatchConfig,
+    stream_stop: Arc<Notify>,
 }
 
 impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
@@ -31,6 +45,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             sink,
             action,
             batch_config,
+            stream_stop: Arc::new(Notify::new()),
         }
     }
 
@@ -76,8 +91,11 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                 .await
                 .map_err(PipelineError::Source)?;
 
-            let batch_timeout_stream =
-                BatchTimeoutStream::new(table_rows, self.batch_config.clone());
+            let batch_timeout_stream = BatchTimeoutStream::new(
+                table_rows,
+                self.batch_config.clone(),
+                self.stream_stop.clone(),
+            );
 
             pin!(batch_timeout_stream);
 
@@ -122,7 +140,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
         let mut last_lsn: u64 = last_lsn.into();
         last_lsn += 1;
-        
+
         let cdc_events = self
             .source
             .get_cdc_stream(last_lsn.into())
@@ -130,7 +148,11 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             .map_err(PipelineError::Source)?;
         pin!(cdc_events);
 
-        let batch_timeout_stream = BatchTimeoutStream::new(cdc_events, self.batch_config.clone());
+        let batch_timeout_stream = BatchTimeoutStream::new(
+            cdc_events,
+            self.batch_config.clone(),
+            self.stream_stop.clone(),
+        );
         pin!(batch_timeout_stream);
 
         while let Some(batch) = batch_timeout_stream.next().await {
@@ -198,6 +220,12 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         }
 
         Ok(())
+    }
+
+    pub fn handle(&self) -> BatchDataPipelineHandle {
+        BatchDataPipelineHandle {
+            stream_stop: self.stream_stop.clone(),
+        }
     }
 
     pub fn source(&self) -> &Src {

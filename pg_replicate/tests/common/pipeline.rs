@@ -2,10 +2,14 @@ use pg_replicate::pipeline::batching::data_pipeline::BatchDataPipeline;
 use pg_replicate::pipeline::batching::BatchConfig;
 use pg_replicate::pipeline::sinks::BatchSink;
 use pg_replicate::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
+use pg_replicate::pipeline::sources::Source;
 use pg_replicate::pipeline::PipelineAction;
 use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseOptions;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::{mpsc, Mutex};
+use tokio::task::JoinHandle;
 
 pub enum PipelineMode {
     /// In this mode the supplied tables will be copied.

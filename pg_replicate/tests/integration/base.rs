@@ -1,12 +1,14 @@
 use crate::common::database::{spawn_database, test_table_name};
-use crate::common::pipeline::{spawn_pg_pipeline, PipelineMode};
+use crate::common::pipeline::{spawn_pg_pipeline, PipelineMode, PipelineRunner};
 use crate::common::sink::TestSink;
 use crate::common::table::assert_table_schema;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::Cell;
+use pg_replicate::pipeline::sources::postgres::PostgresSource;
 use postgres::schema::{ColumnSchema, TableId};
 use postgres::tokio::test_utils::PgDatabase;
 use std::ops::Range;
+use tokio::net::unix::pipe::pipe;
 use tokio_postgres::types::Type;
 
 fn get_expected_ages_sum(num_users: usize) -> i32 {
@@ -189,23 +191,33 @@ async fn test_cdc_with_insert_and_update() {
     let users_table_id = create_users_table_with_publication(&database, "users_publication").await;
 
     // We create a pipeline that subscribes to the changes of the users table.
+    let sink = TestSink::new();
     let mut pipeline = spawn_pg_pipeline(
         &database.options,
         PipelineMode::Cdc {
             publication: "users_publication".to_owned(),
             slot_name: "users_slot".to_string(),
         },
-        TestSink::new(),
+        sink.clone(),
     )
     .await;
-    pipeline.start().await.unwrap();
+    let pipeline_handle = pipeline.handle();
+
+    // We start the pipeline in another task to not block.
+    let pipeline_task_handle = tokio::spawn(async move {
+        pipeline.start().await.unwrap();
+    });
 
     // We insert 100 rows.
     fill_users(&database, 100).await;
 
-    assert_users_table_schema(pipeline.sink(), users_table_id, 0);
+    // We stop the pipeline and wait for it to finish.
+    pipeline_handle.stop();
+    pipeline_task_handle.await.unwrap();
+
+    assert_users_table_schema(&sink, users_table_id, 0);
     let expected_sum = get_expected_ages_sum(100);
-    assert_users_age_sum_from_events(pipeline.sink(), users_table_id, 0..100, expected_sum);
-    assert_eq!(pipeline.sink().get_tables_copied(), 0);
-    assert_eq!(pipeline.sink().get_tables_truncated(), 0);
+    assert_users_age_sum_from_events(&sink, users_table_id, 0..100, expected_sum);
+    assert_eq!(sink.get_tables_copied(), 0);
+    assert_eq!(sink.get_tables_truncated(), 0);
 }
