@@ -26,6 +26,9 @@ pub struct BatchDataPipelineHandle {
 impl BatchDataPipelineHandle {
     pub fn stop(&self) {
         // We want to notify all waiters that their streams have to be stopped.
+        //
+        // Technically, we should not need to notify multiple waiters since we can't have multiple
+        // streams active in parallel, but in this way we cover for the future.
         self.stream_stop.notify_waiters();
     }
 }
@@ -94,7 +97,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             let batch_timeout_stream = BatchTimeoutStream::new(
                 table_rows,
                 self.batch_config.clone(),
-                self.stream_stop.clone(),
+                self.stream_stop.notified(),
             );
 
             pin!(batch_timeout_stream);
@@ -151,7 +154,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         let batch_timeout_stream = BatchTimeoutStream::new(
             cdc_events,
             self.batch_config.clone(),
-            self.stream_stop.clone(),
+            self.stream_stop.notified(),
         );
         pin!(batch_timeout_stream);
 

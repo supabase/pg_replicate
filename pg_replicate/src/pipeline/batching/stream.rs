@@ -5,9 +5,7 @@ use tokio::time::{sleep, Sleep};
 use super::{BatchBoundary, BatchConfig};
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use std::sync::Arc;
-use tokio::pin;
-use tokio::sync::Notify;
+use tokio::sync::futures::Notified;
 use tracing::info;
 
 // Implementation adapted from https://github.com/tokio-rs/tokio/blob/master/tokio-stream/src/stream_ext/chunks_timeout.rs
@@ -18,21 +16,22 @@ pin_project! {
     /// item which returns true from [`BatchBoundary::is_last_in_batch`]
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
-    pub struct BatchTimeoutStream<B: BatchBoundary, S: Stream<Item = B>> {
+    pub struct BatchTimeoutStream<'a, B: BatchBoundary, S: Stream<Item = B>> {
         #[pin]
         stream: S,
         #[pin]
         deadline: Option<Sleep>,
+        #[pin]
+        stream_stop: Notified<'a>,
         items: Vec<S::Item>,
         batch_config: BatchConfig,
         reset_timer: bool,
         inner_stream_ended: bool,
-        stop: Arc<Notify>
     }
 }
 
-impl<B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<B, S> {
-    pub fn new(stream: S, batch_config: BatchConfig, stop: Arc<Notify>) -> Self {
+impl<'a, B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<'a, B, S> {
+    pub fn new(stream: S, batch_config: BatchConfig, stream_stop: Notified<'a>) -> Self {
         BatchTimeoutStream {
             stream,
             deadline: None,
@@ -40,7 +39,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<B, S> {
             batch_config,
             reset_timer: true,
             inner_stream_ended: false,
-            stop,
+            stream_stop,
         }
     }
 
@@ -49,7 +48,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<B, S> {
     }
 }
 
-impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<B, S> {
+impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<'a, B, S> {
     type Item = Vec<S::Item>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -60,10 +59,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<B, S> 
         }
 
         loop {
-            let notified = this.stop.notified();
-            pin!(notified);
-
-            if notified.poll(cx).is_ready() {
+            if this.stream_stop.as_mut().poll(cx).is_ready() {
                 info!("the stream has been forcefully stopped");
                 return Poll::Ready(None);
             }

@@ -1,14 +1,14 @@
 use crate::common::database::{spawn_database, test_table_name};
-use crate::common::pipeline::{spawn_pg_pipeline, PipelineMode, PipelineRunner};
+use crate::common::pipeline::{spawn_pg_pipeline, PipelineMode};
 use crate::common::sink::TestSink;
 use crate::common::table::assert_table_schema;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::Cell;
-use pg_replicate::pipeline::sources::postgres::PostgresSource;
 use postgres::schema::{ColumnSchema, TableId};
 use postgres::tokio::test_utils::PgDatabase;
 use std::ops::Range;
-use tokio::net::unix::pipe::pipe;
+use std::time::Duration;
+use tokio::time::sleep;
 use tokio_postgres::types::Type;
 
 fn get_expected_ages_sum(num_users: usize) -> i32 {
@@ -106,15 +106,16 @@ fn assert_users_age_sum_from_events(
 ) {
     let mut actual_sum = 0;
 
-    let events = &sink.get_events()[range];
-    for event in events {
+    let mut i = 0;
+    for event in sink.get_events() {
         match event.as_ref() {
             CdcEvent::Insert((table_id, table_row)) | CdcEvent::Update((table_id, table_row))
-                if table_id == &users_table_id =>
+                if table_id == &users_table_id && range.contains(&i) =>
             {
                 if let Cell::I32(age) = &table_row.values[1] {
                     actual_sum += age;
                 }
+                i += 1;
             }
             _ => {}
         }
@@ -208,8 +209,12 @@ async fn test_cdc_with_insert_and_update() {
         pipeline.start().await.unwrap();
     });
 
+    sleep(Duration::from_secs(5)).await;
+
     // We insert 100 rows.
     fill_users(&database, 100).await;
+
+    sleep(Duration::from_secs(5)).await;
 
     // We stop the pipeline and wait for it to finish.
     pipeline_handle.stop();
