@@ -48,6 +48,8 @@ jobs:
           POSTGRES_DB: postgres
         ports:
           - 5430:5432
+        options: >-
+          --command "postgres -c wal_level=logical"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
