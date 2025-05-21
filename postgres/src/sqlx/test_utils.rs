@@ -15,7 +15,7 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> PgPool {
         .execute(&*format!(r#"create database "{}";"#, options.name))
         .await
         .expect("Failed to create database");
-    
+
     // Create a connection pool to the database.
     PgPool::connect_with(options.with_db())
         .await
