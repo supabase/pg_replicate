@@ -55,29 +55,20 @@ async fn double_users_ages(database: &PgDatabase) {
 }
 
 fn assert_users_table_schema(sink: &TestSink, users_table_id: TableId, schema_index: usize) {
-    let expected_columns = vec![
-        ColumnSchema {
-            name: "id".to_string(),
-            typ: Type::INT8,
-            modifier: -1,
-            nullable: false,
-            primary: true,
-        },
-        ColumnSchema {
-            name: "age".to_string(),
-            typ: Type::INT4,
-            modifier: -1,
-            nullable: true,
-            primary: false,
-        },
-    ];
+    let additional_expected_columns = [ColumnSchema {
+        name: "age".to_string(),
+        typ: Type::INT4,
+        modifier: -1,
+        nullable: true,
+        primary: false,
+    }];
 
     assert_table_schema(
         sink,
         users_table_id,
         schema_index,
         test_table_name("users"),
-        &expected_columns,
+        &additional_expected_columns,
     );
 }
 
@@ -216,4 +207,57 @@ async fn test_cdc_with_multiple_inserts() {
     assert_users_table_schema(&sink, users_table_id, 0);
     assert_eq!(sink.get_tables_copied(), 0);
     assert_eq!(sink.get_tables_truncated(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[should_panic(
+    expected = "The table schemas are consistent, remove `should_panic` since now the test is valid."
+)]
+async fn test_cdc_table_schema_consistency() {
+    let database = spawn_database().await;
+
+    // We create the first table.
+    database
+        .create_table(test_table_name("table_1"), &[])
+        .await
+        .unwrap();
+    database
+        .create_publication("tables_publication", &[test_table_name("table_1")])
+        .await
+        .unwrap();
+
+    let sink = TestSink::new();
+    let mode = PipelineMode::Cdc {
+        publication: "tables_publication".to_owned(),
+        slot_name: "tables_slot".to_string(),
+    };
+
+    // We create a pipeline that subscribes to the changes of the table.
+    let mut pipeline = spawn_async_pg_pipeline(&database.options, mode.clone(), sink.clone()).await;
+
+    // We run and stop the pipeline immediately since tables are copied immediately.
+    let pipeline_task_handle = pipeline.run().await;
+    pipeline.stop_and_wait(pipeline_task_handle).await;
+
+    // We get the consistent table schemas which are the ones created on the first pipeline run
+    // when the slot was not created.
+    let consistent_table_schemas = sink.get_tables_schemas()[0].clone();
+
+    // We create a new table.
+    database
+        .create_table(test_table_name("table_2"), &[])
+        .await
+        .unwrap();
+    
+    // We recreate the pipeline, simulating that the system crashed.
+    let mut pipeline = spawn_async_pg_pipeline(&database.options, mode.clone(), sink.clone()).await;
+
+    // We run and stop the pipeline immediately since tables are copied immediately.
+    let pipeline_task_handle = pipeline.run().await;
+    pipeline.stop_and_wait(pipeline_task_handle).await;
+
+    // We would like for pg_replicate in this case to crash or try to self-recover, since if we
+    // restart the pipeline with the same slot id, we DO NOT want to have a different schema from
+    // the one we had before.
+    assert_eq!(sink.get_tables_schemas()[1], consistent_table_schemas);
 }
