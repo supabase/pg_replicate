@@ -16,7 +16,7 @@ fn get_expected_ages_sum(num_users: usize) -> i32 {
 
 async fn create_users_table(database: &PgDatabase) -> TableId {
     let table_id = database
-        .create_table(test_table_name("users"), &vec![("age", "integer")])
+        .create_table(test_table_name("users"), &[("age", "integer")])
         .await
         .unwrap();
 
@@ -30,7 +30,7 @@ async fn create_users_table_with_publication(
     let table_id = create_users_table(database).await;
 
     database
-        .create_publication(publication_name, &vec![test_table_name("users")])
+        .create_publication(publication_name, &[test_table_name("users")])
         .await
         .unwrap();
 
@@ -49,7 +49,7 @@ async fn fill_users(database: &PgDatabase, num_users: usize) {
 
 async fn double_users_ages(database: &PgDatabase) {
     database
-        .update_values(test_table_name("users"), &["age"], &[&"age * 2"])
+        .update_values(test_table_name("users"), &["age"], &["age * 2"])
         .await
         .unwrap();
 }

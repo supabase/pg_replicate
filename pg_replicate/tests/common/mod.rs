@@ -45,5 +45,5 @@ where
         sleep(ASSERTION_FREQUENCY_DURATION).await;
     }
 
-    assert!(false, "Failed to process all events within timeout")
+    panic!("Failed to process all events within timeout")
 }

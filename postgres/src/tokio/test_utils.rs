@@ -44,7 +44,7 @@ impl PgDatabase {
     ) -> Result<TableId, tokio_postgres::Error> {
         let columns_str = columns
             .iter()
-            .map(|(name, typ)| format!("{} {}", name, typ.to_string()))
+            .map(|(name, typ)| format!("{} {}", name, typ))
             .collect::<Vec<_>>()
             .join(", ");
 
