@@ -57,7 +57,7 @@ jobs:
             sleep 1
           done
 
-      - name: Enable logical WAL without restart
+      - name: Enable logical WAL
         run: |
           # Persist the change into postgresql.auto.conf
           PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres \
