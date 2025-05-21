@@ -208,20 +208,15 @@ async fn test_cdc_with_insert_and_update() {
 
     // Wait for all events to be processed
     let expected_sum = get_expected_ages_sum(100);
-    wait_for_condition(
-        || {
-            let actual_sum = get_users_age_sum_from_events(&sink, users_table_id, 0..100);
-            actual_sum == expected_sum
-        },
-    )
+    wait_for_condition(|| {
+        let actual_sum = get_users_age_sum_from_events(&sink, users_table_id, 0..100);
+        actual_sum == expected_sum
+    })
     .await;
 
     // We stop the pipeline and wait for it to finish.
     pipeline_handle.stop();
     pipeline_task_handle.await.unwrap();
-    
-    // TODO: figure out why the stopping causes the dropping of the db to start before the dropping
-    //  of the pipeline.
 
     assert_users_table_schema(&sink, users_table_id, 0);
     assert_eq!(sink.get_tables_copied(), 0);

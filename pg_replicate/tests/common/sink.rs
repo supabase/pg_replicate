@@ -98,9 +98,6 @@ impl BatchSink for TestSink {
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
-        for event in events.iter() {
-            println!("EVENT {:?}", event);
-        }
         // Since CdcEvent is not Clone, we have to wrap it in an Arc, and we are fine with this
         // since it's not mutable, so we don't even have to use mutexes.
         let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();

@@ -21,8 +21,9 @@ where
     let start = Instant::now();
     while start.elapsed() < MAX_ASSERTION_DURATION {
         if condition() {
-            break;
+            return;
         }
+
         sleep(ASSERTION_FREQUENCY_DURATION).await;
     }
 

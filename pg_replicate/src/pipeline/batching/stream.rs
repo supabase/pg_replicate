@@ -13,7 +13,8 @@ pin_project! {
     /// Adapter stream which batches the items of the underlying stream when it
     /// reaches max_size or when a timeout expires. The underlying streams items
     /// must implement [`BatchBoundary`]. A batch is guaranteed to end on an
-    /// item which returns true from [`BatchBoundary::is_last_in_batch`]
+    /// item which returns true from [`BatchBoundary::is_last_in_batch`] unless the
+    /// stream is forcefully stopped.
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
     pub struct BatchTimeoutStream<'a, B: BatchBoundary, S: Stream<Item = B>> {
@@ -27,6 +28,7 @@ pin_project! {
         batch_config: BatchConfig,
         reset_timer: bool,
         inner_stream_ended: bool,
+        stream_stopped: bool
     }
 }
 
@@ -35,11 +37,12 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<'a, B, S> {
         BatchTimeoutStream {
             stream,
             deadline: None,
+            stream_stop,
             items: Vec::with_capacity(batch_config.max_batch_size),
             batch_config,
             reset_timer: true,
             inner_stream_ended: false,
-            stream_stop,
+            stream_stopped: false,
         }
     }
 
@@ -59,9 +62,20 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<'a
         }
 
         loop {
+            if *this.stream_stopped {
+                return Poll::Ready(None);
+            }
+
+            // If the stream has been asked to stop, we mark the stream as stopped and return the
+            // remaining elements, irrespectively of boundaries.
             if this.stream_stop.as_mut().poll(cx).is_ready() {
                 info!("the stream has been forcefully stopped");
-                return Poll::Ready(None);
+                *this.stream_stopped = true;
+                return if !this.items.is_empty() {
+                    Poll::Ready(Some(std::mem::take(this.items)))
+                } else {
+                    Poll::Ready(None)
+                };
             }
 
             if *this.reset_timer {
