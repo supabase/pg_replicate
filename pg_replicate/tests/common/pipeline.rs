@@ -8,22 +8,35 @@ use postgres::tokio::options::PgDatabaseOptions;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
+/// Defines the operational mode for a PostgreSQL replication pipeline.
 pub enum PipelineMode {
-    /// In this mode the supplied tables will be copied.
+    /// Initializes a pipeline to copy specified tables.
     CopyTable { table_names: Vec<TableName> },
-    /// In this mode the changes will be consumed from the given publication and slot.
+    /// Initializes a pipeline to consume changes from a publication and replication slot.
     ///
-    /// If the slot is not supplied, a new one will be created on the supplied publication.
+    /// If no slot name is provided, a new slot will be created on the specified publication.
     Cdc {
         publication: String,
         slot_name: String,
     },
 }
 
+/// Generates a test-specific replication slot name.
+///
+/// This function prefixes the provided slot name with "test_" to avoid conflicts
+/// with other replication slots.
 pub fn test_slot_name(slot_name: &str) -> String {
     format!("test_{}", slot_name)
 }
 
+/// Creates a new PostgreSQL replication pipeline.
+///
+/// This function initializes a pipeline with a batch size of 1000 records and
+/// a maximum batch duration of 10 seconds.
+///
+/// # Panics
+///
+/// Panics if the PostgreSQL source cannot be created.
 pub async fn spawn_pg_pipeline<Snk: BatchSink>(
     options: &PgDatabaseOptions,
     mode: PipelineMode,
@@ -64,6 +77,10 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
     pipeline
 }
 
+/// Creates and spawns a new asynchronous PostgreSQL replication pipeline.
+///
+/// This function creates a pipeline and wraps it in a [`PipelineRunner`] for
+/// easier management of the pipeline lifecycle.
 pub async fn spawn_async_pg_pipeline<Snk: BatchSink + Send + 'static>(
     options: &PgDatabaseOptions,
     mode: PipelineMode,
@@ -73,12 +90,17 @@ pub async fn spawn_async_pg_pipeline<Snk: BatchSink + Send + 'static>(
     PipelineRunner::new(pipeline)
 }
 
+/// Manages the lifecycle of a PostgreSQL replication pipeline.
+///
+/// This struct provides methods to run and stop a pipeline, handling the
+/// pipeline's state and ensuring proper cleanup.
 pub struct PipelineRunner<Snk: BatchSink> {
     pipeline: Option<BatchDataPipeline<PostgresSource, Snk>>,
     pipeline_handle: BatchDataPipelineHandle,
 }
 
 impl<Snk: BatchSink + Send + 'static> PipelineRunner<Snk> {
+    /// Creates a new pipeline runner with the specified pipeline.
     pub fn new(pipeline: BatchDataPipeline<PostgresSource, Snk>) -> Self {
         let pipeline_handle = pipeline.handle();
         Self {
@@ -87,6 +109,11 @@ impl<Snk: BatchSink + Send + 'static> PipelineRunner<Snk> {
         }
     }
 
+    /// Starts the pipeline asynchronously.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pipeline has already been run.
     pub async fn run(&mut self) -> JoinHandle<BatchDataPipeline<PostgresSource, Snk>> {
         if let Some(mut pipeline) = self.pipeline.take() {
             return tokio::spawn(async move {
@@ -102,6 +129,15 @@ impl<Snk: BatchSink + Send + 'static> PipelineRunner<Snk> {
         panic!("The pipeline has already been run");
     }
 
+    /// Stops the pipeline and waits for it to complete.
+    ///
+    /// This method signals the pipeline to stop and waits for it to finish
+    /// before returning. The pipeline is then restored to its initial state
+    /// for potential reuse.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pipeline task fails.
     pub async fn stop_and_wait(
         &mut self,
         pipeline_task_handle: JoinHandle<BatchDataPipeline<PostgresSource, Snk>>,

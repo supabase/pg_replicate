@@ -1,6 +1,18 @@
 use crate::common::sink::TestSink;
 use postgres::schema::{ColumnSchema, TableId, TableName};
 
+/// Verifies that a table's schema matches the expected configuration.
+///
+/// This function compares a table's actual schema against the expected schema,
+/// checking the table name, ID, and all column properties including name, type,
+/// modifiers, nullability, and primary key status.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The table ID is not found in the sink's schema
+/// - The schema index is out of bounds
+/// - Any column property doesn't match the expected configuration
 pub fn assert_table_schema(
     sink: &TestSink,
     table_id: TableId,

@@ -1,3 +1,8 @@
+/// Common utilities and helpers for testing PostgreSQL replication functionality.
+///
+/// This module provides shared testing infrastructure including database management,
+/// pipeline testing utilities, sink testing helpers, and table manipulation utilities.
+/// It also includes common testing patterns like waiting for conditions to be met.
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
@@ -6,14 +11,27 @@ pub mod pipeline;
 pub mod sink;
 pub mod table;
 
-/// The maximum time in seconds for which we should wait for a condition to be met
-/// in tests.
+/// The maximum duration to wait for test conditions to be met.
+///
+/// This constant defines the timeout period for asynchronous test assertions,
+/// ensuring tests don't hang indefinitely while waiting for expected states.
 const MAX_ASSERTION_DURATION: Duration = Duration::from_secs(20);
 
-/// The frequency at which we should check for a condition to be met in tests.
+/// The interval between condition checks during test assertions.
+///
+/// This constant defines how frequently we poll for condition changes while
+/// waiting for test assertions to complete.
 const ASSERTION_FREQUENCY_DURATION: Duration = Duration::from_millis(10);
 
-/// Wait for a condition to be met within the maximum timeout.
+/// Waits asynchronously for a condition to be met within the maximum timeout period.
+///
+/// This function repeatedly evaluates the provided condition until it returns true
+/// or the maximum duration is exceeded. It's useful for testing asynchronous
+/// operations where the exact completion time is not known.
+///
+/// # Panics
+///
+/// Panics if the condition is not met within [`MAX_ASSERTION_DURATION`].
 pub async fn wait_for_condition<F>(condition: F)
 where
     F: Fn() -> bool,

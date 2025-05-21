@@ -4,13 +4,17 @@ use postgres::tokio::test_utils::PgDatabase;
 use tokio_postgres::config::SslMode;
 use uuid::Uuid;
 
-/// The default schema name used for test tables.
+/// The schema name used for organizing test tables.
+///
+/// This constant defines the default schema where test tables are created,
+/// providing isolation from other database objects.
 const TEST_DATABASE_SCHEMA: &str = "test";
 
 /// Creates a [`TableName`] in the test schema.
 ///
-/// This helper function constructs a [`TableName`] with the schema set to the test schema
-/// and the provided name as the table name.
+/// This helper function constructs a [`TableName`] with the schema set to [`TEST_DATABASE_SCHEMA`]
+/// and the provided name as the table name. It's used to ensure consistent table naming
+/// across test scenarios.
 pub fn test_table_name(name: &str) -> TableName {
     TableName {
         schema: TEST_DATABASE_SCHEMA.to_owned(),
@@ -18,10 +22,10 @@ pub fn test_table_name(name: &str) -> TableName {
     }
 }
 
-/// Creates a new test database instance.
+/// Creates a new test database instance with a unique name.
 ///
 /// This function spawns a new PostgreSQL database with a random UUID as its name,
-/// using default credentials and disabled SSL. It also creates a test schema
+/// using default credentials and disabled SSL. It automatically creates the test schema
 /// for organizing test tables.
 ///
 /// # Panics

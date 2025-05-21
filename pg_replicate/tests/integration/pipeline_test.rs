@@ -124,16 +124,8 @@ fn get_users_age_sum_from_events(
 
 /*
 Tests to write:
-- Insert -> table copy
-- Insert -> Update -> table copy
-- Insert -> cdc
-- Insert -> Update -> cdc
 - Insert -> cdc -> Update -> cdc
-- Insert -> table copy -> crash while copying -> add new table -> check if new table is in the snapshot
-
-The main test we want to do is to check if resuming after a new table has been added causes problems
-
-insert -> cdc -> add table -> recreate pipeline and source -> check schema
+- Insert -> cdc -> add table -> recreate pipeline and source -> check schema
  */
 
 #[tokio::test(flavor = "multi_thread")]
