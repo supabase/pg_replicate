@@ -214,7 +214,7 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
     // Forcefully terminate any remaining connections to the database
     client
         .execute(
-            &*format!(
+            &format!(
                 r#"
                 SELECT pg_terminate_backend(pg_stat_activity.pid)
                 FROM pg_stat_activity
@@ -230,9 +230,14 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
     // Drop any test replication slots
     client
         .execute(
-            "SELECT pg_drop_replication_slot(slot_name) 
-             FROM pg_replication_slots 
-             WHERE slot_name LIKE 'test_%';",
+            &format!(
+                r#"
+                SELECT pg_drop_replication_slot(slot_name) 
+                FROM pg_replication_slots 
+                WHERE slot_name LIKE 'test_%'
+                AND database = '{}';"#,
+                options.name
+            ),
             &[],
         )
         .await
@@ -241,7 +246,7 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
     // Drop the database
     client
         .execute(
-            &*format!(r#"DROP DATABASE IF EXISTS "{}";"#, options.name),
+            &format!(r#"DROP DATABASE IF EXISTS "{}";"#, options.name),
             &[],
         )
         .await

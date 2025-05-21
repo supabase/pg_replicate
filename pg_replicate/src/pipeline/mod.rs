@@ -17,6 +17,7 @@ pub enum PipelineAction {
     Both,
 }
 
+#[derive(Debug)]
 pub struct PipelineResumptionState {
     pub copied_tables: HashSet<TableId>,
     pub last_lsn: PgLsn,

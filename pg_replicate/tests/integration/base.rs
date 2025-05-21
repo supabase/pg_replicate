@@ -185,7 +185,7 @@ async fn test_table_copy_with_insert_and_update() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cdc_with_insert_and_update() {
+async fn test_cdc_with_multiple_inserts() {
     let database = spawn_database().await;
 
     // We create the table and publication.
@@ -193,7 +193,7 @@ async fn test_cdc_with_insert_and_update() {
 
     // We create a pipeline that subscribes to the changes of the users table.
     let sink = TestSink::new();
-    let (pipeline_handle, pipeline_task_handle) = spawn_async_pg_pipeline(
+    let mut pipeline = spawn_async_pg_pipeline(
         &database.options,
         PipelineMode::Cdc {
             publication: "users_publication".to_owned(),
@@ -202,11 +202,15 @@ async fn test_cdc_with_insert_and_update() {
         sink.clone(),
     )
     .await;
-
+    
     // We insert 100 rows.
     fill_users(&database, 100).await;
 
-    // Wait for all events to be processed
+    // We run the pipeline in the background which should correctly pick up entries from the start
+    // even though the pipeline was started after insertions.
+    let pipeline_task_handle = pipeline.run().await;
+
+    // Wait for all events to be processed.
     let expected_sum = get_expected_ages_sum(100);
     wait_for_condition(|| {
         let actual_sum = get_users_age_sum_from_events(&sink, users_table_id, 0..100);
@@ -215,10 +219,26 @@ async fn test_cdc_with_insert_and_update() {
     .await;
 
     // We stop the pipeline and wait for it to finish.
-    pipeline_handle.stop();
-    pipeline_task_handle.await.unwrap();
+    pipeline.stop_and_wait(pipeline_task_handle).await;
 
     assert_users_table_schema(&sink, users_table_id, 0);
     assert_eq!(sink.get_tables_copied(), 0);
     assert_eq!(sink.get_tables_truncated(), 0);
+
+    // We insert an additional 100 rows.
+    // fill_users(&database, 100).await;
+    
+    // We run the pipeline in the background.
+    let pipeline_task_handle = pipeline.run().await;
+    
+    // Wait for all events to be processed.
+    let expected_sum = get_expected_ages_sum(100);
+    wait_for_condition(|| {
+        let actual_sum = get_users_age_sum_from_events(&sink, users_table_id, 100..200);
+        actual_sum == expected_sum
+    })
+        .await;
+    
+    // We stop the pipeline and wait for it to finish.
+    pipeline.stop_and_wait(pipeline_task_handle).await;
 }

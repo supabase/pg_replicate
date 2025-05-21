@@ -68,16 +68,45 @@ pub async fn spawn_async_pg_pipeline<Snk: BatchSink + Send + 'static>(
     options: &PgDatabaseOptions,
     mode: PipelineMode,
     sink: Snk,
-) -> (BatchDataPipelineHandle, JoinHandle<()>) {
-    let mut pipeline = spawn_pg_pipeline(options, mode, sink).await;
+) -> PipelineRunner<Snk> {
+    let pipeline = spawn_pg_pipeline(options, mode, sink).await;
+    PipelineRunner::new(pipeline)
+}
 
-    let pipeline_handle = pipeline.handle();
-    let pipeline_task_handle = tokio::spawn(async move {
-        pipeline
-            .start()
-            .await
-            .expect("The pipeline experienced an error");
-    });
+pub struct PipelineRunner<Snk: BatchSink> {
+    pipeline: Option<BatchDataPipeline<PostgresSource, Snk>>,
+    pipeline_handle: BatchDataPipelineHandle,
+}
 
-    (pipeline_handle, pipeline_task_handle)
+impl<Snk: BatchSink + Send + 'static> PipelineRunner<Snk> {
+    pub fn new(pipeline: BatchDataPipeline<PostgresSource, Snk>) -> Self {
+        let pipeline_handle = pipeline.handle();
+        Self { pipeline: Some(pipeline), pipeline_handle }
+    }
+    
+    pub async fn run(&mut self) -> JoinHandle<BatchDataPipeline<PostgresSource, Snk>> {
+        if let Some(mut pipeline) = self.pipeline.take() {
+            return tokio::spawn(async move {
+                pipeline
+                    .start()
+                    .await
+                    .expect("The pipeline experienced an error");
+                
+                pipeline
+            })
+        }
+
+        panic!("The pipeline has already been run");
+    }
+    
+    pub async fn stop_and_wait(&mut self, pipeline_task_handle: JoinHandle<BatchDataPipeline<PostgresSource, Snk>>) {
+        // We signal the existing pipeline to stop.
+        self.pipeline_handle.stop();
+        
+        // We wait for the pipeline to finish, and we put it back for the next run.
+        let pipeline = pipeline_task_handle.await.expect("The pipeline task has failed");
+        // We recreate the handle just to make sure the pipeline handle and pipelines connected.
+        self.pipeline_handle = pipeline.handle();
+        self.pipeline = Some(pipeline);
+    }
 }

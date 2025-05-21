@@ -1,3 +1,4 @@
+use std::cmp::max;
 use async_trait::async_trait;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::table_row::TableRow;
@@ -21,8 +22,9 @@ struct TestSinkInner {
     tables_schemas: Vec<HashMap<TableId, TableSchema>>,
     tables_rows: HashMap<TableId, Vec<TableRow>>,
     events: Vec<Arc<CdcEvent>>,
-    tables_copied: u8,
-    tables_truncated: u8,
+    copied_tables: HashSet<TableId>,
+    truncated_tables: HashSet<TableId>,
+    last_lsn: u64
 }
 
 impl TestSink {
@@ -32,11 +34,27 @@ impl TestSink {
                 tables_schemas: Vec::new(),
                 tables_rows: HashMap::new(),
                 events: Vec::new(),
-                tables_copied: 0,
-                tables_truncated: 0,
+                copied_tables: HashSet::new(),
+                truncated_tables: HashSet::new(),
+                last_lsn: 0
             })),
         }
     }
+    
+    fn receive_events(&mut self, events: &[CdcEvent]) {
+        let mut max_lsn = 0;
+        for event in events {
+            if let CdcEvent::Commit(commit_body) = event {
+                max_lsn = max(max_lsn, commit_body.commit_lsn());
+            }
+        }
+        
+        // We update the last lsn taking the maximum between the maximum of the event stream and
+        // the current lsn, since we assume that lsns are guaranteed to be monotonically increasing, 
+        // so if we see a max lsn, we can be sure that all events before that point have been received.
+        let last_lsn = self.inner.lock().unwrap().last_lsn;
+        self.inner.lock().unwrap().last_lsn = max(last_lsn, max_lsn);  
+    } 
 
     pub fn get_tables_schemas(&self) -> Vec<HashMap<TableId, TableSchema>> {
         self.inner.lock().unwrap().tables_schemas.clone()
@@ -49,13 +67,21 @@ impl TestSink {
     pub fn get_events(&self) -> Vec<Arc<CdcEvent>> {
         self.inner.lock().unwrap().events.clone()
     }
+    
+    pub fn get_copied_tables(&self) -> HashSet<TableId> {
+        self.inner.lock().unwrap().copied_tables.clone()
+    }
 
     pub fn get_tables_copied(&self) -> u8 {
-        self.inner.lock().unwrap().tables_copied
+        self.inner.lock().unwrap().copied_tables.len() as u8
     }
 
     pub fn get_tables_truncated(&self) -> u8 {
-        self.inner.lock().unwrap().tables_truncated
+        self.inner.lock().unwrap().truncated_tables.len() as u8
+    }
+    
+    pub fn get_last_lsn(&self) -> u64 {
+        self.inner.lock().unwrap().last_lsn
     }
 }
 
@@ -65,8 +91,8 @@ impl BatchSink for TestSink {
 
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         Ok(PipelineResumptionState {
-            copied_tables: HashSet::new(),
-            last_lsn: PgLsn::from(0),
+            copied_tables: self.get_copied_tables(),
+            last_lsn: PgLsn::from(self.get_last_lsn()),
         })
     }
 
@@ -79,6 +105,7 @@ impl BatchSink for TestSink {
             .unwrap()
             .tables_schemas
             .push(table_schemas);
+
         Ok(())
     }
 
@@ -94,24 +121,30 @@ impl BatchSink for TestSink {
             .entry(table_id)
             .or_default()
             .extend(rows);
+
         Ok(())
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
+        self.receive_events(&events);
+        
         // Since CdcEvent is not Clone, we have to wrap it in an Arc, and we are fine with this
         // since it's not mutable, so we don't even have to use mutexes.
         let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();
         self.inner.lock().unwrap().events.extend(arc_events);
-        Ok(PgLsn::from(0))
+
+        Ok(PgLsn::from(self.inner.lock().unwrap().last_lsn))
     }
 
-    async fn table_copied(&mut self, _table_id: TableId) -> Result<(), Self::Error> {
-        self.inner.lock().unwrap().tables_copied += 1;
+    async fn table_copied(&mut self, table_id: TableId) -> Result<(), Self::Error> {
+        self.inner.lock().unwrap().copied_tables.insert(table_id);
+
         Ok(())
     }
 
-    async fn truncate_table(&mut self, _table_id: TableId) -> Result<(), Self::Error> {
-        self.inner.lock().unwrap().tables_truncated += 1;
+    async fn truncate_table(&mut self, table_id: TableId) -> Result<(), Self::Error> {
+        self.inner.lock().unwrap().truncated_tables.insert(table_id);
+
         Ok(())
     }
 }
