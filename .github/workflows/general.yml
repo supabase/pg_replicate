@@ -59,12 +59,11 @@ jobs:
 
       - name: Enable logical WAL
         run: |
-          # Append the setting to the Postgres config
-          docker exec "${{ job.services.postgres.id }}" \
-            bash -c "echo 'wal_level = logical' >> /var/lib/postgresql/data/postgresql.conf"
-          # Reload Postgres configuration
-          docker exec "${{ job.services.postgres.id }}" \
-            bash -c "kill -HUP 1"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "ALTER SYSTEM SET wal_level = 'logical';"
+
+      - name: Restart Postgres service container
+        run: |
+          docker restart ${{ job.services.postgres.id }}
 
       - name: Install sqlx-cli
         run: |
