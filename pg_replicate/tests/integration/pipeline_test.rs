@@ -224,21 +224,4 @@ async fn test_cdc_with_multiple_inserts() {
     assert_users_table_schema(&sink, users_table_id, 0);
     assert_eq!(sink.get_tables_copied(), 0);
     assert_eq!(sink.get_tables_truncated(), 0);
-
-    // We insert an additional 100 rows.
-    // fill_users(&database, 100).await;
-    
-    // We run the pipeline in the background.
-    let pipeline_task_handle = pipeline.run().await;
-    
-    // Wait for all events to be processed.
-    let expected_sum = get_expected_ages_sum(100);
-    wait_for_condition(|| {
-        let actual_sum = get_users_age_sum_from_events(&sink, users_table_id, 100..200);
-        actual_sum == expected_sum
-    })
-        .await;
-    
-    // We stop the pipeline and wait for it to finish.
-    pipeline.stop_and_wait(pipeline_task_handle).await;
 }

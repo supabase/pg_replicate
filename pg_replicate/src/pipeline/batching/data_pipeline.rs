@@ -205,8 +205,6 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             .get_resumption_state()
             .await
             .map_err(PipelineError::Sink)?;
-        
-        println!("RESUMPTION STATE {:?}", resumption_state);
 
         match self.action {
             PipelineAction::TableCopiesOnly => {
