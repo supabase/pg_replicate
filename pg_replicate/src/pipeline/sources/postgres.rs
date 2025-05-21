@@ -5,14 +5,6 @@ use std::{
     time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use crate::{
-    clients::postgres::{ReplicationClient, ReplicationClientError},
-    conversions::{
-        cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
-        table_row::{TableRow, TableRowConversionError, TableRowConverter},
-    },
-};
-
 use async_trait::async_trait;
 use futures::{ready, Stream};
 use pin_project_lite::pin_project;
@@ -23,6 +15,14 @@ use rustls::pki_types::CertificateDer;
 use thiserror::Error;
 use tokio_postgres::{config::SslMode, types::PgLsn, CopyOutStream};
 use tracing::info;
+
+use crate::{
+    clients::postgres::{ReplicationClient, ReplicationClientError},
+    conversions::{
+        cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
+        table_row::{TableRow, TableRowConversionError, TableRowConverter},
+    },
+};
 
 use super::{Source, SourceError};
 

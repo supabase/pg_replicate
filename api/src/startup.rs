@@ -1,5 +1,15 @@
 use std::{net::TcpListener, sync::Arc};
 
+use actix_web::{dev::Server, web, App, HttpServer};
+use actix_web_httpauth::middleware::HttpAuthentication;
+use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
+use base64::{prelude::BASE64_STANDARD, Engine};
+use postgres::sqlx::options::PgDatabaseOptions;
+use sqlx::{postgres::PgPoolOptions, PgPool};
+use tracing_actix_web::TracingLogger;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+
 use crate::{
     authentication::auth_validator,
     configuration::Settings,
@@ -45,15 +55,6 @@ use crate::{
     },
     span_builder::ApiRootSpanBuilder,
 };
-use actix_web::{dev::Server, web, App, HttpServer};
-use actix_web_httpauth::middleware::HttpAuthentication;
-use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
-use base64::{prelude::BASE64_STANDARD, Engine};
-use postgres::sqlx::options::PgDatabaseOptions;
-use sqlx::{postgres::PgPoolOptions, PgPool};
-use tracing_actix_web::TracingLogger;
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 pub struct Application {
     port: u16,
