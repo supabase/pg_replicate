@@ -59,7 +59,7 @@ jobs:
 
       - name: Enable logical WAL
         run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "ALTER SYSTEM SET wal_level = 'logical';"
+          PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres -c "ALTER SYSTEM SET wal_level = 'logical';"
 
       - name: Restart Postgres service container
         run: |

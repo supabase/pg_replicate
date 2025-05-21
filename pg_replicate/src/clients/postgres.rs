@@ -76,6 +76,7 @@ impl ReplicationClient {
             info!("waiting for connection to terminate");
             if let Err(e) = connection.await {
                 warn!("connection error: {}", e);
+                return;
             }
             info!("connection terminated successfully")
         });
@@ -114,7 +115,9 @@ impl ReplicationClient {
             info!("waiting for connection to terminate");
             if let Err(e) = connection.await {
                 warn!("connection error: {}", e);
+                return;
             }
+            info!("connection terminated successfully")
         });
 
         info!("successfully connected to postgres");
