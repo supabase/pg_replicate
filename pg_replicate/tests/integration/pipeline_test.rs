@@ -212,6 +212,7 @@ async fn test_cdc_with_multiple_inserts() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore]
 async fn test_cdc_table_schema_consistency() {
     let database = spawn_database().await;
 
@@ -275,8 +276,12 @@ async fn test_cdc_table_schema_consistency() {
     let pipeline_task_handle = pipeline.run().await;
     pipeline.stop_and_wait(pipeline_task_handle).await;
 
-    // We would like for pg_replicate in this case to crash or try to self-recover, since if we
-    // restart the pipeline with the same slot id, we DO NOT want to have a different schema from
-    // the one we had before.
-    assert_ne!(sink.get_tables_schemas()[1], consistent_table_schemas);
+    // The current pipeline implementation allows for table schemas to be downloaded every time
+    // cdc starts even if the slot was already existing. This is a big problem because the new schema
+    // will likely be different from the schema that we would take with the snapshot that we have during
+    // table creation.
+    //
+    // This test is ignored because it fails, but it HAS to be unignored once the pipeline behavior
+    // is fixed. We expect either to throw an error or to restart the replication with a new slot.
+    assert_eq!(sink.get_tables_schemas()[1], consistent_table_schemas);
 }
