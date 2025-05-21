@@ -1,12 +1,11 @@
 use std::fmt::{self, Display};
 
 use base64::{prelude::BASE64_STANDARD, Engine};
-use secrecy::{ExposeSecret, Secret};
+use postgres::sqlx::options::PgDatabaseOptions;
 use serde::{
     de::{self, MapAccess, Unexpected, Visitor},
     Deserialize, Deserializer,
 };
-use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use thiserror::Error;
 
 #[derive(serde::Deserialize, Clone)]
@@ -100,57 +99,10 @@ impl<'de> Deserialize<'de> for ApiKey {
 
 #[derive(serde::Deserialize, Clone)]
 pub struct Settings {
-    pub database: DatabaseSettings,
+    pub database: PgDatabaseOptions,
     pub application: ApplicationSettings,
     pub encryption_key: EncryptionKey,
     pub api_key: String,
-}
-
-#[derive(serde::Deserialize, Clone)]
-pub struct DatabaseSettings {
-    /// Host on which Postgres is running
-    pub host: String,
-
-    /// Port on which Postgres is running
-    pub port: u16,
-
-    /// Postgres database name
-    pub name: String,
-
-    /// Postgres database user name
-    pub username: String,
-
-    /// Postgres database user password
-    pub password: Option<Secret<String>>,
-
-    /// Whether to enable ssl or not
-    pub require_ssl: bool,
-}
-
-impl DatabaseSettings {
-    pub fn without_db(&self) -> PgConnectOptions {
-        let ssl_mode = if self.require_ssl {
-            PgSslMode::Require
-        } else {
-            PgSslMode::Prefer
-        };
-
-        let options = PgConnectOptions::new_without_pgpass()
-            .host(&self.host)
-            .username(&self.username)
-            .port(self.port)
-            .ssl_mode(ssl_mode);
-
-        if let Some(password) = &self.password {
-            options.password(password.expose_secret())
-        } else {
-            options
-        }
-    }
-
-    pub fn with_db(&self) -> PgConnectOptions {
-        self.without_db().database(&self.name)
-    }
 }
 
 #[derive(serde::Deserialize, Clone)]

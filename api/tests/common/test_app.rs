@@ -1,39 +1,18 @@
-use std::io;
-use std::net::TcpListener;
-
-use crate::common::database::{create_and_configure_database, destroy_database};
+use crate::common::database::create_pg_replicate_api_database;
 use api::{
     configuration::{get_settings, Settings},
     db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
     encryption::{self, generate_random_key},
     startup::run,
 };
+use postgres::sqlx::options::PgDatabaseOptions;
+use postgres::sqlx::test_utils::drop_pg_database;
 use reqwest::{IntoUrl, RequestBuilder};
 use serde::{Deserialize, Serialize};
+use std::io;
+use std::net::TcpListener;
 use tokio::runtime::Handle;
 use uuid::Uuid;
-
-pub struct TestApp {
-    pub address: String,
-    pub api_client: reqwest::Client,
-    pub api_key: String,
-    settings: Settings,
-    server_handle: tokio::task::JoinHandle<io::Result<()>>,
-}
-
-impl Drop for TestApp {
-    fn drop(&mut self) {
-        // First, abort the server task to ensure it's terminated.
-        self.server_handle.abort();
-
-        // To use `block_in_place,` we need a multithreaded runtime since when a blocking
-        // task is issued, the runtime will offload existing tasks to another worker.
-        tokio::task::block_in_place(move || {
-            Handle::current()
-                .block_on(async move { destroy_database(&self.settings.database).await });
-        });
-    }
-}
 
 #[derive(Serialize)]
 pub struct CreateTenantRequest {
@@ -215,6 +194,27 @@ pub struct ImagesResponse {
 pub struct UpdateImageRequest {
     pub name: String,
     pub is_default: bool,
+}
+
+pub struct TestApp {
+    pub address: String,
+    pub api_client: reqwest::Client,
+    pub api_key: String,
+    options: PgDatabaseOptions,
+    server_handle: tokio::task::JoinHandle<io::Result<()>>,
+}
+
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        // First, abort the server task to ensure it's terminated.
+        self.server_handle.abort();
+
+        // To use `block_in_place,` we need a multithreaded runtime since when a blocking
+        // task is issued, the runtime will offload existing tasks to another worker.
+        tokio::task::block_in_place(move || {
+            Handle::current().block_on(async move { drop_pg_database(&self.options).await });
+        });
+    }
 }
 
 impl TestApp {
@@ -533,9 +533,10 @@ pub async fn spawn_test_app() -> TestApp {
     let port = listener.local_addr().unwrap().port();
 
     let mut settings = get_settings::<'_, Settings>().expect("Failed to read configuration");
+    // We use a random database name.
     settings.database.name = Uuid::new_v4().to_string();
 
-    let connection_pool = create_and_configure_database(&settings.database).await;
+    let connection_pool = create_pg_replicate_api_database(&settings.database).await;
 
     let key = generate_random_key::<32>().expect("failed to generate random key");
     let encryption_key = encryption::EncryptionKey { id: 0, key };
@@ -557,7 +558,7 @@ pub async fn spawn_test_app() -> TestApp {
         address: format!("http://{base_address}:{port}"),
         api_client: reqwest::Client::new(),
         api_key,
-        settings,
+        options: settings.database,
         server_handle,
     }
 }

@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
+use ::postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use async_trait::async_trait;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
-use crate::table::{ColumnSchema, TableId, TableName, TableSchema};
-
-use self::postgres::{
+use postgres::{
     CdcStream, CdcStreamError, PostgresSourceError, StatusUpdateError, TableCopyStream,
     TableCopyStreamError,
 };

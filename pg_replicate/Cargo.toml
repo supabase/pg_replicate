@@ -18,6 +18,8 @@ name = "stdout"
 required-features = ["stdout"]
 
 [dependencies]
+postgres = { workspace = true, features = ["tokio"]}
+
 async-trait = { workspace = true }
 bigdecimal = { workspace = true, features = ["std"] }
 bytes = { workspace = true }
@@ -38,7 +40,7 @@ rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 tokio-postgres = { workspace = true, features = [
     "runtime",
     "with-chrono-0_4",
@@ -50,6 +52,8 @@ tracing = { workspace = true, default-features = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
+postgres = { workspace = true, features = ["test-utils", "tokio"]}
+
 clap = { workspace = true, default-features = true, features = [
     "std",
     "derive",
@@ -57,6 +61,7 @@ clap = { workspace = true, default-features = true, features = [
 tracing-subscriber = { workspace = true, default-features = true, features = [
     "env-filter",
 ] }
+
 
 [features]
 bigquery = ["dep:gcp-bigquery-client", "dep:prost"]

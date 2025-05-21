@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use postgres::schema::{TableId, TableSchema};
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
-use crate::{
-    conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    table::{TableId, TableSchema},
-};
+use crate::conversions::{cdc_event::CdcEvent, table_row::TableRow};
 
 use super::PipelineResumptionState;
 

@@ -4,6 +4,7 @@ use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
 use base64::{prelude::BASE64_STANDARD, Engine};
+use postgres::sqlx::options::PgDatabaseOptions;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tracing_actix_web::TracingLogger;
 use utoipa::OpenApi;
@@ -11,7 +12,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     authentication::auth_validator,
-    configuration::{DatabaseSettings, Settings},
+    configuration::Settings,
     db::publications::Publication,
     encryption,
     k8s_client::HttpK8sClient,
@@ -90,10 +91,8 @@ impl Application {
         Ok(Self { port, server })
     }
 
-    pub async fn migrate_database(
-        database_settings: DatabaseSettings,
-    ) -> Result<(), anyhow::Error> {
-        let connection_pool = get_connection_pool(&database_settings);
+    pub async fn migrate_database(options: PgDatabaseOptions) -> Result<(), anyhow::Error> {
+        let connection_pool = get_connection_pool(&options);
 
         sqlx::migrate!("./migrations").run(&connection_pool).await?;
 
@@ -109,8 +108,8 @@ impl Application {
     }
 }
 
-pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
-    PgPoolOptions::new().connect_lazy_with(configuration.with_db())
+pub fn get_connection_pool(options: &PgDatabaseOptions) -> PgPool {
+    PgPoolOptions::new().connect_lazy_with(options.with_db())
 }
 
 // HttpK8sClient is wrapped in an option because creating it

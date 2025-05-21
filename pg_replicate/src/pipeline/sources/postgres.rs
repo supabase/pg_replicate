@@ -8,6 +8,8 @@ use std::{
 use async_trait::async_trait;
 use futures::{ready, Stream};
 use pin_project_lite::pin_project;
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::pki_types::CertificateDer;
 use thiserror::Error;
@@ -20,7 +22,6 @@ use crate::{
         cdc_event::{CdcEvent, CdcEventConversionError, CdcEventConverter},
         table_row::{TableRow, TableRowConversionError, TableRowConverter},
     },
-    table::{ColumnSchema, TableId, TableName, TableSchema},
 };
 
 use super::{Source, SourceError};
@@ -52,41 +53,31 @@ pub struct PostgresSource {
 }
 
 impl PostgresSource {
-    #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        host: &str,
-        port: u16,
-        database: &str,
-        username: &str,
-        password: Option<String>,
-        ssl_mode: SslMode,
+        options: PgDatabaseOptions,
         trusted_root_certs: Vec<CertificateDer<'static>>,
         slot_name: Option<String>,
         table_names_from: TableNamesFrom,
     ) -> Result<PostgresSource, PostgresSourceError> {
-        let mut replication_client = if ssl_mode == SslMode::Disable {
-            ReplicationClient::connect_no_tls(host, port, database, username, password).await?
-        } else {
-            ReplicationClient::connect_tls(
-                host,
-                port,
-                database,
-                username,
-                password,
-                ssl_mode,
-                trusted_root_certs,
-            )
-            .await?
+        let mut replication_client = match options.ssl_mode {
+            SslMode::Disable => ReplicationClient::connect_no_tls(options).await?,
+            _ => ReplicationClient::connect_tls(options, trusted_root_certs).await?,
         };
+
+        // TODO: we have to fix this whole block which starts the transaction and loads the data.
+        //  We will not do this here in the future but rather let the pipeline drive this based on
+        //  its internal state.
         replication_client.begin_readonly_transaction().await?;
         if let Some(ref slot_name) = slot_name {
             replication_client.get_or_create_slot(slot_name).await?;
         }
+
         let (table_names, publication) =
             Self::get_table_names_and_publication(&replication_client, table_names_from).await?;
         let table_schemas = replication_client
             .get_table_schemas(&table_names, publication.as_deref())
             .await?;
+
         Ok(PostgresSource {
             replication_client,
             table_schemas,
@@ -163,12 +154,14 @@ impl Source for PostgresSource {
 
     async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, Self::Error> {
         info!("starting cdc stream at lsn {start_lsn}");
+
         let publication = self
             .publication()
             .ok_or(PostgresSourceError::MissingPublication)?;
         let slot_name = self
             .slot_name()
             .ok_or(PostgresSourceError::MissingSlotName)?;
+
         let stream = self
             .replication_client
             .get_logical_replication_stream(publication, slot_name, start_lsn)

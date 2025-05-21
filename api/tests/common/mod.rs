@@ -14,6 +14,5 @@
 //!   - Provide connection pools for tests
 //!
 //! These utilities help maintain consistency across tests and reduce code duplication.
-
 pub mod database;
 pub mod test_app;

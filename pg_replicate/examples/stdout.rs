@@ -8,9 +8,10 @@ use pg_replicate::{
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
-    table::TableName,
     SslMode,
 };
+use postgres::schema::TableName;
+use postgres::tokio::options::PgDatabaseOptions;
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -90,22 +91,22 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     let args = AppArgs::parse();
     let db_args = args.db_args;
 
+    let options = PgDatabaseOptions {
+        host: db_args.db_host,
+        port: db_args.db_port,
+        name: db_args.db_name,
+        username: db_args.db_username,
+        password: db_args.db_password,
+        ssl_mode: SslMode::Disable,
+    };
+
     let (postgres_source, action) = match args.command {
         Command::CopyTable { schema, name } => {
             let table_names = vec![TableName { schema, name }];
 
-            let postgres_source = PostgresSource::new(
-                &db_args.db_host,
-                db_args.db_port,
-                &db_args.db_name,
-                &db_args.db_username,
-                db_args.db_password,
-                SslMode::Disable,
-                vec![],
-                None,
-                TableNamesFrom::Vec(table_names),
-            )
-            .await?;
+            let postgres_source =
+                PostgresSource::new(options, vec![], None, TableNamesFrom::Vec(table_names))
+                    .await?;
             (postgres_source, PipelineAction::TableCopiesOnly)
         }
         Command::Cdc {
@@ -113,12 +114,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
             slot_name,
         } => {
             let postgres_source = PostgresSource::new(
-                &db_args.db_host,
-                db_args.db_port,
-                &db_args.db_name,
-                &db_args.db_username,
-                db_args.db_password,
-                SslMode::Disable,
+                options,
                 vec![],
                 Some(slot_name),
                 TableNamesFrom::Publication(publication),

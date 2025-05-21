@@ -1,10 +1,20 @@
 [workspace]
-
 resolver = "2"
-
-members = ["api", "pg_replicate", "replicator", "telemetry"]
+members = [
+    "api",
+    "pg_replicate",
+    "postgres",
+    "replicator",
+    "telemetry"
+]
 
 [workspace.dependencies]
+api = { path = "api" }
+pg_replicate = { path = "pg_replicate" }
+postgres = { path = "postgres" }
+replicator = { path = "replicator" }
+telemetry = { path = "telemetry" }
+
 actix-web = { version = "4", default-features = false }
 actix-web-httpauth = { version = "0.8.2", default-features = false }
 anyhow = { version = "1.0", default-features = false }

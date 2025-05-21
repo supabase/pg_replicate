@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
+use postgres::schema::TableId;
 use sinks::SinkError;
 use sources::SourceError;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
-
-use crate::table::TableId;
 
 pub mod batching;
 pub mod sinks;
@@ -18,6 +17,7 @@ pub enum PipelineAction {
     Both,
 }
 
+#[derive(Debug)]
 pub struct PipelineResumptionState {
     pub copied_tables: HashSet<TableId>,
     pub last_lsn: PgLsn,

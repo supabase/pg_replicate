@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-if [ ! -d "migrations" ]; then
-  echo >&2 "❌ Error: '/migrations' folder not found."
-  echo >&2 "Please run this script from the 'pg_replicate/api' directory."
+if [ ! -d "api/migrations" ]; then
+  echo >&2 "❌ Error: 'api/migrations' folder not found."
+  echo >&2 "Please run this script from the 'pg_replicate' directory."
   exit 1
 fi
 
@@ -59,7 +59,8 @@ then
     # Complete the docker run command
     DOCKER_RUN_CMD="${DOCKER_RUN_CMD} \
         --name "postgres_$(date '+%s')" \
-        postgres -N 1000"
+        postgres:15 -N 1000 \
+        -c wal_level=logical"
         # Increased maximum number of connections for testing purposes
 
     # Start the container
@@ -81,6 +82,6 @@ echo "✅ PostgreSQL is up and running on port ${DB_PORT}"
 echo "🔄 Setting up the database..."
 export DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
 sqlx database create
-sqlx migrate run
+sqlx migrate run --source api/migrations
 
 echo "✨ Database setup complete! Ready to go!"

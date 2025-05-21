@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
 use pg_escape::{quote_identifier, quote_literal};
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use thiserror::Error;
 use tokio_postgres::{
-    config::{ReplicationMode, SslMode},
+    config::ReplicationMode,
     types::{Kind, PgLsn, Type},
     Client as PostgresClient, Config, CopyOutStream, NoTls, SimpleQueryMessage,
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{info, warn};
-
-use crate::table::{ColumnSchema, TableId, TableName, TableSchema};
 
 pub struct SlotInfo {
     pub confirmed_flush_lsn: PgLsn,
@@ -63,25 +63,12 @@ pub enum ReplicationClientError {
 impl ReplicationClient {
     /// Connect to a postgres database in logical replication mode without TLS
     pub async fn connect_no_tls(
-        host: &str,
-        port: u16,
-        database: &str,
-        username: &str,
-        password: Option<String>,
+        options: PgDatabaseOptions,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres without TLS");
 
-        let mut config = Config::new();
-        config
-            .host(host)
-            .port(port)
-            .dbname(database)
-            .user(username)
-            .replication_mode(ReplicationMode::Logical);
-
-        if let Some(password) = password {
-            config.password(password);
-        }
+        let mut config: Config = options.into();
+        config.replication_mode(ReplicationMode::Logical);
 
         let (postgres_client, connection) = config.connect(NoTls).await?;
 
@@ -89,7 +76,9 @@ impl ReplicationClient {
             info!("waiting for connection to terminate");
             if let Err(e) = connection.await {
                 warn!("connection error: {}", e);
+                return;
             }
+            info!("connection terminated successfully")
         });
 
         info!("successfully connected to postgres");
@@ -102,28 +91,13 @@ impl ReplicationClient {
 
     /// Connect to a postgres database in logical replication mode with TLS
     pub async fn connect_tls(
-        host: &str,
-        port: u16,
-        database: &str,
-        username: &str,
-        password: Option<String>,
-        ssl_mode: SslMode,
+        options: PgDatabaseOptions,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres with TLS");
 
-        let mut config = Config::new();
-        config
-            .host(host)
-            .port(port)
-            .dbname(database)
-            .user(username)
-            .ssl_mode(ssl_mode)
-            .replication_mode(ReplicationMode::Logical);
-
-        if let Some(password) = password {
-            config.password(password);
-        }
+        let mut config: Config = options.into();
+        config.replication_mode(ReplicationMode::Logical);
 
         let mut root_store = rustls::RootCertStore::empty();
         for trusted_root_cert in trusted_root_certs {
@@ -141,7 +115,9 @@ impl ReplicationClient {
             info!("waiting for connection to terminate");
             if let Err(e) = connection.await {
                 warn!("connection error: {}", e);
+                return;
             }
+            info!("connection terminated successfully")
         });
 
         info!("successfully connected to postgres");

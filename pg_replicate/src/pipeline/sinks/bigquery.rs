@@ -2,18 +2,18 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use gcp_bigquery_client::error::BQError;
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use thiserror::Error;
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
 
+use super::{BatchSink, SinkError};
+use crate::clients::bigquery::table_schema_to_descriptor;
 use crate::{
     clients::bigquery::BigQueryClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow, Cell},
     pipeline::PipelineResumptionState,
-    table::{ColumnSchema, TableId, TableName, TableSchema},
 };
-
-use super::{BatchSink, SinkError};
 
 #[derive(Debug, Error)]
 pub enum BigQuerySinkError {
@@ -183,7 +183,7 @@ impl BatchSink for BigQueryBatchSink {
     ) -> Result<(), Self::Error> {
         let table_schema = self.get_table_schema(table_id)?;
         let table_name = Self::table_name_in_bq(&table_schema.table_name);
-        let table_descriptor = table_schema.into();
+        let table_descriptor = table_schema_to_descriptor(table_schema);
 
         for table_row in &mut table_rows {
             table_row.values.push(Cell::String("UPSERT".to_string()));
@@ -250,7 +250,7 @@ impl BatchSink for BigQueryBatchSink {
         for (table_id, table_rows) in table_name_to_table_rows {
             let table_schema = self.get_table_schema(table_id)?;
             let table_name = Self::table_name_in_bq(&table_schema.table_name);
-            let table_descriptor = table_schema.into();
+            let table_descriptor = table_schema_to_descriptor(table_schema);
             self.client
                 .stream_rows(&self.dataset_id, table_name, &table_descriptor, &table_rows)
                 .await?;

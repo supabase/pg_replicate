@@ -1,4 +1,3 @@
-# copied from Luca Palmieri's gist here: https://gist.github.com/LukeMathWalker/5ae1107432ce283310c3e601fac915f3
 name: Rust
 
 on: [push, pull_request]
@@ -29,7 +28,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      # - uses: Swatinem/rust-cache@v2
       - name: Linting
         run: cargo clippy -- -D warnings
 
@@ -51,28 +49,51 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Wait for Postgres to be ready
+        run: |
+          until pg_isready -h localhost -p 5430; do
+            echo "Waiting for Postgres..."
+            sleep 1
+          done
+
+      - name: Enable logical WAL
+        run: |
+          PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres -c "ALTER SYSTEM SET wal_level = 'logical';"
+
+      - name: Restart Postgres service container
+        run: |
+          docker restart ${{ job.services.postgres.id }}
+
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli
-          --features native-tls,postgres
-          --no-default-features
-          --locked
+        run: |
+          cargo install sqlx-cli \
+            --features native-tls,postgres \
+            --no-default-features \
+            --locked
+
       - name: Migrate database
         run: |
           sudo apt-get install libpq-dev -y
-          cd api
           SKIP_DOCKER=true ./scripts/init_db.sh
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
       - name: Generate code coverage
         id: coverage
         run: |
-          cargo llvm-cov test --workspace --no-fail-fast --lcov --output-path lcov.info
+          cargo llvm-cov test \
+            --workspace --no-fail-fast \
+            --lcov --output-path lcov.info
+
       - name: Coveralls upload
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path-to-lcov: lcov.info
           debug: true
+
   docker:
     name: Docker
     runs-on: ubuntu-latest

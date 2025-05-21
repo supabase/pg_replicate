@@ -1,16 +1,14 @@
 use core::str;
 use std::{collections::HashMap, str::Utf8Error};
 
+use postgres::schema::{ColumnSchema, TableId, TableSchema};
 use postgres_replication::protocol::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, OriginBody,
     RelationBody, ReplicationMessage, TruncateBody, TupleData, TypeBody, UpdateBody,
 };
 use thiserror::Error;
 
-use crate::{
-    pipeline::batching::BatchBoundary,
-    table::{ColumnSchema, TableId, TableSchema},
-};
+use crate::pipeline::batching::BatchBoundary;
 
 use super::{
     table_row::TableRow,
