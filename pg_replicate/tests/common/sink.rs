@@ -64,8 +64,8 @@ impl TestSink {
         // We update the last lsn taking the maximum between the maximum of the event stream and
         // the current lsn, since we assume that lsns are guaranteed to be monotonically increasing,
         // so if we see a max lsn, we can be sure that all events before that point have been received.
-        let last_lsn = self.inner.lock().unwrap().last_lsn;
-        self.inner.lock().unwrap().last_lsn = max(last_lsn, max_lsn);
+        let mut inner = self.inner.lock().unwrap();
+        inner.last_lsn = max(inner.last_lsn, max_lsn);
     }
 
     /// Returns a copy of all table schemas received by the sink.

@@ -20,7 +20,7 @@ impl PgDatabase {
         &self,
         publication_name: &str,
         table_names: &[TableName],
-    ) -> Result<String, tokio_postgres::Error> {
+    ) -> Result<(), tokio_postgres::Error> {
         let table_names = table_names
             .iter()
             .map(TableName::as_quoted_identifier)
@@ -33,7 +33,7 @@ impl PgDatabase {
         );
         self.client.execute(&create_publication_query, &[]).await?;
 
-        Ok(publication_name.to_string())
+        Ok(())
     }
 
     /// Creates a new table with the specified name and columns.
