@@ -9,7 +9,7 @@ use sqlx::PgPool;
 /// connected to the newly created and migrated database. Panics if database
 /// creation or migration fails.
 pub async fn create_pg_replicate_api_database(options: &PgDatabaseOptions) -> PgPool {
-    let connection_pool = create_pg_database(&options).await;
+    let connection_pool = create_pg_database(options).await;
 
     sqlx::migrate!("./migrations")
         .run(&connection_pool)
