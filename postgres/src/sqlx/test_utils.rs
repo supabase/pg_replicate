@@ -12,7 +12,7 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> PgPool {
         .await
         .expect("Failed to connect to Postgres");
     connection
-        .execute(&*format!(r#"CREATE DATABASE "{}";"#, options.name))
+        .execute(&*format!(r#"create database "{}";"#, options.name))
         .await
         .expect("Failed to create database");
     
@@ -38,10 +38,10 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
     connection
         .execute(&*format!(
             r#"
-            SELECT pg_terminate_backend(pg_stat_activity.pid)
-            FROM pg_stat_activity
-            WHERE pg_stat_activity.datname = '{}'
-            AND pid <> pg_backend_pid();"#,
+            select pg_terminate_backend(pg_stat_activity.pid)
+            from pg_stat_activity
+            where pg_stat_activity.datname = '{}'
+            and pid <> pg_backend_pid();"#,
             options.name
         ))
         .await
@@ -49,7 +49,7 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
 
     // Drop the database.
     connection
-        .execute(&*format!(r#"DROP DATABASE IF EXISTS "{}";"#, options.name))
+        .execute(&*format!(r#"drop database if exists "{}";"#, options.name))
         .await
         .expect("Failed to destroy database");
 }

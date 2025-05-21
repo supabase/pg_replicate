@@ -27,7 +27,7 @@ impl PgDatabase {
             .collect::<Vec<_>>();
 
         let create_publication_query = format!(
-            "CREATE PUBLICATION {} FOR TABLE {}",
+            "create publication {} for table {}",
             publication_name,
             table_names.join(", ")
         );
@@ -49,7 +49,7 @@ impl PgDatabase {
             .join(", ");
 
         let create_table_query = format!(
-            "CREATE TABLE {} (id BIGSERIAL PRIMARY KEY, {})",
+            "create table {} (id bigserial primary key, {})",
             table_name.as_quoted_identifier(),
             columns_str
         );
@@ -59,8 +59,8 @@ impl PgDatabase {
         let row = self
             .client
             .query_one(
-                "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
-            WHERE n.nspname = $1 AND c.relname = $2",
+                "select c.oid from pg_class c join pg_namespace n on n.oid = c.relnamespace \
+            where n.nspname = $1 and c.relname = $2",
                 &[&table_name.schema, &table_name.name],
             )
             .await?;
@@ -82,7 +82,7 @@ impl PgDatabase {
         let placeholders_str = placeholders.join(", ");
 
         let insert_query = format!(
-            "INSERT INTO {} ({}) VALUES ({})",
+            "insert into {} ({}) values ({})",
             table_name.as_quoted_identifier(),
             columns_str,
             placeholders_str
@@ -106,7 +106,7 @@ impl PgDatabase {
         let set_clause = set_clauses.join(", ");
 
         let update_query = format!(
-            "UPDATE {} SET {}",
+            "update {} set {}",
             table_name.as_quoted_identifier(),
             set_clause
         );
@@ -124,9 +124,9 @@ impl PgDatabase {
     where
         T: for<'a> tokio_postgres::types::FromSql<'a>,
     {
-        let where_str = where_clause.map_or(String::new(), |w| format!(" WHERE {}", w));
+        let where_str = where_clause.map_or(String::new(), |w| format!(" where {}", w));
         let query = format!(
-            "SELECT {} FROM {}{}",
+            "select {} from {}{}",
             column,
             table_name.as_quoted_identifier(),
             where_str
@@ -169,7 +169,7 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> Client {
 
     // Create the database
     client
-        .execute(&*format!(r#"CREATE DATABASE "{}";"#, options.name), &[])
+        .execute(&*format!(r#"create database "{}";"#, options.name), &[])
         .await
         .expect("Failed to create database");
 
@@ -216,10 +216,10 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
         .execute(
             &format!(
                 r#"
-                SELECT pg_terminate_backend(pg_stat_activity.pid)
-                FROM pg_stat_activity
-                WHERE pg_stat_activity.datname = '{}'
-                AND pid <> pg_backend_pid();"#,
+                select pg_terminate_backend(pg_stat_activity.pid)
+                from pg_stat_activity
+                where pg_stat_activity.datname = '{}'
+                and pid <> pg_backend_pid();"#,
                 options.name
             ),
             &[],
@@ -232,10 +232,10 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
         .execute(
             &format!(
                 r#"
-                SELECT pg_drop_replication_slot(slot_name) 
-                FROM pg_replication_slots 
-                WHERE slot_name LIKE 'test_%'
-                AND database = '{}';"#,
+                select pg_drop_replication_slot(slot_name) 
+                from pg_replication_slots 
+                where slot_name like 'test_%'
+                and database = '{}';"#,
                 options.name
             ),
             &[],
@@ -246,7 +246,7 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
     // Drop the database
     client
         .execute(
-            &format!(r#"DROP DATABASE IF EXISTS "{}";"#, options.name),
+            &format!(r#"drop database if exists "{}";"#, options.name),
             &[],
         )
         .await
