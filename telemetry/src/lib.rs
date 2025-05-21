@@ -1,3 +1,8 @@
+use std::{
+    backtrace::{Backtrace, BacktraceStatus},
+    panic::PanicHookInfo,
+};
+
 use thiserror::Error;
 use tracing::subscriber::{set_global_default, SetGlobalDefaultError};
 use tracing_appender::{
@@ -49,6 +54,8 @@ pub fn init_tracing(app_name: &str, emit_on_span_close: bool) -> Result<LogFlush
     } else {
         configure_dev_tracing(filter, emit_on_span_close)?
     };
+
+    set_tracing_panic_hook();
 
     // Return the log flusher to ensure logs are flushed before the application exits
     // without this the logs in memory may not be flushed to the file
@@ -133,4 +140,50 @@ fn configure_dev_tracing(
     set_global_default(subscriber)?;
 
     Ok(LogFlusher::NullFlusher)
+}
+
+/// The default panic hook logs the panic information to stderr, which means
+/// it will not be sent to our logging system. This function replaces the default panic
+/// hook with a custom one that logs the panic information using `tracing`.
+/// It also calls the original panic hook after logging the panic information.
+fn set_tracing_panic_hook() {
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        panic_hook(info);
+        prev_hook(info);
+    }));
+}
+
+/// A custom panic hook that logs the panic information using `tracing`.
+fn panic_hook(panic_info: &PanicHookInfo) {
+    let backtrace = Backtrace::capture();
+    let (backtrace, note) = match backtrace.status() {
+        BacktraceStatus::Captured => (Some(backtrace), None),
+        BacktraceStatus::Disabled => (
+            None,
+            Some("run with RUST_BACKTRACE=1 to display backtraces"),
+        ),
+        BacktraceStatus::Unsupported => {
+            (None, Some("backtraces are not supported on this platform"))
+        }
+        _ => (None, Some("backtrace status is unknown")),
+    };
+
+    let payload = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+        s
+    } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+        s
+    } else {
+        "unknown panic payload"
+    };
+
+    let location = panic_info.location().map(|location| location.to_string());
+
+    tracing::error!(
+        panic.payload = payload,
+        payload.location = location,
+        panic.backtrace = backtrace.map(tracing::field::display),
+        panic.note = note,
+        "a panic occurred",
+    );
 }
