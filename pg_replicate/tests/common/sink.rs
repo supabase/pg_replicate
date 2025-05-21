@@ -1,10 +1,10 @@
-use std::cmp::max;
 use async_trait::async_trait;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::table_row::TableRow;
 use pg_replicate::pipeline::sinks::{BatchSink, InfallibleSinkError};
 use pg_replicate::pipeline::PipelineResumptionState;
 use postgres::schema::{TableId, TableSchema};
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio_postgres::types::PgLsn;
@@ -24,7 +24,7 @@ struct TestSinkInner {
     events: Vec<Arc<CdcEvent>>,
     copied_tables: HashSet<TableId>,
     truncated_tables: HashSet<TableId>,
-    last_lsn: u64
+    last_lsn: u64,
 }
 
 impl TestSink {
@@ -36,11 +36,11 @@ impl TestSink {
                 events: Vec::new(),
                 copied_tables: HashSet::new(),
                 truncated_tables: HashSet::new(),
-                last_lsn: 0
+                last_lsn: 0,
             })),
         }
     }
-    
+
     fn receive_events(&mut self, events: &[CdcEvent]) {
         let mut max_lsn = 0;
         for event in events {
@@ -48,13 +48,13 @@ impl TestSink {
                 max_lsn = max(max_lsn, commit_body.commit_lsn());
             }
         }
-        
+
         // We update the last lsn taking the maximum between the maximum of the event stream and
-        // the current lsn, since we assume that lsns are guaranteed to be monotonically increasing, 
+        // the current lsn, since we assume that lsns are guaranteed to be monotonically increasing,
         // so if we see a max lsn, we can be sure that all events before that point have been received.
         let last_lsn = self.inner.lock().unwrap().last_lsn;
-        self.inner.lock().unwrap().last_lsn = max(last_lsn, max_lsn);  
-    } 
+        self.inner.lock().unwrap().last_lsn = max(last_lsn, max_lsn);
+    }
 
     pub fn get_tables_schemas(&self) -> Vec<HashMap<TableId, TableSchema>> {
         self.inner.lock().unwrap().tables_schemas.clone()
@@ -67,7 +67,7 @@ impl TestSink {
     pub fn get_events(&self) -> Vec<Arc<CdcEvent>> {
         self.inner.lock().unwrap().events.clone()
     }
-    
+
     pub fn get_copied_tables(&self) -> HashSet<TableId> {
         self.inner.lock().unwrap().copied_tables.clone()
     }
@@ -79,7 +79,7 @@ impl TestSink {
     pub fn get_tables_truncated(&self) -> u8 {
         self.inner.lock().unwrap().truncated_tables.len() as u8
     }
-    
+
     pub fn get_last_lsn(&self) -> u64 {
         self.inner.lock().unwrap().last_lsn
     }
@@ -127,7 +127,7 @@ impl BatchSink for TestSink {
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
         self.receive_events(&events);
-        
+
         // Since CdcEvent is not Clone, we have to wrap it in an Arc, and we are fine with this
         // since it's not mutable, so we don't even have to use mutexes.
         let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();

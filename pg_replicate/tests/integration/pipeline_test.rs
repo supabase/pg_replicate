@@ -202,7 +202,7 @@ async fn test_cdc_with_multiple_inserts() {
         sink.clone(),
     )
     .await;
-    
+
     // We insert 100 rows.
     fill_users(&database, 100).await;
 

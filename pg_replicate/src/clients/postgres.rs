@@ -71,7 +71,7 @@ impl ReplicationClient {
         config.replication_mode(ReplicationMode::Logical);
 
         let (postgres_client, connection) = config.connect(NoTls).await?;
-        
+
         tokio::spawn(async move {
             info!("waiting for connection to terminate");
             if let Err(e) = connection.await {

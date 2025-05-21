@@ -154,7 +154,7 @@ impl Source for PostgresSource {
 
     async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, Self::Error> {
         info!("starting cdc stream at lsn {start_lsn}");
-        
+
         let publication = self
             .publication()
             .ok_or(PostgresSourceError::MissingPublication)?;
