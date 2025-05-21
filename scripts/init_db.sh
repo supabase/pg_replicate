@@ -59,8 +59,7 @@ then
     # Complete the docker run command
     DOCKER_RUN_CMD="${DOCKER_RUN_CMD} \
         --name "postgres_$(date '+%s')" \
-        postgres:15 -N 1000 \
-        -c wal_level=logical"
+        postgres:15 -N 1000"
         # Increased maximum number of connections for testing purposes
 
     # Start the container

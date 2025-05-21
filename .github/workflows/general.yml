@@ -59,12 +59,11 @@ jobs:
 
       - name: Enable logical WAL
         run: |
-          # Persist the change into postgresql.auto.conf
-          PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres \
-            -c "ALTER SYSTEM SET wal_level = 'logical';"
-          # Tell Postgres to re-read its config (no restart)
-          PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres \
-            -c "SELECT pg_reload_conf();"
+          PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres -c "ALTER SYSTEM SET wal_level = 'logical';"
+
+      - name: Restart Postgres service container
+        run: |
+          docker restart ${{ job.services.postgres.id }}
 
       - name: Install sqlx-cli
         run: |
