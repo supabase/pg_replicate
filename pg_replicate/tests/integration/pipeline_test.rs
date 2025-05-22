@@ -111,8 +111,7 @@ fn get_users_age_sum_from_dml_events(
             _ => {}
         }
     }
-
-    println!("ACTUAL SUM {:?}", actual_sum);
+    
     actual_sum
 }
 
