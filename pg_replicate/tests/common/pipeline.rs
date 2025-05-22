@@ -9,6 +9,7 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 
 /// Defines the operational mode for a PostgreSQL replication pipeline.
+#[derive(Debug, Clone)]
 pub enum PipelineMode {
     /// Initializes a pipeline to copy specified tables.
     CopyTable { table_names: Vec<TableName> },

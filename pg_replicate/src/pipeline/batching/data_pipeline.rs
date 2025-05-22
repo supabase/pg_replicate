@@ -21,16 +21,14 @@ use super::BatchConfig;
 
 #[derive(Debug, Clone)]
 pub struct BatchDataPipelineHandle {
-    stream_stop: Arc<Notify>,
+    copy_tables_stream_stop: Arc<Notify>,
+    cdc_stream_stop: Arc<Notify>,
 }
 
 impl BatchDataPipelineHandle {
     pub fn stop(&self) {
-        // We want to notify all waiters that their streams have to be stopped.
-        //
-        // Technically, we should not need to notify multiple waiters since we can't have multiple
-        // streams active in parallel, but in this way we cover for the future.
-        self.stream_stop.notify_waiters();
+        self.copy_tables_stream_stop.notify_one();
+        self.cdc_stream_stop.notify_one();
     }
 }
 
@@ -39,7 +37,8 @@ pub struct BatchDataPipeline<Src: Source, Snk: BatchSink> {
     sink: Snk,
     action: PipelineAction,
     batch_config: BatchConfig,
-    stream_stop: Arc<Notify>,
+    copy_tables_stream_stop: Arc<Notify>,
+    cdc_stream_stop: Arc<Notify>,
 }
 
 impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
@@ -49,7 +48,8 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             sink,
             action,
             batch_config,
-            stream_stop: Arc::new(Notify::new()),
+            copy_tables_stream_stop: Arc::new(Notify::new()),
+            cdc_stream_stop: Arc::new(Notify::new()),
         }
     }
 
@@ -98,7 +98,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
             let batch_timeout_stream = BatchTimeoutStream::new(
                 table_rows,
                 self.batch_config.clone(),
-                self.stream_stop.notified(),
+                self.copy_tables_stream_stop.notified(),
             );
 
             pin!(batch_timeout_stream);
@@ -155,7 +155,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         let batch_timeout_stream = BatchTimeoutStream::new(
             cdc_events,
             self.batch_config.clone(),
-            self.stream_stop.notified(),
+            self.cdc_stream_stop.notified(),
         );
         pin!(batch_timeout_stream);
 
@@ -228,7 +228,8 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
 
     pub fn handle(&self) -> BatchDataPipelineHandle {
         BatchDataPipelineHandle {
-            stream_stop: self.stream_stop.clone(),
+            copy_tables_stream_stop: self.copy_tables_stream_stop.clone(),
+            cdc_stream_stop: self.cdc_stream_stop.clone(),
         }
     }
 

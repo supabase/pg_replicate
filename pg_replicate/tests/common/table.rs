@@ -1,5 +1,6 @@
 use crate::common::sink::TestSink;
 use postgres::schema::{ColumnSchema, TableId, TableName};
+use tokio_postgres::types::Type;
 
 /// Verifies that a table's schema matches the expected configuration.
 ///
@@ -18,8 +19,19 @@ pub fn assert_table_schema(
     table_id: TableId,
     schema_index: usize,
     expected_table_name: TableName,
-    expected_columns: &[ColumnSchema],
+    additional_expected_columns: &[ColumnSchema],
 ) {
+    // By default, we expect the ID column since we always add it when `PgDatabase::create_table`
+    // is called.
+    let mut expected_columns = vec![ColumnSchema {
+        name: "id".to_string(),
+        typ: Type::INT8,
+        modifier: -1,
+        nullable: false,
+        primary: true,
+    }];
+    expected_columns.extend_from_slice(additional_expected_columns);
+
     let tables_schemas = &sink.get_tables_schemas()[schema_index];
     let table_schema = tables_schemas.get(&table_id).unwrap();
 

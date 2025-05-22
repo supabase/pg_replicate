@@ -43,7 +43,7 @@ type TypeModifier = i32;
 ///
 /// This type contains all metadata about a column including its name, data type,
 /// type modifier, nullability, and whether it's part of the primary key.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ColumnSchema {
     /// The name of the column
     pub name: String,
@@ -66,7 +66,7 @@ pub type TableId = u32;
 ///
 /// This type contains all metadata about a table including its name, OID,
 /// and the schemas of all its columns.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TableSchema {
     /// The fully qualified name of the table
     pub table_name: TableName,
