@@ -86,7 +86,7 @@ fn get_users_age_sum_from_rows(sink: &TestSink, users_table_id: TableId) -> i32 
     actual_sum
 }
 
-fn get_users_age_sum_from_events(
+fn get_users_age_sum_from_dml_events(
     sink: &TestSink,
     users_table_id: TableId,
     // We use a range since events are not indexed by table id but just an ordered sequence which
@@ -99,10 +99,12 @@ fn get_users_age_sum_from_events(
     for event in sink.get_events() {
         match event.as_ref() {
             CdcEvent::Insert((table_id, table_row)) | CdcEvent::Update((table_id, table_row))
-                if table_id == &users_table_id && range.contains(&i) =>
+                if table_id == &users_table_id =>
             {
-                if let Cell::I32(age) = &table_row.values[1] {
-                    actual_sum += age;
+                if range.contains(&i) {
+                    if let Cell::I32(age) = &table_row.values[1] {
+                        actual_sum += age;
+                    }
                 }
                 i += 1;
             }
@@ -110,14 +112,9 @@ fn get_users_age_sum_from_events(
         }
     }
 
+    println!("ACTUAL SUM {:?}", actual_sum);
     actual_sum
 }
-
-/*
-Tests to write:
-- Insert -> cdc -> Update -> cdc
-- Insert -> cdc -> add table -> recreate pipeline and source -> check schema
- */
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy_with_insert_and_update() {
@@ -168,23 +165,20 @@ async fn test_table_copy_with_insert_and_update() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cdc_with_multiple_inserts() {
+async fn test_cdc_with_insert_and_update() {
     let database = spawn_database().await;
 
     // We create the table and publication.
     let users_table_id = create_users_table_with_publication(&database, "users_publication").await;
 
-    // We create a pipeline that subscribes to the changes of the users table.
     let sink = TestSink::new();
-    let mut pipeline = spawn_async_pg_pipeline(
-        &database.options,
-        PipelineMode::Cdc {
-            publication: "users_publication".to_owned(),
-            slot_name: "users_slot".to_string(),
-        },
-        sink.clone(),
-    )
-    .await;
+    let mode = PipelineMode::Cdc {
+        publication: "users_publication".to_owned(),
+        slot_name: "users_slot".to_string(),
+    };
+
+    // We create a pipeline that subscribes to the changes of the users table.
+    let mut pipeline = spawn_async_pg_pipeline(&database.options, mode.clone(), sink.clone()).await;
 
     // We insert 100 rows.
     fill_users(&database, 100).await;
@@ -196,19 +190,39 @@ async fn test_cdc_with_multiple_inserts() {
     // Wait for all events to be processed.
     let expected_sum = get_expected_ages_sum(100);
     wait_for_condition(|| {
-        let actual_sum = get_users_age_sum_from_events(&sink, users_table_id, 0..100);
+        let actual_sum = get_users_age_sum_from_dml_events(&sink, users_table_id, 0..100);
         actual_sum == expected_sum
     })
     .await;
 
-    // We stop the pipeline and wait for it to finish.
     pipeline.stop_and_wait(pipeline_task_handle).await;
 
     assert_users_table_schema(&sink, users_table_id, 0);
     assert_eq!(sink.get_tables_copied(), 0);
     assert_eq!(sink.get_tables_truncated(), 0);
 
-    // TODO: do the second insert and validate the CDC.
+    // We recreate the pipeline with the same details since we want to resume streaming.
+    let mut pipeline = spawn_async_pg_pipeline(&database.options, mode.clone(), sink.clone()).await;
+
+    // We double the user ages.
+    double_users_ages(&database).await;
+
+    // We run the pipeline to get the new 100 updates of the rows.
+    let pipeline_task_handle = pipeline.run().await;
+
+    // Wait for all events to be processed.
+    let expected_sum = expected_sum * 2;
+    wait_for_condition(|| {
+        let actual_sum = get_users_age_sum_from_dml_events(&sink, users_table_id, 100..200);
+        actual_sum == expected_sum
+    })
+    .await;
+
+    pipeline.stop_and_wait(pipeline_task_handle).await;
+
+    assert_users_table_schema(&sink, users_table_id, 1);
+    assert_eq!(sink.get_tables_copied(), 0);
+    assert_eq!(sink.get_tables_truncated(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
