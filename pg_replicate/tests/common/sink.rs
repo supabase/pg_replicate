@@ -145,9 +145,6 @@ impl BatchSink for TestSink {
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
-        for event in &events {
-            println!("EVENT {:?}", event);
-        }
         self.receive_events(&events);
 
         // Since CdcEvent is not Clone, we have to wrap it in an Arc, and we are fine with this
