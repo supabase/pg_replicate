@@ -1,19 +1,19 @@
 use crate::common::sink::TestSink;
-use postgres::schema::{ColumnSchema, TableId, TableName};
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use std::collections::HashMap;
+use tokio_postgres::types::Type;
 
-/// Verifies that a table's schema matches the expected configuration.
-///
-/// This function compares a table's actual schema against the expected schema,
-/// checking the table name, ID, and all column properties including name, type,
-/// modifiers, nullability, and primary key status.
-///
-/// # Panics
-///
-/// Panics if:
-/// - The table ID is not found in the sink's schema
-/// - The schema index is out of bounds
-/// - Any column property doesn't match the expected configuration
-pub fn assert_table_schema(
+pub fn id_column_schema() -> ColumnSchema {
+    ColumnSchema {
+        name: "id".to_string(),
+        typ: Type::INT8,
+        modifier: -1,
+        nullable: false,
+        primary: true,
+    }
+}
+
+pub fn assert_table_schema_from_sink(
     sink: &TestSink,
     table_id: TableId,
     schema_index: usize,
@@ -21,6 +21,21 @@ pub fn assert_table_schema(
     expected_columns: &[ColumnSchema],
 ) {
     let tables_schemas = &sink.get_tables_schemas()[schema_index];
+
+    assert_table_schema(
+        tables_schemas,
+        table_id,
+        expected_table_name,
+        expected_columns,
+    )
+}
+
+pub fn assert_table_schema(
+    tables_schemas: &HashMap<TableId, TableSchema>,
+    table_id: TableId,
+    expected_table_name: TableName,
+    expected_columns: &[ColumnSchema],
+) {
     let table_schema = tables_schemas.get(&table_id).unwrap();
 
     assert_eq!(table_schema.table_id, table_id);

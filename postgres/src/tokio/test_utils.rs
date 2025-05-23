@@ -3,6 +3,12 @@ use crate::tokio::options::PgDatabaseOptions;
 use tokio::runtime::Handle;
 use tokio_postgres::{Client, NoTls};
 
+pub enum TableModification<'a> {
+    AddColumn { name: &'a str, data_type: &'a str },
+    DropColumn { name: &'a str },
+    AlterColumn { name: &'a str, alteration: &'a str },
+}
+
 pub struct PgDatabase {
     pub options: PgDatabaseOptions,
     pub client: Client,
@@ -68,6 +74,38 @@ impl PgDatabase {
         let table_id: TableId = row.get(0);
 
         Ok(table_id)
+    }
+
+    /// Modifies a table by adding, dropping, or altering columns.
+    pub async fn alter_table(
+        &self,
+        table_name: TableName,
+        modifications: &[TableModification<'_>],
+    ) -> Result<(), tokio_postgres::Error> {
+        let modifications_str = modifications
+            .iter()
+            .map(|modification| match modification {
+                TableModification::AddColumn { name, data_type } => {
+                    format!("add column {} {}", name, data_type)
+                }
+                TableModification::DropColumn { name } => {
+                    format!("drop column {}", name)
+                }
+                TableModification::AlterColumn { name, alteration } => {
+                    format!("alter column {} {}", name, alteration)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let alter_table_query = format!(
+            "alter table {} {}",
+            table_name.as_quoted_identifier(),
+            modifications_str
+        );
+        self.client.execute(&alter_table_query, &[]).await?;
+
+        Ok(())
     }
 
     /// Inserts values into the specified table.

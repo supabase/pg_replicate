@@ -1,20 +1,18 @@
-use std::collections::HashMap;
-use std::marker::PhantomData;
 use pg_escape::{quote_identifier, quote_literal};
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use postgres::tokio::options::PgDatabaseOptions;
 use rustls::{pki_types::CertificateDer, ClientConfig};
+use std::collections::HashMap;
+use std::sync::Arc;
 use thiserror::Error;
-use tokio_postgres::tls::{MakeTlsConnect};
-use tokio_postgres::{
-    config::ReplicationMode,
-    types::{PgLsn},
-    Client, Config, Connection, NoTls, SimpleQueryMessage, Socket,
-};
+use tokio_postgres::tls::MakeTlsConnect;
 use tokio_postgres::types::{Kind, Type};
+use tokio_postgres::{
+    config::ReplicationMode, types::PgLsn, Client, Config, Connection, NoTls, SimpleQueryMessage,
+    Socket,
+};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{info, warn};
-use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
-use crate::clients::postgres::ReplicationClientError;
 
 // TODO: it would be cool if we could bind the slot to the connection instance, so that we could
 //  enforce at compile time that you can only use the slot in the context of the connection since
@@ -26,21 +24,25 @@ pub struct PgReplicationSlot {
 }
 
 #[derive(Debug)]
-pub struct PgReplicationTransaction<'a> {
+pub struct PgReplicationSlotTransaction {
+    // We hold a reference to the parent client since that connection must be active for the whole
+    // duration of any transaction spawned by that connection for a given slot.
+    _parent_client: PgReplicationClient,
     client: PgReplicationClient,
-    slot: PgReplicationSlot,
-    _marker: PhantomData<&'a ()>
 }
 
-impl <'a> PgReplicationTransaction<'a> {
+impl PgReplicationSlotTransaction {
+    async fn new(
+        parent_client: PgReplicationClient,
+        client: PgReplicationClient,
+        slot: PgReplicationSlot,
+    ) -> Result<Self, PgReplicationClientError> {
+        client.begin_tx(&slot).await?;
 
-    fn new(client: PgReplicationClient, slot: PgReplicationSlot) -> Self {
-        // TODO: begin transaction.
-        Self {
+        Ok(Self {
+            _parent_client: parent_client,
             client,
-            slot,
-            _marker: PhantomData
-        }
+        })
     }
 
     pub async fn get_table_schemas(
@@ -48,23 +50,31 @@ impl <'a> PgReplicationTransaction<'a> {
         table_names: &[TableName],
         publication_name: Option<&str>,
     ) -> Result<HashMap<TableId, TableSchema>, PgReplicationClientError> {
-        self.client.get_table_schemas(table_names, publication_name).await
+        self.client
+            .get_table_schemas(table_names, publication_name)
+            .await
     }
-}
 
-impl <'a> Drop for PgReplicationTransaction<'a> {
+    pub async fn commit(self) -> Result<(), PgReplicationClientError> {
+        self.client.commit_tx().await
+    }
 
-    fn drop(&mut self) {
-        todo!()
+    pub async fn rollback(self) -> Result<(), PgReplicationClientError> {
+        self.client.rollback_tx().await
     }
 }
 
 #[derive(Debug)]
-pub struct PgReplicationClient {
+struct ClientInner {
     client: Client,
     options: PgDatabaseOptions,
     trusted_root_certs: Vec<CertificateDer<'static>>,
-    with_tls: bool
+    with_tls: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PgReplicationClient {
+    inner: Arc<ClientInner>,
 }
 
 #[derive(Debug, Error)]
@@ -120,11 +130,14 @@ impl PgReplicationClient {
 
         info!("successfully connected to postgres without TLS");
 
-        Ok(PgReplicationClient {
+        let inner = ClientInner {
             client,
             options,
             trusted_root_certs: vec![],
-            with_tls: false
+            with_tls: false,
+        };
+        Ok(PgReplicationClient {
+            inner: Arc::new(inner),
         })
     }
 
@@ -150,21 +163,27 @@ impl PgReplicationClient {
 
         info!("successfully connected to postgres with TLS");
 
-        Ok(PgReplicationClient {
+        let inner = ClientInner {
             client,
             options,
             trusted_root_certs,
-            with_tls: true
+            with_tls: true,
+        };
+        Ok(PgReplicationClient {
+            inner: Arc::new(inner),
         })
     }
 
-    pub async fn create_slot(&self, slot_name: &str) -> Result<PgReplicationSlot, PgReplicationClientError> {
+    pub async fn create_slot(
+        &self,
+        slot_name: &str,
+    ) -> Result<PgReplicationSlot, PgReplicationClientError> {
         let query = format!(
             r#"CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT"#,
             quote_identifier(slot_name)
         );
 
-        let results = self.client.simple_query(&query).await?;
+        let results = self.inner.client.simple_query(&query).await?;
         for result in results {
             if let SimpleQueryMessage::Row(row) = result {
                 let consistent_point: PgLsn = row
@@ -172,16 +191,16 @@ impl PgReplicationClient {
                     .ok_or(PgReplicationClientError::ReplicationSlotResponseInvalid)?
                     .parse()
                     .map_err(|_| PgReplicationClientError::InvalidPgLsn)?;
-                
+
                 let snapshot_name: String = row
                     .get("snapshot_name")
                     .ok_or(PgReplicationClientError::ReplicationSlotResponseInvalid)?
                     .parse()
                     .map_err(|_| PgReplicationClientError::InvalidPgLsn)?;
-                
+
                 return Ok(PgReplicationSlot {
                     snapshot_name,
-                    consistent_point,   
+                    consistent_point,
                 });
             }
         }
@@ -189,21 +208,43 @@ impl PgReplicationClient {
         Err(PgReplicationClientError::ReplicationSlotCreationFailed)
     }
 
-    // TODO: we want to create a transaction with its own connection since the main one must remain
-
-    pub async fn with_slot(&self, slot: PgReplicationSlot) -> Result<PgReplicationTransaction, PgReplicationClientError> {
-        let new_client = if self.with_tls {
-            PgReplicationClient::connect_tls(self.options.clone(), self.trusted_root_certs.clone()).await?
+    // TODO: figure out a way to enforce the slot's lifetime with the connection's lifetime.
+    pub async fn with_slot(
+        &self,
+        slot: PgReplicationSlot,
+    ) -> Result<PgReplicationSlotTransaction, PgReplicationClientError> {
+        let new_client = if self.inner.with_tls {
+            PgReplicationClient::connect_tls(
+                self.inner.options.clone(),
+                self.inner.trusted_root_certs.clone(),
+            )
+            .await?
         } else {
-            PgReplicationClient::connect_no_tls(self.options.clone()).await?
+            PgReplicationClient::connect_no_tls(self.inner.options.clone()).await?
         };
+
+        PgReplicationSlotTransaction::new(self.clone(), new_client, slot).await
     }
 
-    async fn begin_transaction(&mut self, slot: &PgReplicationSlot) -> Result<(), ReplicationClientError> {
-        self.client
+    async fn begin_tx(&self, slot: &PgReplicationSlot) -> Result<(), PgReplicationClientError> {
+        self.inner
+            .client
             .simple_query("begin read only isolation level repeatable read;")
             .await?;
 
+        let query = format!("set transaction snapshot '{}'", slot.snapshot_name);
+        self.inner.client.simple_query(&query).await?;
+
+        Ok(())
+    }
+
+    pub async fn commit_tx(&self) -> Result<(), PgReplicationClientError> {
+        self.inner.client.simple_query("commit;").await?;
+        Ok(())
+    }
+
+    async fn rollback_tx(&self) -> Result<(), PgReplicationClientError> {
+        self.inner.client.simple_query("rollback;").await?;
         Ok(())
     }
 
@@ -218,7 +259,7 @@ impl PgReplicationClient {
             let table_schema = self
                 .get_table_schema(table_name.clone(), publication_name)
                 .await?;
-            
+
             if !table_schema.has_primary_keys() {
                 warn!(
                     "table {} with id {} will not be copied because it has no primary key",
@@ -226,7 +267,7 @@ impl PgReplicationClient {
                 );
                 continue;
             }
-            
+
             table_schemas.insert(table_schema.table_id, table_schema);
         }
 
@@ -242,9 +283,9 @@ impl PgReplicationClient {
             .get_table_id(&table_name)
             .await?
             .ok_or(PgReplicationClientError::MissingTable(table_name.clone()))?;
-        
+
         let column_schemas = self.get_column_schemas(table_id, publication).await?;
-        
+
         Ok(TableSchema {
             table_name,
             table_id,
@@ -271,7 +312,7 @@ impl PgReplicationClient {
             quoted_schema, quoted_name
         );
 
-        for message in self.client.simple_query(&table_info_query).await? {
+        for message in self.inner.client.simple_query(&table_info_query).await? {
             if let SimpleQueryMessage::Row(row) = message {
                 let replica_identity =
                     row.try_get("relreplident")?
@@ -352,11 +393,7 @@ impl PgReplicationClient {
 
         let mut column_schemas = vec![];
 
-        for message in self
-            .client
-            .simple_query(&column_info_query)
-            .await?
-        {
+        for message in self.inner.client.simple_query(&column_info_query).await? {
             if let SimpleQueryMessage::Row(row) = message {
                 let name = row
                     .try_get("attname")?
