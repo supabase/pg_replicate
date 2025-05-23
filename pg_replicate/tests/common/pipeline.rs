@@ -66,7 +66,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
             let source = PostgresSource::new(
                 options.clone(),
                 vec![],
-                Some(test_slot_name(&slot_name)),
+                Some(slot_name),
                 TableNamesFrom::Publication(publication),
             )
             .await

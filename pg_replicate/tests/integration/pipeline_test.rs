@@ -1,5 +1,7 @@
 use crate::common::database::{spawn_database, test_table_name};
-use crate::common::pipeline::{spawn_async_pg_pipeline, spawn_pg_pipeline, PipelineMode};
+use crate::common::pipeline::{
+    spawn_async_pg_pipeline, spawn_pg_pipeline, test_slot_name, PipelineMode,
+};
 use crate::common::sink::TestSink;
 use crate::common::table::assert_table_schema_from_sink;
 use crate::common::wait_for_condition;
@@ -183,7 +185,7 @@ async fn test_cdc_with_multiple_inserts() {
         &database.options,
         PipelineMode::Cdc {
             publication: "users_publication".to_owned(),
-            slot_name: "users_slot".to_string(),
+            slot_name: test_slot_name("users_slot"),
         },
         sink.clone(),
     )
