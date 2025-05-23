@@ -1,6 +1,7 @@
-use crate::schema::{TableId, TableName};
+use crate::schema::{ColumnSchema, TableId, TableName};
 use crate::tokio::options::PgDatabaseOptions;
 use tokio::runtime::Handle;
+use tokio_postgres::types::Type;
 use tokio_postgres::{Client, NoTls};
 
 pub enum TableModification<'a> {
@@ -172,6 +173,19 @@ impl PgDatabase {
 
         let rows = self.client.query(&query, &[]).await?;
         Ok(rows.iter().map(|row| row.get(0)).collect())
+    }
+
+    /// Returns a [`ColumnSchema`] representing a non-nullable, primary key column
+    /// named "id" of type `INT8` which is added by default to all tables created within
+    /// [`PgDatabase`].
+    pub fn id_column_schema() -> ColumnSchema {
+        ColumnSchema {
+            name: "id".to_string(),
+            typ: Type::INT8,
+            modifier: -1,
+            nullable: false,
+            primary: true,
+        }
     }
 }
 

@@ -7,6 +7,7 @@ use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseOptions;
 use std::time::Duration;
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 /// Defines the operational mode for a PostgreSQL replication pipeline.
 pub enum PipelineMode {
@@ -21,12 +22,13 @@ pub enum PipelineMode {
     },
 }
 
-/// Generates a test-specific replication slot name.
+/// Generates a test-specific replication slot name with a random component.
 ///
 /// This function prefixes the provided slot name with "test_" to avoid conflicts
-/// with other replication slots.
+/// with other replication slots and other tests running in parallel.
 pub fn test_slot_name(slot_name: &str) -> String {
-    format!("test_{}", slot_name)
+    let uuid = Uuid::new_v4().simple().to_string();
+    format!("test_{}_{}", slot_name, uuid)
 }
 
 /// Creates a new PostgreSQL replication pipeline.

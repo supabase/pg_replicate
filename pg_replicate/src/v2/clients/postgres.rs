@@ -8,8 +8,8 @@ use thiserror::Error;
 use tokio_postgres::tls::MakeTlsConnect;
 use tokio_postgres::types::{Kind, Type};
 use tokio_postgres::{
-    config::ReplicationMode, types::PgLsn, Client, Config, Connection, NoTls, SimpleQueryMessage,
-    Socket,
+    config::ReplicationMode, types::PgLsn, Client, Config, Connection, CopyOutStream, NoTls,
+    SimpleQueryMessage, Socket,
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{info, warn};
@@ -52,6 +52,16 @@ impl PgReplicationSlotTransaction {
     ) -> Result<HashMap<TableId, TableSchema>, PgReplicationClientError> {
         self.client
             .get_table_schemas(table_names, publication_name)
+            .await
+    }
+
+    pub async fn get_table_copy_stream(
+        &self,
+        table_name: &TableName,
+        column_schemas: &[ColumnSchema],
+    ) -> Result<CopyOutStream, PgReplicationClientError> {
+        self.client
+            .get_table_copy_stream(table_name, column_schemas)
             .await
     }
 
@@ -255,6 +265,7 @@ impl PgReplicationClient {
     ) -> Result<HashMap<TableId, TableSchema>, PgReplicationClientError> {
         let mut table_schemas = HashMap::new();
 
+        // TODO: consider if we want to fail when at least one table was missing or not.
         for table_name in table_names {
             let table_schema = self
                 .get_table_schema(table_name.clone(), publication_name)
@@ -456,6 +467,27 @@ impl PgReplicationClient {
         }
 
         Ok(column_schemas)
+    }
+
+    async fn get_table_copy_stream(
+        &self,
+        table_name: &TableName,
+        column_schemas: &[ColumnSchema],
+    ) -> Result<CopyOutStream, PgReplicationClientError> {
+        let column_list = column_schemas
+            .iter()
+            .map(|col| quote_identifier(&col.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let copy_query = format!(
+            r#"COPY {} ({column_list}) TO STDOUT WITH (FORMAT text);"#,
+            table_name.as_quoted_identifier(),
+        );
+
+        let stream = self.inner.client.copy_out_simple(&copy_query).await?;
+
+        Ok(stream)
     }
 }
 

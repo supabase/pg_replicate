@@ -1,7 +1,7 @@
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::pipeline::{spawn_async_pg_pipeline, spawn_pg_pipeline, PipelineMode};
 use crate::common::sink::TestSink;
-use crate::common::table::{assert_table_schema_from_sink, id_column_schema};
+use crate::common::table::assert_table_schema_from_sink;
 use crate::common::wait_for_condition;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::Cell;
@@ -56,7 +56,7 @@ async fn double_users_ages(database: &PgDatabase) {
 
 fn assert_users_table_schema(sink: &TestSink, users_table_id: TableId, schema_index: usize) {
     let expected_columns = vec![
-        id_column_schema(),
+        PgDatabase::id_column_schema(),
         ColumnSchema {
             name: "age".to_string(),
             typ: Type::INT4,

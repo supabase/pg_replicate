@@ -1,18 +1,13 @@
 use crate::common::sink::TestSink;
 use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use std::collections::HashMap;
-use tokio_postgres::types::Type;
 
-pub fn id_column_schema() -> ColumnSchema {
-    ColumnSchema {
-        name: "id".to_string(),
-        typ: Type::INT8,
-        modifier: -1,
-        nullable: false,
-        primary: true,
-    }
-}
-
+/// Asserts that a table schema in a [`TestSink`] matches the expected schema.
+///
+/// # Panics
+///
+/// Panics if the table schema at the given index doesn't match the expected schema,
+/// or if the table ID doesn't exist in the sink's schemas.
 pub fn assert_table_schema_from_sink(
     sink: &TestSink,
     table_id: TableId,
@@ -20,23 +15,33 @@ pub fn assert_table_schema_from_sink(
     expected_table_name: TableName,
     expected_columns: &[ColumnSchema],
 ) {
-    let tables_schemas = &sink.get_tables_schemas()[schema_index];
+    let table_schemas = &sink.get_table_schemas()[schema_index];
 
     assert_table_schema(
-        tables_schemas,
+        table_schemas,
         table_id,
         expected_table_name,
         expected_columns,
     )
 }
 
+/// Asserts that a table schema matches the expected schema.
+///
+/// Compares all aspects of the table schema including table ID, name, and column
+/// definitions. Each column's properties (name, type, modifier, nullability, and
+/// primary key status) are verified.
+///
+/// # Panics
+///
+/// Panics if the table ID doesn't exist in the provided schemas, or if any aspect
+/// of the schema doesn't match the expected values.
 pub fn assert_table_schema(
-    tables_schemas: &HashMap<TableId, TableSchema>,
+    table_schemas: &HashMap<TableId, TableSchema>,
     table_id: TableId,
     expected_table_name: TableName,
     expected_columns: &[ColumnSchema],
 ) {
-    let table_schema = tables_schemas.get(&table_id).unwrap();
+    let table_schema = table_schemas.get(&table_id).unwrap();
 
     assert_eq!(table_schema.table_id, table_id);
     assert_eq!(table_schema.table_name, expected_table_name);
