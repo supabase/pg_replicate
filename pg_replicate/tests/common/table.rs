@@ -1,27 +1,47 @@
 use crate::common::sink::TestSink;
-use postgres::schema::{ColumnSchema, TableId, TableName};
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use std::collections::HashMap;
 
-/// Verifies that a table's schema matches the expected configuration.
-///
-/// This function compares a table's actual schema against the expected schema,
-/// checking the table name, ID, and all column properties including name, type,
-/// modifiers, nullability, and primary key status.
+/// Asserts that a table schema in a [`TestSink`] matches the expected schema.
 ///
 /// # Panics
 ///
-/// Panics if:
-/// - The table ID is not found in the sink's schema
-/// - The schema index is out of bounds
-/// - Any column property doesn't match the expected configuration
-pub fn assert_table_schema(
+/// Panics if the table schema at the given index doesn't match the expected schema,
+/// or if the table ID doesn't exist in the sink's schemas.
+pub fn assert_table_schema_from_sink(
     sink: &TestSink,
     table_id: TableId,
     schema_index: usize,
     expected_table_name: TableName,
     expected_columns: &[ColumnSchema],
 ) {
-    let tables_schemas = &sink.get_tables_schemas()[schema_index];
-    let table_schema = tables_schemas.get(&table_id).unwrap();
+    let table_schemas = &sink.get_table_schemas()[schema_index];
+
+    assert_table_schema(
+        table_schemas,
+        table_id,
+        expected_table_name,
+        expected_columns,
+    )
+}
+
+/// Asserts that a table schema matches the expected schema.
+///
+/// Compares all aspects of the table schema including table ID, name, and column
+/// definitions. Each column's properties (name, type, modifier, nullability, and
+/// primary key status) are verified.
+///
+/// # Panics
+///
+/// Panics if the table ID doesn't exist in the provided schemas, or if any aspect
+/// of the schema doesn't match the expected values.
+pub fn assert_table_schema(
+    table_schemas: &HashMap<TableId, TableSchema>,
+    table_id: TableId,
+    expected_table_name: TableName,
+    expected_columns: &[ColumnSchema],
+) {
+    let table_schema = table_schemas.get(&table_id).unwrap();
 
     assert_eq!(table_schema.table_id, table_id);
     assert_eq!(table_schema.table_name, expected_table_name);

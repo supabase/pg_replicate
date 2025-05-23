@@ -1,7 +1,14 @@
-use crate::schema::{TableId, TableName};
+use crate::schema::{ColumnSchema, TableId, TableName};
 use crate::tokio::options::PgDatabaseOptions;
 use tokio::runtime::Handle;
+use tokio_postgres::types::Type;
 use tokio_postgres::{Client, NoTls};
+
+pub enum TableModification<'a> {
+    AddColumn { name: &'a str, data_type: &'a str },
+    DropColumn { name: &'a str },
+    AlterColumn { name: &'a str, alteration: &'a str },
+}
 
 pub struct PgDatabase {
     pub options: PgDatabaseOptions,
@@ -70,6 +77,38 @@ impl PgDatabase {
         Ok(table_id)
     }
 
+    /// Modifies a table by adding, dropping, or altering columns.
+    pub async fn alter_table(
+        &self,
+        table_name: TableName,
+        modifications: &[TableModification<'_>],
+    ) -> Result<(), tokio_postgres::Error> {
+        let modifications_str = modifications
+            .iter()
+            .map(|modification| match modification {
+                TableModification::AddColumn { name, data_type } => {
+                    format!("add column {} {}", name, data_type)
+                }
+                TableModification::DropColumn { name } => {
+                    format!("drop column {}", name)
+                }
+                TableModification::AlterColumn { name, alteration } => {
+                    format!("alter column {} {}", name, alteration)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let alter_table_query = format!(
+            "alter table {} {}",
+            table_name.as_quoted_identifier(),
+            modifications_str
+        );
+        self.client.execute(&alter_table_query, &[]).await?;
+
+        Ok(())
+    }
+
     /// Inserts values into the specified table.
     pub async fn insert_values(
         &self,
@@ -134,6 +173,19 @@ impl PgDatabase {
 
         let rows = self.client.query(&query, &[]).await?;
         Ok(rows.iter().map(|row| row.get(0)).collect())
+    }
+
+    /// Returns a [`ColumnSchema`] representing a non-nullable, primary key column
+    /// named "id" of type `INT8` which is added by default to all tables created within
+    /// [`PgDatabase`].
+    pub fn id_column_schema() -> ColumnSchema {
+        ColumnSchema {
+            name: "id".to_string(),
+            typ: Type::INT8,
+            modifier: -1,
+            nullable: false,
+            primary: true,
+        }
     }
 }
 

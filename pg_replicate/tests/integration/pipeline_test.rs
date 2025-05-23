@@ -1,7 +1,9 @@
 use crate::common::database::{spawn_database, test_table_name};
-use crate::common::pipeline::{spawn_async_pg_pipeline, spawn_pg_pipeline, PipelineMode};
+use crate::common::pipeline::{
+    spawn_async_pg_pipeline, spawn_pg_pipeline, test_slot_name, PipelineMode,
+};
 use crate::common::sink::TestSink;
-use crate::common::table::assert_table_schema;
+use crate::common::table::assert_table_schema_from_sink;
 use crate::common::wait_for_condition;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::Cell;
@@ -56,13 +58,7 @@ async fn double_users_ages(database: &PgDatabase) {
 
 fn assert_users_table_schema(sink: &TestSink, users_table_id: TableId, schema_index: usize) {
     let expected_columns = vec![
-        ColumnSchema {
-            name: "id".to_string(),
-            typ: Type::INT8,
-            modifier: -1,
-            nullable: false,
-            primary: true,
-        },
+        PgDatabase::id_column_schema(),
         ColumnSchema {
             name: "age".to_string(),
             typ: Type::INT4,
@@ -72,7 +68,7 @@ fn assert_users_table_schema(sink: &TestSink, users_table_id: TableId, schema_in
         },
     ];
 
-    assert_table_schema(
+    assert_table_schema_from_sink(
         sink,
         users_table_id,
         schema_index,
@@ -189,7 +185,7 @@ async fn test_cdc_with_multiple_inserts() {
         &database.options,
         PipelineMode::Cdc {
             publication: "users_publication".to_owned(),
-            slot_name: "users_slot".to_string(),
+            slot_name: test_slot_name("users_slot"),
         },
         sink.clone(),
     )

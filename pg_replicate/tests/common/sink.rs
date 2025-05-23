@@ -25,7 +25,7 @@ pub struct TestSink {
 #[derive(Debug)]
 struct TestSinkInner {
     // We have a Vec to store all the changes of the schema that we receive over time.
-    tables_schemas: Vec<HashMap<TableId, TableSchema>>,
+    table_schemas: Vec<HashMap<TableId, TableSchema>>,
     tables_rows: HashMap<TableId, Vec<TableRow>>,
     events: Vec<Arc<CdcEvent>>,
     copied_tables: HashSet<TableId>,
@@ -38,7 +38,7 @@ impl TestSink {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(TestSinkInner {
-                tables_schemas: Vec::new(),
+                table_schemas: Vec::new(),
                 tables_rows: HashMap::new(),
                 events: Vec::new(),
                 copied_tables: HashSet::new(),
@@ -69,8 +69,8 @@ impl TestSink {
     }
 
     /// Returns a copy of all table schemas received by the sink.
-    pub fn get_tables_schemas(&self) -> Vec<HashMap<TableId, TableSchema>> {
-        self.inner.lock().unwrap().tables_schemas.clone()
+    pub fn get_table_schemas(&self) -> Vec<HashMap<TableId, TableSchema>> {
+        self.inner.lock().unwrap().table_schemas.clone()
     }
 
     /// Returns a copy of all table rows received by the sink.
@@ -119,11 +119,7 @@ impl BatchSink for TestSink {
         &mut self,
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), Self::Error> {
-        self.inner
-            .lock()
-            .unwrap()
-            .tables_schemas
-            .push(table_schemas);
+        self.inner.lock().unwrap().table_schemas.push(table_schemas);
 
         Ok(())
     }
