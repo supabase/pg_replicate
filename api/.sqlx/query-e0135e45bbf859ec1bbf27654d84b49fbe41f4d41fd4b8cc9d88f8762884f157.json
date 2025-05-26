@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select p.id,\n            p.tenant_id,\n            source_id,\n            sr.name as source_name,\n            destination_id,\n            sn.name as sink_name,\n            replicator_id,\n            publication_name,\n            p.config\n        from app.pipelines p\n        join app.sources sr on p.source_id = sr.id\n        join app.destinations sn on p.destination_id = sn.id\n        where p.tenant_id = $1\n        ",
+  "query": "\n        select p.id,\n            p.tenant_id,\n            source_id,\n            s.name as source_name,\n            destination_id,\n            d.name as destination_name,\n            replicator_id,\n            publication_name,\n            p.config\n        from app.pipelines p\n        join app.sources s on p.source_id = s.id\n        join app.destinations d on p.destination_id = d.id\n        where p.tenant_id = $1 and p.id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -30,7 +30,7 @@
       },
       {
         "ordinal": 5,
-        "name": "sink_name",
+        "name": "destination_name",
         "type_info": "Text"
       },
       {
@@ -51,7 +51,8 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "Int8"
       ]
     },
     "nullable": [
@@ -66,5 +67,5 @@
       false
     ]
   },
-  "hash": "f566a2fa14f5e7abae0ef39ec5643dc39c10c620ca65594ba28a273b4ce0ee13"
+  "hash": "e0135e45bbf859ec1bbf27654d84b49fbe41f4d41fd4b8cc9d88f8762884f157"
 }
