@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
+use destinations::DestinationError;
 use postgres::schema::TableId;
-use sinks::SinkError;
 use sources::SourceError;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
 pub mod batching;
-pub mod sinks;
+pub mod destinations;
 pub mod sources;
 
 #[derive(Debug)]
@@ -24,12 +24,12 @@ pub struct PipelineResumptionState {
 }
 
 #[derive(Debug, Error)]
-pub enum PipelineError<SrcErr: SourceError, SnkErr: SinkError> {
+pub enum PipelineError<SrcErr: SourceError, DstErr: DestinationError> {
     #[error("source error: {0}")]
     Source(#[source] SrcErr),
 
-    #[error("sink error: {0}")]
-    Sink(#[source] SnkErr),
+    #[error("destination error: {0}")]
+    Destination(#[source] DstErr),
 
     #[error("source error: {0}")]
     CommonSource(#[from] sources::CommonSourceError),

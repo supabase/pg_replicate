@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use pg_replicate::conversions::cdc_event::CdcEvent;
-use pg_replicate::conversions::table_row::TableRow;
-use pg_replicate::pipeline::sinks::{BatchSink, InfallibleSinkError};
-use pg_replicate::pipeline::PipelineResumptionState;
 use postgres::schema::{TableId, TableSchema};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use supabase_etl::conversions::cdc_event::CdcEvent;
+use supabase_etl::conversions::table_row::TableRow;
+use supabase_etl::pipeline::destinations::{BatchDestination, InfallibleDestinationError};
+use supabase_etl::pipeline::PipelineResumptionState;
 use tokio_postgres::types::PgLsn;
 
 /// A test sink that captures replication events and data for verification.
@@ -14,8 +14,8 @@ use tokio_postgres::types::PgLsn;
 /// This sink is designed to be shared across multiple pipelines, simulating
 /// persistent storage while maintaining thread safety through interior mutability.
 #[derive(Debug, Clone)]
-pub struct TestSink {
-    inner: Arc<Mutex<TestSinkInner>>,
+pub struct TestDestination {
+    inner: Arc<Mutex<TestDestinationInner>>,
 }
 
 /// Internal state of the test sink.
@@ -23,7 +23,7 @@ pub struct TestSink {
 /// This struct maintains the sink's state including table schemas, rows,
 /// CDC events, and tracking information for copied and truncated tables.
 #[derive(Debug)]
-struct TestSinkInner {
+struct TestDestinationInner {
     // We have a Vec to store all the changes of the schema that we receive over time.
     tables_schemas: Vec<HashMap<TableId, TableSchema>>,
     tables_rows: HashMap<TableId, Vec<TableRow>>,
@@ -33,11 +33,11 @@ struct TestSinkInner {
     last_lsn: u64,
 }
 
-impl TestSink {
+impl TestDestination {
     /// Creates a new test sink with an empty state.
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(TestSinkInner {
+            inner: Arc::new(Mutex::new(TestDestinationInner {
                 tables_schemas: Vec::new(),
                 tables_rows: HashMap::new(),
                 events: Vec::new(),
@@ -105,8 +105,8 @@ impl TestSink {
 }
 
 #[async_trait]
-impl BatchSink for TestSink {
-    type Error = InfallibleSinkError;
+impl BatchDestination for TestDestination {
+    type Error = InfallibleDestinationError;
 
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         Ok(PipelineResumptionState {

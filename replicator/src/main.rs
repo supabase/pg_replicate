@@ -3,16 +3,16 @@ use std::{io::BufReader, time::Duration, vec};
 use configuration::{
     get_configuration, BatchSettings, Settings, SinkSettings, SourceSettings, TlsSettings,
 };
-use pg_replicate::{
+use postgres::tokio::options::PgDatabaseOptions;
+use supabase_etl::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        sinks::bigquery::BigQueryBatchSink,
+        destinations::bigquery::BigQueryBatchDestination,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
     SslMode,
 };
-use postgres::tokio::options::PgDatabaseOptions;
 use telemetry::init_tracing;
 use tracing::{info, instrument};
 
@@ -131,7 +131,7 @@ async fn start_replication(settings: Settings) -> anyhow::Result<()> {
         max_staleness_mins,
     } = settings.sink;
 
-    let bigquery_sink = BigQueryBatchSink::new_with_key(
+    let bigquery_destination = BigQueryBatchDestination::new_with_key(
         project_id,
         dataset_id,
         &service_account_key,
@@ -147,7 +147,7 @@ async fn start_replication(settings: Settings) -> anyhow::Result<()> {
     let batch_config = BatchConfig::new(max_size, Duration::from_secs(max_fill_secs));
     let mut pipeline = BatchDataPipeline::new(
         postgres_source,
-        bigquery_sink,
+        bigquery_destination,
         PipelineAction::Both,
         batch_config,
     );

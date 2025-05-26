@@ -9,22 +9,22 @@ use tokio_postgres::types::PgLsn;
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::{sinks::BatchSink, PipelineResumptionState},
+    pipeline::{destinations::BatchDestination, PipelineResumptionState},
 };
 
 use super::{
     executor::{DuckDbExecutor, DuckDbExecutorError, DuckDbResponse},
     DuckDbRequest,
 };
-pub struct DuckDbSink {
+pub struct DuckDbDestination {
     req_sender: Sender<DuckDbRequest>,
     res_receiver: Receiver<DuckDbResponse>,
 }
 
 const CHANNEL_SIZE: usize = 32;
 
-impl DuckDbSink {
-    pub async fn file<P: AsRef<Path>>(file_name: P) -> Result<DuckDbSink, duckdb::Error> {
+impl DuckDbDestination {
+    pub async fn file<P: AsRef<Path>>(file_name: P) -> Result<DuckDbDestination, duckdb::Error> {
         let (req_sender, req_receiver) = channel(CHANNEL_SIZE);
         let (res_sender, res_receiver) = channel(CHANNEL_SIZE);
         let client = DuckDbClient::open_file(file_name)?;
@@ -37,7 +37,7 @@ impl DuckDbSink {
             committed_lsn: None,
         };
         executor.start();
-        Ok(DuckDbSink {
+        Ok(DuckDbDestination {
             req_sender,
             res_receiver,
         })
@@ -46,7 +46,7 @@ impl DuckDbSink {
     pub async fn mother_duck(
         access_token: &str,
         db_name: &str,
-    ) -> Result<DuckDbSink, duckdb::Error> {
+    ) -> Result<DuckDbDestination, duckdb::Error> {
         let (req_sender, req_receiver) = channel(CHANNEL_SIZE);
         let (res_sender, res_receiver) = channel(CHANNEL_SIZE);
         let client = DuckDbClient::open_mother_duck(access_token, db_name)?;
@@ -59,13 +59,13 @@ impl DuckDbSink {
             committed_lsn: None,
         };
         executor.start();
-        Ok(DuckDbSink {
+        Ok(DuckDbDestination {
             req_sender,
             res_receiver,
         })
     }
 
-    pub async fn in_memory() -> Result<DuckDbSink, duckdb::Error> {
+    pub async fn in_memory() -> Result<DuckDbDestination, duckdb::Error> {
         let (req_sender, req_receiver) = channel(CHANNEL_SIZE);
         let (res_sender, res_receiver) = channel(CHANNEL_SIZE);
         let client = DuckDbClient::open_in_memory()?;
@@ -78,7 +78,7 @@ impl DuckDbSink {
             committed_lsn: None,
         };
         executor.start();
-        Ok(DuckDbSink {
+        Ok(DuckDbDestination {
             req_sender,
             res_receiver,
         })
@@ -98,7 +98,7 @@ impl DuckDbSink {
 }
 
 #[async_trait]
-impl BatchSink for DuckDbSink {
+impl BatchDestination for DuckDbDestination {
     type Error = DuckDbExecutorError;
 
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {

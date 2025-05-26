@@ -9,7 +9,7 @@ use tracing::error;
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::{sinks::SinkError, PipelineResumptionState},
+    pipeline::{destinations::DestinationError, PipelineResumptionState},
 };
 
 pub enum DuckDbRequest {
@@ -54,7 +54,7 @@ pub enum DuckDbExecutorError {
     SendError(#[from] SendError<DuckDbRequest>),
 }
 
-impl SinkError for DuckDbExecutorError {}
+impl DestinationError for DuckDbExecutorError {}
 
 pub(super) struct DuckDbExecutor {
     pub(super) client: DuckDbClient,
@@ -166,7 +166,7 @@ impl DuckDbExecutor {
 
     fn get_resumption_state(&self) -> Result<PipelineResumptionState, DuckDbExecutorError> {
         let copied_tables_table_name = TableName {
-            schema: "pg_replicate".to_string(),
+            schema: "supabase_etl".to_string(),
             name: "copied_tables".to_string(),
         };
         let copied_table_column_schemas = [ColumnSchema {
@@ -183,7 +183,7 @@ impl DuckDbExecutor {
             .create_table_if_missing(&copied_tables_table_name, &copied_table_column_schemas)?;
 
         let last_lsn_table_name = TableName {
-            schema: "pg_replicate".to_string(),
+            schema: "supabase_etl".to_string(),
             name: "last_lsn".to_string(),
         };
         let last_lsn_column_schemas = [ColumnSchema {

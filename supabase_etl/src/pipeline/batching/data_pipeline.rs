@@ -11,7 +11,7 @@ use crate::{
     conversions::cdc_event::{CdcEvent, CdcEventConversionError},
     pipeline::{
         batching::stream::BatchTimeoutStream,
-        sinks::BatchSink,
+        destinations::BatchDestination,
         sources::{postgres::CdcStreamError, CommonSourceError, Source},
         PipelineAction, PipelineError,
     },
@@ -32,20 +32,25 @@ impl BatchDataPipelineHandle {
     }
 }
 
-pub struct BatchDataPipeline<Src: Source, Snk: BatchSink> {
+pub struct BatchDataPipeline<Src: Source, Dst: BatchDestination> {
     source: Src,
-    sink: Snk,
+    destination: Dst,
     action: PipelineAction,
     batch_config: BatchConfig,
     copy_tables_stream_stop: Arc<Notify>,
     cdc_stream_stop: Arc<Notify>,
 }
 
-impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
-    pub fn new(source: Src, sink: Snk, action: PipelineAction, batch_config: BatchConfig) -> Self {
+impl<Src: Source, Dst: BatchDestination> BatchDataPipeline<Src, Dst> {
+    pub fn new(
+        source: Src,
+        destination: Dst,
+        action: PipelineAction,
+        batch_config: BatchConfig,
+    ) -> Self {
         BatchDataPipeline {
             source,
-            sink,
+            destination,
             action,
             batch_config,
             copy_tables_stream_stop: Arc::new(Notify::new()),
@@ -53,15 +58,15 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         }
     }
 
-    async fn copy_table_schemas(&mut self) -> Result<(), PipelineError<Src::Error, Snk::Error>> {
+    async fn copy_table_schemas(&mut self) -> Result<(), PipelineError<Src::Error, Dst::Error>> {
         let table_schemas = self.source.get_table_schemas();
         let table_schemas = table_schemas.clone();
 
         if !table_schemas.is_empty() {
-            self.sink
+            self.destination
                 .write_table_schemas(table_schemas)
                 .await
-                .map_err(PipelineError::Sink)?;
+                .map_err(PipelineError::Destination)?;
         }
 
         Ok(())
@@ -70,7 +75,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
     async fn copy_tables(
         &mut self,
         copied_tables: &HashSet<TableId>,
-    ) -> Result<(), PipelineError<Src::Error, Snk::Error>> {
+    ) -> Result<(), PipelineError<Src::Error, Dst::Error>> {
         let start = Instant::now();
         let table_schemas = self.source.get_table_schemas();
 
@@ -84,10 +89,10 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                 continue;
             }
 
-            self.sink
+            self.destination
                 .truncate_table(table_schema.table_id)
                 .await
-                .map_err(PipelineError::Sink)?;
+                .map_err(PipelineError::Destination)?;
 
             let table_rows = self
                 .source
@@ -110,16 +115,16 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                 for row in batch {
                     rows.push(row.map_err(CommonSourceError::TableCopyStream)?);
                 }
-                self.sink
+                self.destination
                     .write_table_rows(rows, table_schema.table_id)
                     .await
-                    .map_err(PipelineError::Sink)?;
+                    .map_err(PipelineError::Destination)?;
             }
 
-            self.sink
+            self.destination
                 .table_copied(table_schema.table_id)
                 .await
-                .map_err(PipelineError::Sink)?;
+                .map_err(PipelineError::Destination)?;
         }
         self.source
             .commit_transaction()
@@ -136,7 +141,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
     async fn copy_cdc_events(
         &mut self,
         last_lsn: PgLsn,
-    ) -> Result<(), PipelineError<Src::Error, Snk::Error>> {
+    ) -> Result<(), PipelineError<Src::Error, Dst::Error>> {
         self.source
             .commit_transaction()
             .await
@@ -177,10 +182,10 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
                 events.push(event);
             }
             let last_lsn = self
-                .sink
+                .destination
                 .write_cdc_events(events)
                 .await
-                .map_err(PipelineError::Sink)?;
+                .map_err(PipelineError::Destination)?;
             if send_status_update {
                 info!("sending status update with lsn: {last_lsn}");
                 let inner = unsafe {
@@ -200,12 +205,12 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         Ok(())
     }
 
-    pub async fn start(&mut self) -> Result<(), PipelineError<Src::Error, Snk::Error>> {
+    pub async fn start(&mut self) -> Result<(), PipelineError<Src::Error, Dst::Error>> {
         let resumption_state = self
-            .sink
+            .destination
             .get_resumption_state()
             .await
-            .map_err(PipelineError::Sink)?;
+            .map_err(PipelineError::Destination)?;
 
         match self.action {
             PipelineAction::TableCopiesOnly => {
@@ -237,7 +242,7 @@ impl<Src: Source, Snk: BatchSink> BatchDataPipeline<Src, Snk> {
         &self.source
     }
 
-    pub fn sink(&self) -> &Snk {
-        &self.sink
+    pub fn destination(&self) -> &Dst {
+        &self.destination
     }
 }
