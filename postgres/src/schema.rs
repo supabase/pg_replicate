@@ -3,6 +3,9 @@ use std::fmt;
 use pg_escape::quote_identifier;
 use tokio_postgres::types::Type;
 
+/// An object identifier in PostgreSQL.
+pub type Oid = u32;
+
 /// A fully qualified PostgreSQL table name consisting of a schema and table name.
 ///
 /// This type represents a table identifier in PostgreSQL, which requires both a schema name
