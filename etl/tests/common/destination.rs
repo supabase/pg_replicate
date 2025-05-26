@@ -9,18 +9,18 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio_postgres::types::PgLsn;
 
-/// A test sink that captures replication events and data for verification.
+/// A test destination that captures replication events and data for verification.
 ///
-/// This sink is designed to be shared across multiple pipelines, simulating
+/// This destination is designed to be shared across multiple pipelines, simulating
 /// persistent storage while maintaining thread safety through interior mutability.
 #[derive(Debug, Clone)]
 pub struct TestDestination {
     inner: Arc<Mutex<TestDestinationInner>>,
 }
 
-/// Internal state of the test sink.
+/// Internal state of the test destination.
 ///
-/// This struct maintains the sink's state including table schemas, rows,
+/// This struct maintains the destination's state including table schemas, rows,
 /// CDC events, and tracking information for copied and truncated tables.
 #[derive(Debug)]
 struct TestDestinationInner {
@@ -34,7 +34,7 @@ struct TestDestinationInner {
 }
 
 impl TestDestination {
-    /// Creates a new test sink with an empty state.
+    /// Creates a new test destination with an empty state.
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(TestDestinationInner {
@@ -68,17 +68,17 @@ impl TestDestination {
         inner.last_lsn = max(inner.last_lsn, max_lsn);
     }
 
-    /// Returns a copy of all table schemas received by the sink.
+    /// Returns a copy of all table schemas received by the destination.
     pub fn get_tables_schemas(&self) -> Vec<HashMap<TableId, TableSchema>> {
         self.inner.lock().unwrap().tables_schemas.clone()
     }
 
-    /// Returns a copy of all table rows received by the sink.
+    /// Returns a copy of all table rows received by the destination.
     pub fn get_tables_rows(&self) -> HashMap<TableId, Vec<TableRow>> {
         self.inner.lock().unwrap().tables_rows.clone()
     }
 
-    /// Returns a copy of all CDC events received by the sink.
+    /// Returns a copy of all CDC events received by the destination.
     pub fn get_events(&self) -> Vec<Arc<CdcEvent>> {
         self.inner.lock().unwrap().events.clone()
     }
@@ -98,7 +98,7 @@ impl TestDestination {
         self.inner.lock().unwrap().truncated_tables.len() as u8
     }
 
-    /// Returns the last LSN processed by the sink.
+    /// Returns the last LSN processed by the destination.
     pub fn get_last_lsn(&self) -> u64 {
         self.inner.lock().unwrap().last_lsn
     }

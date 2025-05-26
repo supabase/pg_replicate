@@ -141,7 +141,7 @@ pub fn get_settings<'a, T: serde::Deserialize<'a>>() -> Result<T, config::Config
             configuration_directory.join(environment_filename),
         ))
         // Add in settings from environment variables (with a prefix of APP and '__' as separator)
-        // E.g. `APP_SINK__BIG_QUERY__PROJECT_ID=my-project-id would set `Settings { sink: BigQuery { project_id }}` to my-project-id
+        // E.g. `APP_DESTINATION__BIG_QUERY__PROJECT_ID=my-project-id would set `Settings { destination: BigQuery { project_id }}` to my-project-id
         .add_source(
             config::Environment::with_prefix("APP")
                 .prefix_separator("_")

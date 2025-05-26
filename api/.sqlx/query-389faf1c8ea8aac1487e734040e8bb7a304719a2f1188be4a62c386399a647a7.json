@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        update app.pipelines\n        set source_id = $1, sink_id = $2, publication_name = $3, config = $4\n        where tenant_id = $5 and id = $6\n        returning id\n        ",
+  "query": "\n        update app.pipelines\n        set source_id = $1, destination_id = $2, publication_name = $3, config = $4\n        where tenant_id = $5 and id = $6\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -23,5 +23,5 @@
       false
     ]
   },
-  "hash": "60d06611d50de0a2daf09f9cba150b6684a62b0061c3173848a89e56ccdce774"
+  "hash": "389faf1c8ea8aac1487e734040e8bb7a304719a2f1188be4a62c386399a647a7"
 }

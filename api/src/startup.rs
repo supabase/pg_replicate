@@ -17,6 +17,15 @@ use crate::{
     encryption,
     k8s_client::HttpK8sClient,
     routes::{
+        destinations::{
+            create_destination, delete_destination, read_all_destinations, read_destination,
+            update_destination, GetDestinationResponse, PostDestinationRequest,
+            PostDestinationResponse,
+        },
+        destinations_pipelines::{
+            create_destinations_and_pipelines, update_destinations_and_pipelines,
+            PostDestinationPipelineRequest, PostDestinationPipelineResponse,
+        },
         health_check::health_check,
         images::{
             create_image, delete_image, read_all_images, read_image, update_image,
@@ -26,14 +35,6 @@ use crate::{
             create_pipeline, delete_pipeline, get_pipeline_status, read_all_pipelines,
             read_pipeline, start_pipeline, stop_all_pipelines, stop_pipeline, update_pipeline,
             GetPipelineResponse, PostPipelineRequest, PostPipelineResponse,
-        },
-        sinks::{
-            create_sink, delete_sink, read_all_sinks, read_sink, update_sink, GetSinkResponse,
-            PostSinkRequest, PostSinkResponse,
-        },
-        sinks_pipelines::{
-            create_sinks_and_pipelines, update_sinks_and_pipelines, PostSinkPipelineRequest,
-            PostSinkPipelineResponse,
         },
         sources::{
             create_source, delete_source,
@@ -159,14 +160,14 @@ pub async fn run(
             crate::routes::sources::publications::delete_publication,
             crate::routes::sources::publications::read_all_publications,
             crate::routes::sources::tables::read_table_names,
-            crate::routes::sinks::create_sink,
-            crate::routes::sinks::read_sink,
-            crate::routes::sinks::update_sink,
-            crate::routes::sinks::delete_sink,
-            crate::routes::sinks::read_all_sinks,
+            crate::routes::destinations::create_destination,
+            crate::routes::destinations::read_destination,
+            crate::routes::destinations::update_destination,
+            crate::routes::destinations::delete_destination,
+            crate::routes::destinations::read_all_destinations,
             crate::routes::tenants_sources::create_tenant_and_source,
-            crate::routes::sinks_pipelines::create_sinks_and_pipelines,
-            crate::routes::sinks_pipelines::update_sinks_and_pipelines,
+            crate::routes::destinations_pipelines::create_destinations_and_pipelines,
+            crate::routes::destinations_pipelines::update_destinations_and_pipelines,
         ),
         components(schemas(
             PostImageRequest,
@@ -184,13 +185,13 @@ pub async fn run(
             CreatePublicationRequest,
             UpdatePublicationRequest,
             Publication,
-            PostSinkRequest,
-            PostSinkResponse,
-            GetSinkResponse,
+            PostDestinationRequest,
+            PostDestinationResponse,
+            GetDestinationResponse,
             CreateTenantSourceRequest,
             PostTenantSourceResponse,
-            PostSinkPipelineRequest,
-            PostSinkPipelineResponse,
+            PostDestinationPipelineRequest,
+            PostDestinationPipelineResponse,
         ))
     )]
     struct ApiDoc;
@@ -224,12 +225,12 @@ pub async fn run(
                     .service(update_source)
                     .service(delete_source)
                     .service(read_all_sources)
-                    //sinks
-                    .service(create_sink)
-                    .service(read_sink)
-                    .service(update_sink)
-                    .service(delete_sink)
-                    .service(read_all_sinks)
+                    //destinations
+                    .service(create_destination)
+                    .service(read_destination)
+                    .service(update_destination)
+                    .service(delete_destination)
+                    .service(read_all_destinations)
                     //pipelines
                     .service(create_pipeline)
                     .service(read_pipeline)
@@ -256,9 +257,9 @@ pub async fn run(
                     .service(read_all_images)
                     //tenants_sources
                     .service(create_tenant_and_source)
-                    // sinks-pipelines
-                    .service(create_sinks_and_pipelines)
-                    .service(update_sinks_and_pipelines),
+                    // destinations-pipelines
+                    .service(create_destinations_and_pipelines)
+                    .service(update_destinations_and_pipelines),
             )
             .app_data(connection_pool.clone())
             .app_data(encryption_key.clone())

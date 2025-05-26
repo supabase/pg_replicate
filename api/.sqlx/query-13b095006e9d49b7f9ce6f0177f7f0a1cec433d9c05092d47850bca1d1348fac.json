@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select exists (select id\n        from app.sinks\n        where tenant_id = $1 and id = $2) as \"exists!\"\n        ",
+  "query": "\n        select exists (select id\n        from app.destinations\n        where tenant_id = $1 and id = $2) as \"exists!\"\n        ",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "dbfe902aebf01f01f8896649361f1a9ba0823798642f43607986b8c397b6d61b"
+  "hash": "13b095006e9d49b7f9ce6f0177f7f0a1cec433d9c05092d47850bca1d1348fac"
 }

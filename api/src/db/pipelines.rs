@@ -21,8 +21,8 @@ pub struct Pipeline {
     pub tenant_id: String,
     pub source_id: i64,
     pub source_name: String,
-    pub sink_id: i64,
-    pub sink_name: String,
+    pub destination_id: i64,
+    pub destination_name: String,
     pub replicator_id: i64,
     pub publication_name: String,
     pub config: serde_json::Value,
@@ -32,7 +32,7 @@ pub async fn create_pipeline(
     pool: &PgPool,
     tenant_id: &str,
     source_id: i64,
-    sink_id: i64,
+    destination_id: i64,
     image_id: i64,
     publication_name: &str,
     config: &PipelineConfig,
@@ -43,7 +43,7 @@ pub async fn create_pipeline(
         &mut txn,
         tenant_id,
         source_id,
-        sink_id,
+        destination_id,
         image_id,
         publication_name,
         config,
@@ -57,7 +57,7 @@ pub async fn create_pipeline_txn(
     txn: &mut Transaction<'_, Postgres>,
     tenant_id: &str,
     source_id: i64,
-    sink_id: i64,
+    destination_id: i64,
     image_id: i64,
     publication_name: &str,
     pipeline_config: serde_json::Value,
@@ -65,13 +65,13 @@ pub async fn create_pipeline_txn(
     let replicator_id = create_replicator_txn(txn, tenant_id, image_id).await?;
     let record = sqlx::query!(
         r#"
-        insert into app.pipelines (tenant_id, source_id, sink_id, replicator_id, publication_name, config)
+        insert into app.pipelines (tenant_id, source_id, destination_id, replicator_id, publication_name, config)
         values ($1, $2, $3, $4, $5, $6)
         returning id
         "#,
         tenant_id,
         source_id,
-        sink_id,
+        destination_id,
         replicator_id,
         publication_name,
         pipeline_config
@@ -92,15 +92,15 @@ pub async fn read_pipeline(
         select p.id,
             p.tenant_id,
             source_id,
-            sr.name as source_name,
-            sink_id,
-            sn.name as sink_name,
+            s.name as source_name,
+            destination_id,
+            d.name as destination_name,
             replicator_id,
             publication_name,
             p.config
         from app.pipelines p
-        join app.sources sr on p.source_id = sr.id
-        join app.sinks sn on p.sink_id = sn.id
+        join app.sources s on p.source_id = s.id
+        join app.destinations d on p.destination_id = d.id
         where p.tenant_id = $1 and p.id = $2
         "#,
         tenant_id,
@@ -114,8 +114,8 @@ pub async fn read_pipeline(
         tenant_id: r.tenant_id,
         source_id: r.source_id,
         source_name: r.source_name,
-        sink_id: r.sink_id,
-        sink_name: r.sink_name,
+        destination_id: r.destination_id,
+        destination_name: r.destination_name,
         replicator_id: r.replicator_id,
         publication_name: r.publication_name,
         config: r.config,
@@ -127,7 +127,7 @@ pub async fn update_pipeline(
     tenant_id: &str,
     pipeline_id: i64,
     source_id: i64,
-    sink_id: i64,
+    destination_id: i64,
     publication_name: &str,
     pipeline_config: &PipelineConfig,
 ) -> Result<Option<i64>, sqlx::Error> {
@@ -139,7 +139,7 @@ pub async fn update_pipeline(
         tenant_id,
         pipeline_id,
         source_id,
-        sink_id,
+        destination_id,
         publication_name,
         pipeline_config,
     )
@@ -154,19 +154,19 @@ pub async fn update_pipeline_txn(
     tenant_id: &str,
     pipeline_id: i64,
     source_id: i64,
-    sink_id: i64,
+    destination_id: i64,
     publication_name: &str,
     pipeline_config: serde_json::Value,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         update app.pipelines
-        set source_id = $1, sink_id = $2, publication_name = $3, config = $4
+        set source_id = $1, destination_id = $2, publication_name = $3, config = $4
         where tenant_id = $5 and id = $6
         returning id
         "#,
         source_id,
-        sink_id,
+        destination_id,
         publication_name,
         pipeline_config,
         tenant_id,
@@ -207,15 +207,15 @@ pub async fn read_all_pipelines(
         select p.id,
             p.tenant_id,
             source_id,
-            sr.name as source_name,
-            sink_id,
-            sn.name as sink_name,
+            s.name as source_name,
+            destination_id,
+            d.name as destination_name,
             replicator_id,
             publication_name,
             p.config
         from app.pipelines p
-        join app.sources sr on p.source_id = sr.id
-        join app.sinks sn on p.sink_id = sn.id
+        join app.sources s on p.source_id = s.id
+        join app.destinations d on p.destination_id = d.id
         where p.tenant_id = $1
         "#,
         tenant_id,
@@ -230,8 +230,8 @@ pub async fn read_all_pipelines(
             tenant_id: r.tenant_id,
             source_id: r.source_id,
             source_name: r.source_name,
-            sink_id: r.sink_id,
-            sink_name: r.sink_name,
+            destination_id: r.destination_id,
+            destination_name: r.destination_name,
             replicator_id: r.replicator_id,
             publication_name: r.publication_name,
             config: r.config,

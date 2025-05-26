@@ -12,7 +12,7 @@ use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum SinkConfig {
+pub enum DestinationConfig {
     BigQuery {
         /// BigQuery project id
         project_id: String,
@@ -29,12 +29,12 @@ pub enum SinkConfig {
     },
 }
 
-impl SinkConfig {
+impl DestinationConfig {
     pub fn into_db_config(
         self,
         encryption_key: &EncryptionKey,
-    ) -> Result<SinkConfigInDb, Unspecified> {
-        let SinkConfig::BigQuery {
+    ) -> Result<DestinationConfigInDb, Unspecified> {
+        let DestinationConfig::BigQuery {
             project_id,
             dataset_id,
             service_account_key,
@@ -51,7 +51,7 @@ impl SinkConfig {
             value: encrypted_encoded_sa_key,
         };
 
-        Ok(SinkConfigInDb::BigQuery {
+        Ok(DestinationConfigInDb::BigQuery {
             project_id,
             dataset_id,
             service_account_key: encrypted_sa_key,
@@ -60,7 +60,7 @@ impl SinkConfig {
     }
 }
 
-impl Debug for SinkConfig {
+impl Debug for DestinationConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::BigQuery {
@@ -81,7 +81,7 @@ impl Debug for SinkConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum SinkConfigInDb {
+pub enum DestinationConfigInDb {
     BigQuery {
         /// BigQuery project id
         project_id: String,
@@ -98,9 +98,12 @@ pub enum SinkConfigInDb {
     },
 }
 
-impl SinkConfigInDb {
-    fn into_config(self, encryption_key: &EncryptionKey) -> Result<SinkConfig, SinksDbError> {
-        let SinkConfigInDb::BigQuery {
+impl DestinationConfigInDb {
+    fn into_config(
+        self,
+        encryption_key: &EncryptionKey,
+    ) -> Result<DestinationConfig, DestinationsDbError> {
+        let DestinationConfigInDb::BigQuery {
             project_id,
             dataset_id,
             service_account_key: encrypted_sa_key,
@@ -108,7 +111,7 @@ impl SinkConfigInDb {
         } = self;
 
         if encrypted_sa_key.id != encryption_key.id {
-            return Err(SinksDbError::MismatchedKeyId(
+            return Err(DestinationsDbError::MismatchedKeyId(
                 encrypted_sa_key.id,
                 encryption_key.id,
             ));
@@ -124,7 +127,7 @@ impl SinkConfigInDb {
         )?)?
         .to_string();
 
-        Ok(SinkConfig::BigQuery {
+        Ok(DestinationConfig::BigQuery {
             project_id,
             dataset_id,
             service_account_key: decrypted_sa_key,
@@ -134,7 +137,7 @@ impl SinkConfigInDb {
 }
 
 #[derive(Debug, Error)]
-pub enum SinksDbError {
+pub enum DestinationsDbError {
     #[error("sqlx error: {0}")]
     Sqlx(#[from] sqlx::Error),
 
@@ -154,43 +157,43 @@ pub enum SinksDbError {
     Utf8(#[from] Utf8Error),
 }
 
-pub struct Sink {
+pub struct Destination {
     pub id: i64,
     pub tenant_id: String,
     pub name: String,
-    pub config: SinkConfig,
+    pub config: DestinationConfig,
 }
 
-pub async fn create_sink(
+pub async fn create_destination(
     pool: &PgPool,
     tenant_id: &str,
     name: &str,
-    config: SinkConfig,
+    config: DestinationConfig,
     encryption_key: &EncryptionKey,
-) -> Result<i64, SinksDbError> {
+) -> Result<i64, DestinationsDbError> {
     let db_config = config.into_db_config(encryption_key)?;
     let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
     let mut txn = pool.begin().await?;
-    let res = create_sink_txn(&mut txn, tenant_id, name, db_config).await;
+    let res = create_destination_txn(&mut txn, tenant_id, name, db_config).await;
     txn.commit().await?;
     res
 }
 
-pub async fn create_sink_txn(
+pub async fn create_destination_txn(
     txn: &mut Transaction<'_, Postgres>,
     tenant_id: &str,
     name: &str,
-    sink_config: Value,
-) -> Result<i64, SinksDbError> {
+    destination_config: Value,
+) -> Result<i64, DestinationsDbError> {
     let record = sqlx::query!(
         r#"
-        insert into app.sinks (tenant_id, name, config)
+        insert into app.destinations (tenant_id, name, config)
         values ($1, $2, $3)
         returning id
         "#,
         tenant_id,
         name,
-        sink_config
+        destination_config
     )
     .fetch_one(&mut **txn)
     .await?;
@@ -198,74 +201,82 @@ pub async fn create_sink_txn(
     Ok(record.id)
 }
 
-pub async fn read_sink(
+pub async fn read_destination(
     pool: &PgPool,
     tenant_id: &str,
-    sink_id: i64,
+    destination_id: i64,
     encryption_key: &EncryptionKey,
-) -> Result<Option<Sink>, SinksDbError> {
+) -> Result<Option<Destination>, DestinationsDbError> {
     let record = sqlx::query!(
         r#"
         select id, tenant_id, name, config
-        from app.sinks
+        from app.destinations
         where tenant_id = $1 and id = $2
         "#,
         tenant_id,
-        sink_id,
+        destination_id,
     )
     .fetch_optional(pool)
     .await?;
 
-    let sink = record
+    let destination = record
         .map(|r| {
-            let config: SinkConfigInDb = serde_json::from_value(r.config)?;
+            let config: DestinationConfigInDb = serde_json::from_value(r.config)?;
             let config = config.into_config(encryption_key)?;
-            let source = Sink {
+            let source = Destination {
                 id: r.id,
                 tenant_id: r.tenant_id,
                 name: r.name,
                 config,
             };
-            Ok::<Sink, SinksDbError>(source)
+            Ok::<Destination, DestinationsDbError>(source)
         })
         .transpose()?;
-    Ok(sink)
+    Ok(destination)
 }
 
-pub async fn update_sink(
+pub async fn update_destination(
     pool: &PgPool,
     tenant_id: &str,
     name: &str,
-    sink_id: i64,
-    sink_config: SinkConfig,
+    destination_id: i64,
+    destination_config: DestinationConfig,
     encryption_key: &EncryptionKey,
-) -> Result<Option<i64>, SinksDbError> {
-    let sink_config = sink_config.into_db_config(encryption_key)?;
-    let sink_config = serde_json::to_value(sink_config).expect("failed to serialize config");
+) -> Result<Option<i64>, DestinationsDbError> {
+    let destination_config = destination_config.into_db_config(encryption_key)?;
+    let destination_config =
+        serde_json::to_value(destination_config).expect("failed to serialize config");
     let mut txn = pool.begin().await?;
-    let res = update_sink_txn(&mut txn, tenant_id, name, sink_id, sink_config).await;
+    let res = update_destination_txn(
+        &mut txn,
+        tenant_id,
+        name,
+        destination_id,
+        destination_config,
+    )
+    .await;
     txn.commit().await?;
     res
 }
 
-pub async fn update_sink_txn(
+pub async fn update_destination_txn(
     txn: &mut Transaction<'_, Postgres>,
     tenant_id: &str,
     name: &str,
-    sink_id: i64,
-    sink_config: Value,
-) -> Result<Option<i64>, SinksDbError> {
+    destination_id: i64,
+    destination_config: Value,
+) -> Result<Option<i64>, DestinationsDbError> {
     let record = sqlx::query!(
         r#"
-        update app.sinks
+        update app.destinations
         set config = $1, name = $2
         where tenant_id = $3 and id = $4
         returning id
         "#,
-        sink_config,
+        destination_config,
         name,
         tenant_id,
-        sink_id
+        destination_id
     )
     .fetch_optional(&mut **txn)
     .await?;
@@ -273,19 +284,19 @@ pub async fn update_sink_txn(
     Ok(record.map(|r| r.id))
 }
 
-pub async fn delete_sink(
+pub async fn delete_destination(
     pool: &PgPool,
     tenant_id: &str,
-    sink_id: i64,
+    destination_id: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        delete from app.sinks
+        delete from app.destinations
         where tenant_id = $1 and id = $2
         returning id
         "#,
         tenant_id,
-        sink_id
+        destination_id
     )
     .fetch_optional(pool)
     .await?;
@@ -293,15 +304,15 @@ pub async fn delete_sink(
     Ok(record.map(|r| r.id))
 }
 
-pub async fn read_all_sinks(
+pub async fn read_all_destinations(
     pool: &PgPool,
     tenant_id: &str,
     encryption_key: &EncryptionKey,
-) -> Result<Vec<Sink>, SinksDbError> {
+) -> Result<Vec<Destination>, DestinationsDbError> {
     let records = sqlx::query!(
         r#"
         select id, tenant_id, name, config
-        from app.sinks
+        from app.destinations
         where tenant_id = $1
         "#,
         tenant_id,
@@ -309,35 +320,35 @@ pub async fn read_all_sinks(
     .fetch_all(pool)
     .await?;
 
-    let mut sinks = Vec::with_capacity(records.len());
+    let mut destinations = Vec::with_capacity(records.len());
     for record in records {
-        let config: SinkConfigInDb = serde_json::from_value(record.config)?;
+        let config: DestinationConfigInDb = serde_json::from_value(record.config)?;
         let config = config.into_config(encryption_key)?;
-        let source = Sink {
+        let source = Destination {
             id: record.id,
             tenant_id: record.tenant_id,
             name: record.name,
             config,
         };
-        sinks.push(source);
+        destinations.push(source);
     }
 
-    Ok(sinks)
+    Ok(destinations)
 }
 
-pub async fn sink_exists(
+pub async fn destination_exists(
     pool: &PgPool,
     tenant_id: &str,
-    sink_id: i64,
+    destination_id: i64,
 ) -> Result<bool, sqlx::Error> {
     let record = sqlx::query!(
         r#"
         select exists (select id
-        from app.sinks
+        from app.destinations
         where tenant_id = $1 and id = $2) as "exists!"
         "#,
         tenant_id,
-        sink_id,
+        destination_id,
     )
     .fetch_one(pool)
     .await?;
@@ -347,7 +358,7 @@ pub async fn sink_exists(
 
 #[cfg(test)]
 mod tests {
-    use crate::db::sinks::SinkConfig;
+    use crate::db::destinations::DestinationConfig;
 
     #[test]
     pub fn deserialize_settings_test() {
@@ -358,8 +369,8 @@ mod tests {
                 "service_account_key": "service-account-key"
             }
         }"#;
-        let actual = serde_json::from_str::<SinkConfig>(settings);
-        let expected = SinkConfig::BigQuery {
+        let actual = serde_json::from_str::<DestinationConfig>(settings);
+        let expected = DestinationConfig::BigQuery {
             project_id: "project-id".to_string(),
             dataset_id: "dataset-id".to_string(),
             service_account_key: "service-account-key".to_string(),
@@ -371,7 +382,7 @@ mod tests {
 
     #[test]
     pub fn serialize_settings_test() {
-        let actual = SinkConfig::BigQuery {
+        let actual = DestinationConfig::BigQuery {
             project_id: "project-id".to_string(),
             dataset_id: "dataset-id".to_string(),
             service_account_key: "service-account-key".to_string(),

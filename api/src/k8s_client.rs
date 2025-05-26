@@ -362,7 +362,7 @@ impl K8sClient for HttpK8sClient {
                         }
                       },
                       {
-                        "name": "APP_SINK__BIG_QUERY__SERVICE_ACCOUNT_KEY",
+                        "name": "APP_DESTINATION__BIG_QUERY__SERVICE_ACCOUNT_KEY",
                         "valueFrom": {
                           "secretKeyRef": {
                             "name": bq_secret_name,
