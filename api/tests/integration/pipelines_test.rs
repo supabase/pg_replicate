@@ -7,7 +7,7 @@ use crate::{
         PipelinesResponse, TestApp, UpdatePipelineRequest,
     },
     integration::images_test::create_default_image,
-    integration::sinks_test::create_destination,
+    integration::destination_test::create_destination,
     integration::sources_test::create_source,
     integration::tenants_test::create_tenant,
     integration::tenants_test::create_tenant_with_id_and_name,

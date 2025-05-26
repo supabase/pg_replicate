@@ -1,4 +1,4 @@
-use api::db::sinks::DestinationConfig;
+use api::db::destinations::DestinationConfig;
 use reqwest::StatusCode;
 
 use crate::{

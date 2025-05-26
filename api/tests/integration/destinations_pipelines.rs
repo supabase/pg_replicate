@@ -7,7 +7,7 @@ use crate::{
     },
     integration::images_test::create_default_image,
     integration::pipelines_test::{new_pipeline_config, updated_pipeline_config},
-    integration::sinks_test::{
+    integration::destination_test::{
         create_destination, new_destination_config, new_name, updated_destination_config,
         updated_name,
     },

@@ -17,6 +17,15 @@ use crate::{
     encryption,
     k8s_client::HttpK8sClient,
     routes::{
+        destinations::{
+            create_destination, delete_destination, read_all_destinations, read_destination,
+            update_destination, GetDestinationResponse, PostDestinationRequest,
+            PostDestinationResponse,
+        },
+        destinations_pipelines::{
+            create_destinations_and_pipelines, update_destinations_and_pipelines,
+            PostDestinationPipelineRequest, PostDestinationPipelineResponse,
+        },
         health_check::health_check,
         images::{
             create_image, delete_image, read_all_images, read_image, update_image,
@@ -26,15 +35,6 @@ use crate::{
             create_pipeline, delete_pipeline, get_pipeline_status, read_all_pipelines,
             read_pipeline, start_pipeline, stop_all_pipelines, stop_pipeline, update_pipeline,
             GetPipelineResponse, PostPipelineRequest, PostPipelineResponse,
-        },
-        sinks::{
-            create_destination, delete_destination, read_all_destinations, read_destination,
-            update_destination, GetDestinationResponse, PostDestinationRequest,
-            PostDestinationResponse,
-        },
-        sinks_pipelines::{
-            create_destinations_and_pipelines, update_destinations_and_pipelines,
-            PostDestinationPipelineRequest, PostDestinationPipelineResponse,
         },
         sources::{
             create_source, delete_source,
@@ -160,14 +160,14 @@ pub async fn run(
             crate::routes::sources::publications::delete_publication,
             crate::routes::sources::publications::read_all_publications,
             crate::routes::sources::tables::read_table_names,
-            crate::routes::sinks::create_destination,
-            crate::routes::sinks::read_destination,
-            crate::routes::sinks::update_destination,
-            crate::routes::sinks::delete_destination,
-            crate::routes::sinks::read_all_destinations,
+            crate::routes::destinations::create_destination,
+            crate::routes::destinations::read_destination,
+            crate::routes::destinations::update_destination,
+            crate::routes::destinations::delete_destination,
+            crate::routes::destinations::read_all_destinations,
             crate::routes::tenants_sources::create_tenant_and_source,
-            crate::routes::sinks_pipelines::create_destinations_and_pipelines,
-            crate::routes::sinks_pipelines::update_destinations_and_pipelines,
+            crate::routes::destinations_pipelines::create_destinations_and_pipelines,
+            crate::routes::destinations_pipelines::update_destinations_and_pipelines,
         ),
         components(schemas(
             PostImageRequest,

@@ -358,7 +358,7 @@ pub async fn destination_exists(
 
 #[cfg(test)]
 mod tests {
-    use crate::db::sinks::DestinationConfig;
+    use crate::db::destinations::DestinationConfig;
 
     #[test]
     pub fn deserialize_settings_test() {

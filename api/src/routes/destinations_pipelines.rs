@@ -13,15 +13,15 @@ use crate::{
     db::{
         self,
         pipelines::PipelineConfig,
-        sinks::{destination_exists, DestinationConfig},
-        sinks_pipelines::DestinationPipelineDbError,
+        destinations::{destination_exists, DestinationConfig},
+        destinations_pipelines::DestinationPipelineDbError,
         sources::source_exists,
     },
     encryption::EncryptionKey,
     routes::extract_tenant_id,
 };
 
-use super::{sinks::DestinationError, ErrorMessage, TenantIdError};
+use super::{destinations::DestinationError, ErrorMessage, TenantIdError};
 
 #[derive(Deserialize, ToSchema)]
 pub struct PostDestinationPipelineRequest {
@@ -148,7 +148,7 @@ pub async fn create_destinations_and_pipelines(
     let image = db::images::read_default_image(&pool)
         .await?
         .ok_or(DestinationPipelineError::NoDefaultImageFound)?;
-    let (destination_id, pipeline_id) = db::sinks_pipelines::create_destination_and_pipeline(
+    let (destination_id, pipeline_id) = db::destinations_pipelines::create_destination_and_pipeline(
         &pool,
         tenant_id,
         source_id,
@@ -205,7 +205,7 @@ pub async fn update_destinations_and_pipelines(
         ));
     }
 
-    db::sinks_pipelines::update_destination_and_pipeline(
+    db::destinations_pipelines::update_destination_and_pipeline(
         &pool,
         tenant_id,
         destination_id,
