@@ -11,7 +11,7 @@ use crate::{
     conversions::cdc_event::{CdcEvent, CdcEventConversionError},
     pipeline::{
         batching::stream::BatchTimeoutStream,
-        sinks::BatchSink,
+        destinations::BatchSink,
         sources::{postgres::CdcStreamError, CommonSourceError, Source},
         PipelineAction, PipelineError,
     },

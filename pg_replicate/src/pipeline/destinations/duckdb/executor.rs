@@ -9,7 +9,7 @@ use tracing::error;
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::{sinks::SinkError, PipelineResumptionState},
+    pipeline::{destinations::SinkError, PipelineResumptionState},
 };
 
 pub enum DuckDbRequest {

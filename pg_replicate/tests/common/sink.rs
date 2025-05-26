@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use pg_replicate::conversions::cdc_event::CdcEvent;
 use pg_replicate::conversions::table_row::TableRow;
-use pg_replicate::pipeline::sinks::{BatchSink, InfallibleSinkError};
+use pg_replicate::pipeline::destinations::{BatchSink, InfallibleSinkError};
 use pg_replicate::pipeline::PipelineResumptionState;
 use postgres::schema::{TableId, TableSchema};
 use std::cmp::max;

@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
+use destinations::SinkError;
 use postgres::schema::TableId;
-use sinks::SinkError;
 use sources::SourceError;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
 pub mod batching;
-pub mod sinks;
+pub mod destinations;
 pub mod sources;
 
 #[derive(Debug)]

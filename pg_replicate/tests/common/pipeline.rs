@@ -1,6 +1,6 @@
 use pg_replicate::pipeline::batching::data_pipeline::{BatchDataPipeline, BatchDataPipelineHandle};
 use pg_replicate::pipeline::batching::BatchConfig;
-use pg_replicate::pipeline::sinks::BatchSink;
+use pg_replicate::pipeline::destinations::BatchSink;
 use pg_replicate::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
 use pg_replicate::pipeline::PipelineAction;
 use postgres::schema::TableName;

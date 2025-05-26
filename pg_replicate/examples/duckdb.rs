@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        sinks::duckdb::DuckDbSink,
+        destinations::duckdb::DuckDbSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
