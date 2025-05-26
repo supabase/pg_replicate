@@ -224,7 +224,7 @@ pub async fn read_pipeline(
                 tenant_id: s.tenant_id,
                 source_id: s.source_id,
                 source_name: s.source_name,
-                sink_id: s.sink_id,
+                sink_id: s.destination_id,
                 sink_name: s.sink_name,
                 replicator_id: s.replicator_id,
                 publication_name: s.publication_name,
@@ -333,7 +333,7 @@ pub async fn read_all_pipelines(
             tenant_id: pipeline.tenant_id,
             source_id: pipeline.source_id,
             source_name: pipeline.source_name,
-            sink_id: pipeline.sink_id,
+            sink_id: pipeline.destination_id,
             sink_name: pipeline.sink_name,
             replicator_id: pipeline.replicator_id,
             publication_name: pipeline.publication_name,
@@ -500,7 +500,7 @@ async fn read_data(
     let source = db::sources::read_source(pool, tenant_id, source_id, encryption_key)
         .await?
         .ok_or(PipelineError::SourceNotFound(source_id))?;
-    let sink_id = pipeline.sink_id;
+    let sink_id = pipeline.destination_id;
     let sink = db::sinks::read_sink(pool, tenant_id, sink_id, encryption_key)
         .await?
         .ok_or(PipelineError::SinkNotFound(sink_id))?;
