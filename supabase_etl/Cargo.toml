@@ -1,5 +1,5 @@
 [package]
-name = "pg_replicate"
+name = "supabase_etl"
 version = "0.1.0"
 edition = "2021"
 
@@ -18,7 +18,7 @@ name = "stdout"
 required-features = ["stdout"]
 
 [dependencies]
-postgres = { workspace = true, features = ["tokio"]}
+postgres = { workspace = true, features = ["tokio"] }
 
 async-trait = { workspace = true }
 bigdecimal = { workspace = true, features = ["std"] }
@@ -52,7 +52,7 @@ tracing = { workspace = true, default-features = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
-postgres = { workspace = true, features = ["test-utils", "tokio"]}
+postgres = { workspace = true, features = ["test-utils", "tokio"] }
 
 clap = { workspace = true, default-features = true, features = [
     "std",

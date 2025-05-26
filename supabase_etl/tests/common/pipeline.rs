@@ -1,11 +1,11 @@
-use pg_replicate::pipeline::batching::data_pipeline::{BatchDataPipeline, BatchDataPipelineHandle};
-use pg_replicate::pipeline::batching::BatchConfig;
-use pg_replicate::pipeline::destinations::BatchDestination;
-use pg_replicate::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
-use pg_replicate::pipeline::PipelineAction;
 use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseOptions;
 use std::time::Duration;
+use supabase_etl::pipeline::batching::data_pipeline::{BatchDataPipeline, BatchDataPipelineHandle};
+use supabase_etl::pipeline::batching::BatchConfig;
+use supabase_etl::pipeline::destinations::BatchDestination;
+use supabase_etl::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
+use supabase_etl::pipeline::PipelineAction;
 use tokio::task::JoinHandle;
 
 /// Defines the operational mode for a PostgreSQL replication pipeline.

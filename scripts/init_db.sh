@@ -3,7 +3,7 @@ set -eo pipefail
 
 if [ ! -d "api/migrations" ]; then
   echo >&2 "❌ Error: 'api/migrations' folder not found."
-  echo >&2 "Please run this script from the 'pg_replicate' directory."
+  echo >&2 "Please run this script from the 'supabase_etl' directory."
   exit 1
 fi
 
