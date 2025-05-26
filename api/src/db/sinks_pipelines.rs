@@ -32,7 +32,7 @@ pub async fn create_sink_and_pipeline(
     pool: &PgPool,
     tenant_id: &str,
     source_id: i64,
-    sink_name: &str,
+    destination_name: &str,
     sink_config: SinkConfig,
     image_id: i64,
     publication_name: &str,
@@ -44,7 +44,7 @@ pub async fn create_sink_and_pipeline(
     let pipeline_config =
         serde_json::to_value(pipeline_config).expect("failed to serialize config");
     let mut txn = pool.begin().await?;
-    let sink_id = create_sink_txn(&mut txn, tenant_id, sink_name, sink_config).await?;
+    let sink_id = create_sink_txn(&mut txn, tenant_id, destination_name, sink_config).await?;
     let pipeline_id = create_pipeline_txn(
         &mut txn,
         tenant_id,
@@ -66,7 +66,7 @@ pub async fn update_sink_and_pipeline(
     sink_id: i64,
     pipeline_id: i64,
     source_id: i64,
-    sink_name: &str,
+    destination_name: &str,
     sink_config: SinkConfig,
     publication_name: &str,
     pipeline_config: PipelineConfig,
@@ -77,7 +77,8 @@ pub async fn update_sink_and_pipeline(
     let pipeline_config =
         serde_json::to_value(pipeline_config).expect("failed to serialize config");
     let mut txn = pool.begin().await?;
-    let sink_id_res = update_sink_txn(&mut txn, tenant_id, sink_name, sink_id, sink_config).await?;
+    let sink_id_res =
+        update_sink_txn(&mut txn, tenant_id, destination_name, sink_id, sink_config).await?;
     if sink_id_res.is_none() {
         txn.rollback().await?;
         return Err(SinkPipelineDbError::SinkNotFound(sink_id));
