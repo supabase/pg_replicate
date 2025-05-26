@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        delete from app.sinks\n        where tenant_id = $1 and id = $2\n        returning id\n        ",
+  "query": "\n        update app.destinations\n        set config = $1, name = $2\n        where tenant_id = $3 and id = $4\n        returning id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,8 @@
     ],
     "parameters": {
       "Left": [
+        "Jsonb",
+        "Text",
         "Text",
         "Int8"
       ]
@@ -19,5 +21,5 @@
       false
     ]
   },
-  "hash": "b0bfaa2bcc39a52a856346d127af7304f5b0b36cc4463595251be7467f251a45"
+  "hash": "96a26fc4caf7b072bd3d3ff4705cdd3a5de0034143b9a53c7859d72fe35efff7"
 }

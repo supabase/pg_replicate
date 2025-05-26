@@ -184,7 +184,7 @@ pub async fn create_sink_txn(
 ) -> Result<i64, SinksDbError> {
     let record = sqlx::query!(
         r#"
-        insert into app.sinks (tenant_id, name, config)
+        insert into app.destinations (tenant_id, name, config)
         values ($1, $2, $3)
         returning id
         "#,
@@ -207,7 +207,7 @@ pub async fn read_sink(
     let record = sqlx::query!(
         r#"
         select id, tenant_id, name, config
-        from app.sinks
+        from app.destinations
         where tenant_id = $1 and id = $2
         "#,
         tenant_id,
@@ -257,7 +257,7 @@ pub async fn update_sink_txn(
 ) -> Result<Option<i64>, SinksDbError> {
     let record = sqlx::query!(
         r#"
-        update app.sinks
+        update app.destinations
         set config = $1, name = $2
         where tenant_id = $3 and id = $4
         returning id
@@ -280,7 +280,7 @@ pub async fn delete_sink(
 ) -> Result<Option<i64>, sqlx::Error> {
     let record = sqlx::query!(
         r#"
-        delete from app.sinks
+        delete from app.destinations
         where tenant_id = $1 and id = $2
         returning id
         "#,
@@ -301,7 +301,7 @@ pub async fn read_all_sinks(
     let records = sqlx::query!(
         r#"
         select id, tenant_id, name, config
-        from app.sinks
+        from app.destinations
         where tenant_id = $1
         "#,
         tenant_id,
@@ -333,7 +333,7 @@ pub async fn sink_exists(
     let record = sqlx::query!(
         r#"
         select exists (select id
-        from app.sinks
+        from app.destinations
         where tenant_id = $1 and id = $2) as "exists!"
         "#,
         tenant_id,

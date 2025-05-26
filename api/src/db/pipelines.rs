@@ -100,7 +100,7 @@ pub async fn read_pipeline(
             p.config
         from app.pipelines p
         join app.sources sr on p.source_id = sr.id
-        join app.sinks sn on p.sink_id = sn.id
+        join app.destinations sn on p.sink_id = sn.id
         where p.tenant_id = $1 and p.id = $2
         "#,
         tenant_id,
@@ -215,7 +215,7 @@ pub async fn read_all_pipelines(
             p.config
         from app.pipelines p
         join app.sources sr on p.source_id = sr.id
-        join app.sinks sn on p.sink_id = sn.id
+        join app.destinations sn on p.sink_id = sn.id
         where p.tenant_id = $1
         "#,
         tenant_id,
