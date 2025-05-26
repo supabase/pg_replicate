@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-supabase_etl = { workspace = true, features = ["bigquery"] }
+etl = { workspace = true, features = ["bigquery"] }
 postgres = { workspace = true, features = ["tokio"] }
 telemetry = { workspace = true }
 

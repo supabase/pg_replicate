@@ -1,22 +1,22 @@
 use std::{error::Error, time::Duration};
 
 use clap::{Args, Parser, Subcommand};
-use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseOptions;
-use supabase_etl::{
+use etl::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        destinations::duckdb::DuckDbDestination,
+        destinations::stdout::StdoutDestination,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
     SslMode,
 };
+use postgres::schema::TableName;
+use postgres::tokio::options::PgDatabaseOptions;
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Parser)]
-#[command(name = "duckdb", version, about, arg_required_else_help = true)]
+#[command(name = "stdout", version, about, arg_required_else_help = true)]
 struct AppArgs {
     #[clap(flatten)]
     db_args: DbArgs,
@@ -46,29 +46,6 @@ struct DbArgs {
     /// Postgres database user password
     #[arg(long)]
     db_password: Option<String>,
-
-    #[clap(flatten)]
-    duckdb: DuckDbOptions,
-}
-
-#[derive(Debug, clap::Args)]
-#[group(required = true, multiple = true)]
-pub struct DuckDbOptions {
-    /// DuckDb file name
-    #[clap(long)]
-    duckdb_file: Option<String>,
-
-    /// MotherDuck access token
-    #[clap(long, conflicts_with = "duckdb_file", requires = "motherduck_db_name")]
-    motherduck_access_token: Option<String>,
-
-    /// MotherDuck database name
-    #[clap(
-        long,
-        conflicts_with = "duckdb_file",
-        requires = "motherduck_access_token"
-    )]
-    motherduck_db_name: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -96,7 +73,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "duckdb=info".into()),
+                .unwrap_or_else(|_| "stdout=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -111,7 +88,6 @@ fn set_log_level() {
 async fn main_impl() -> Result<(), Box<dyn Error>> {
     set_log_level();
     init_tracing();
-
     let args = AppArgs::parse();
     let db_args = args.db_args;
 
@@ -149,23 +125,11 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let duckdb_destination = match (
-        db_args.duckdb.duckdb_file,
-        db_args.duckdb.motherduck_access_token,
-        db_args.duckdb.motherduck_db_name,
-    ) {
-        (Some(duckdb_file), None, None) => DuckDbDestination::file(duckdb_file).await?,
-        (None, Some(access_token), Some(db_name)) => {
-            DuckDbDestination::mother_duck(&access_token, &db_name).await?
-        }
-        _ => {
-            unreachable!()
-        }
-    };
+    let stdout_destination = StdoutDestination;
 
     let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
     let mut pipeline =
-        BatchDataPipeline::new(postgres_source, duckdb_destination, action, batch_config);
+        BatchDataPipeline::new(postgres_source, stdout_destination, action, batch_config);
 
     pipeline.start().await?;
 

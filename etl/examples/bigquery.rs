@@ -1,25 +1,28 @@
 use std::{error::Error, time::Duration};
 
 use clap::{Args, Parser, Subcommand};
-use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseOptions;
-use supabase_etl::{
+use etl::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        destinations::stdout::StdoutDestination,
+        destinations::bigquery::BigQueryBatchDestination,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
     SslMode,
 };
+use postgres::schema::TableName;
+use postgres::tokio::options::PgDatabaseOptions;
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Parser)]
-#[command(name = "stdout", version, about, arg_required_else_help = true)]
+#[command(name = "bigquery", version, about, arg_required_else_help = true)]
 struct AppArgs {
     #[clap(flatten)]
     db_args: DbArgs,
+
+    #[clap(flatten)]
+    bq_args: BqArgs,
 
     #[clap(subcommand)]
     command: Command,
@@ -48,6 +51,27 @@ struct DbArgs {
     db_password: Option<String>,
 }
 
+#[derive(Debug, Args)]
+struct BqArgs {
+    /// Path to GCP's service account key to access BigQuery
+    #[arg(long)]
+    bq_sa_key_file: String,
+
+    /// BigQuery project id
+    #[arg(long)]
+    bq_project_id: String,
+
+    /// BigQuery dataset id
+    #[arg(long)]
+    bq_dataset_id: String,
+
+    #[arg(long)]
+    max_batch_size: usize,
+
+    #[arg(long)]
+    max_batch_fill_duration_secs: u64,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Copy a table
@@ -73,7 +97,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "stdout=info".into()),
+                .unwrap_or_else(|_| "bigquery=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -88,8 +112,14 @@ fn set_log_level() {
 async fn main_impl() -> Result<(), Box<dyn Error>> {
     set_log_level();
     init_tracing();
+
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("failed to install default crypto provider");
+
     let args = AppArgs::parse();
     let db_args = args.db_args;
+    let bq_args = args.bq_args;
 
     let options = PgDatabaseOptions {
         host: db_args.db_host,
@@ -125,11 +155,20 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let stdout_destination = StdoutDestination;
+    let bigquery_destination = BigQueryBatchDestination::new_with_key_path(
+        bq_args.bq_project_id,
+        bq_args.bq_dataset_id,
+        &bq_args.bq_sa_key_file,
+        5,
+    )
+    .await?;
 
-    let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
+    let batch_config = BatchConfig::new(
+        bq_args.max_batch_size,
+        Duration::from_secs(bq_args.max_batch_fill_duration_secs),
+    );
     let mut pipeline =
-        BatchDataPipeline::new(postgres_source, stdout_destination, action, batch_config);
+        BatchDataPipeline::new(postgres_source, bigquery_destination, action, batch_config);
 
     pipeline.start().await?;
 

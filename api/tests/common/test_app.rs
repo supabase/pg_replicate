@@ -1,4 +1,4 @@
-use crate::common::database::create_supabase_etl_api_database;
+use crate::common::database::create_etl_api_database;
 use api::{
     configuration::{get_settings, Settings},
     db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
@@ -536,7 +536,7 @@ pub async fn spawn_test_app() -> TestApp {
     // We use a random database name.
     settings.database.name = Uuid::new_v4().to_string();
 
-    let connection_pool = create_supabase_etl_api_database(&settings.database).await;
+    let connection_pool = create_etl_api_database(&settings.database).await;
 
     let key = generate_random_key::<32>().expect("failed to generate random key");
     let encryption_key = encryption::EncryptionKey { id: 0, key };
