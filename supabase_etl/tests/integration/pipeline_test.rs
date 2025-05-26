@@ -3,11 +3,11 @@ use crate::common::destination::TestDestination;
 use crate::common::pipeline::{spawn_async_pg_pipeline, spawn_pg_pipeline, PipelineMode};
 use crate::common::table::assert_table_schema;
 use crate::common::wait_for_condition;
-use pg_replicate::conversions::cdc_event::CdcEvent;
-use pg_replicate::conversions::Cell;
 use postgres::schema::{ColumnSchema, TableId};
 use postgres::tokio::test_utils::PgDatabase;
 use std::ops::Range;
+use supabase_etl::conversions::cdc_event::CdcEvent;
+use supabase_etl::conversions::Cell;
 use tokio_postgres::types::Type;
 
 fn get_expected_ages_sum(num_users: usize) -> i32 {

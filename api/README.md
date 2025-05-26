@@ -1,4 +1,4 @@
-# `pg_replicate` API
+# `supabase_etl` API
 
 This API service provides a RESTful interface for managing PostgreSQL replication pipelines. It enables you to:
 

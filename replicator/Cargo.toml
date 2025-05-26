@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pg_replicate = { workspace = true, features = ["bigquery"] }
+supabase_etl = { workspace = true, features = ["bigquery"] }
 postgres = { workspace = true, features = ["tokio"] }
 telemetry = { workspace = true }
 

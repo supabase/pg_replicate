@@ -3,7 +3,8 @@ use std::{io::BufReader, time::Duration, vec};
 use configuration::{
     get_configuration, BatchSettings, Settings, SinkSettings, SourceSettings, TlsSettings,
 };
-use pg_replicate::{
+use postgres::tokio::options::PgDatabaseOptions;
+use supabase_etl::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
         destinations::bigquery::BigQueryBatchDestination,
@@ -12,7 +13,6 @@ use pg_replicate::{
     },
     SslMode,
 };
-use postgres::tokio::options::PgDatabaseOptions;
 use telemetry::init_tracing;
 use tracing::{info, instrument};
 

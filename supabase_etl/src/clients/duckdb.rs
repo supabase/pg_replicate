@@ -41,7 +41,7 @@ impl DuckDbClient {
     ) -> Result<DuckDbClient, duckdb::Error> {
         let conf = Config::default()
             .with("motherduck_token", access_token)?
-            .with("custom_user_agent", "pg_replicate")?;
+            .with("custom_user_agent", "supabase_etl")?;
 
         let conn = Connection::open_with_flags(format!("md:{db_name}"), conf)?;
         let current_database = Self::current_database(&conn)?;
@@ -316,7 +316,7 @@ impl DuckDbClient {
     pub fn get_copied_table_ids(&self) -> Result<HashSet<TableId>, duckdb::Error> {
         let mut stmt = self
             .conn
-            .prepare("select table_id from pg_replicate.copied_tables")?;
+            .prepare("select table_id from supabase_etl.copied_tables")?;
         let mut rows = stmt.query([])?;
 
         let mut res = HashSet::new();
@@ -328,7 +328,7 @@ impl DuckDbClient {
     }
 
     pub fn get_last_lsn(&self) -> Result<PgLsn, duckdb::Error> {
-        let mut stmt = self.conn.prepare("select lsn from pg_replicate.last_lsn")?;
+        let mut stmt = self.conn.prepare("select lsn from supabase_etl.last_lsn")?;
         let lsn = stmt.query_row::<u64, _, _>([], |r| r.get(0))?;
         Ok(lsn.into())
     }
@@ -337,21 +337,21 @@ impl DuckDbClient {
         let lsn: u64 = lsn.into();
         let mut stmt = self
             .conn
-            .prepare("update pg_replicate.last_lsn set lsn = ?")?;
+            .prepare("update supabase_etl.last_lsn set lsn = ?")?;
         stmt.execute([lsn])?;
         Ok(())
     }
 
     pub fn insert_last_lsn_row(&self) -> Result<(), duckdb::Error> {
         self.conn
-            .execute("insert into pg_replicate.last_lsn values (0)", [])?;
+            .execute("insert into supabase_etl.last_lsn values (0)", [])?;
         Ok(())
     }
 
     pub fn insert_into_copied_tables(&self, table_id: TableId) -> Result<(), duckdb::Error> {
         let mut stmt = self
             .conn
-            .prepare("insert into pg_replicate.copied_tables values (?)")?;
+            .prepare("insert into supabase_etl.copied_tables values (?)")?;
         stmt.execute([table_id])?;
 
         Ok(())
