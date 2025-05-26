@@ -1,5 +1,5 @@
-pub use executor::{DuckDbExecutorError, DuckDbRequest};
 pub use destination::DuckDbDestination;
+pub use executor::{DuckDbExecutorError, DuckDbRequest};
 
-mod executor;
 mod destination;
+mod executor;
