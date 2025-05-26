@@ -1,7 +1,7 @@
 use crate::common::database::create_etl_api_database;
 use api::{
     configuration::{get_settings, Settings},
-    db::{pipelines::PipelineConfig, destinations::DestinationConfig, sources::SourceConfig},
+    db::{destinations::DestinationConfig, pipelines::PipelineConfig, sources::SourceConfig},
     encryption::{self, generate_random_key},
     startup::run,
 };

@@ -12,9 +12,9 @@ use utoipa::ToSchema;
 use crate::{
     db::{
         self,
-        pipelines::PipelineConfig,
         destinations::{destination_exists, DestinationConfig},
         destinations_pipelines::DestinationPipelineDbError,
+        pipelines::PipelineConfig,
         sources::source_exists,
     },
     encryption::EncryptionKey,
@@ -148,18 +148,19 @@ pub async fn create_destinations_and_pipelines(
     let image = db::images::read_default_image(&pool)
         .await?
         .ok_or(DestinationPipelineError::NoDefaultImageFound)?;
-    let (destination_id, pipeline_id) = db::destinations_pipelines::create_destination_and_pipeline(
-        &pool,
-        tenant_id,
-        source_id,
-        &destination_name,
-        destination_config,
-        image.id,
-        &publication_name,
-        pipeline_config,
-        &encryption_key,
-    )
-    .await?;
+    let (destination_id, pipeline_id) =
+        db::destinations_pipelines::create_destination_and_pipeline(
+            &pool,
+            tenant_id,
+            source_id,
+            &destination_name,
+            destination_config,
+            image.id,
+            &publication_name,
+            pipeline_config,
+            &encryption_key,
+        )
+        .await?;
     let response = PostDestinationPipelineResponse {
         destination_id,
         pipeline_id,

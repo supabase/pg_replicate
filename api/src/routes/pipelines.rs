@@ -15,10 +15,10 @@ use utoipa::ToSchema;
 use crate::{
     db::{
         self,
+        destinations::{destination_exists, Destination, DestinationConfig, DestinationsDbError},
         images::Image,
         pipelines::{Pipeline, PipelineConfig},
         replicators::Replicator,
-        destinations::{destination_exists, Destination, DestinationConfig, DestinationsDbError},
         sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
@@ -501,9 +501,10 @@ async fn read_data(
         .await?
         .ok_or(PipelineError::SourceNotFound(source_id))?;
     let destination_id = pipeline.destination_id;
-    let destination = db::destinations::read_destination(pool, tenant_id, destination_id, encryption_key)
-        .await?
-        .ok_or(PipelineError::DestinationNotFound(destination_id))?;
+    let destination =
+        db::destinations::read_destination(pool, tenant_id, destination_id, encryption_key)
+            .await?
+            .ok_or(PipelineError::DestinationNotFound(destination_id))?;
 
     Ok((pipeline, replicator, image, source, destination))
 }

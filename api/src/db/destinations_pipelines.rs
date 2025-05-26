@@ -5,10 +5,10 @@ use thiserror::Error;
 use crate::encryption::EncryptionKey;
 
 use super::{
-    pipelines::{create_pipeline_txn, update_pipeline_txn, PipelineConfig},
     destinations::{
         create_destination_txn, update_destination_txn, DestinationConfig, DestinationsDbError,
     },
+    pipelines::{create_pipeline_txn, update_pipeline_txn, PipelineConfig},
 };
 
 #[derive(Debug, Error)]

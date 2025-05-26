@@ -2,11 +2,11 @@ use actix_web::HttpRequest;
 use serde::Serialize;
 use thiserror::Error;
 
+pub mod destinations;
+pub mod destinations_pipelines;
 pub mod health_check;
 pub mod images;
 pub mod pipelines;
-pub mod destinations;
-pub mod destinations_pipelines;
 pub mod sources;
 pub mod tenants;
 pub mod tenants_sources;

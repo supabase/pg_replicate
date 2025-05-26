@@ -117,8 +117,8 @@ pub async fn create_destination(
     let tenant_id = extract_tenant_id(&req)?;
     let name = destination.name;
     let config = destination.config;
-    let id =
-        db::destinations::create_destination(&pool, tenant_id, &name, config, &encryption_key).await?;
+    let id = db::destinations::create_destination(&pool, tenant_id, &name, config, &encryption_key)
+        .await?;
     let response = PostDestinationResponse { id };
     Ok(Json(response))
 }
@@ -143,15 +143,16 @@ pub async fn read_destination(
 ) -> Result<impl Responder, DestinationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let destination_id = destination_id.into_inner();
-    let response = db::destinations::read_destination(&pool, tenant_id, destination_id, &encryption_key)
-        .await?
-        .map(|s| GetDestinationResponse {
-            id: s.id,
-            tenant_id: s.tenant_id,
-            name: s.name,
-            config: s.config,
-        })
-        .ok_or(DestinationError::DestinationNotFound(destination_id))?;
+    let response =
+        db::destinations::read_destination(&pool, tenant_id, destination_id, &encryption_key)
+            .await?
+            .map(|s| GetDestinationResponse {
+                id: s.id,
+                tenant_id: s.tenant_id,
+                name: s.name,
+                config: s.config,
+            })
+            .ok_or(DestinationError::DestinationNotFound(destination_id))?;
     Ok(Json(response))
 }
 
@@ -233,7 +234,9 @@ pub async fn read_all_destinations(
 ) -> Result<impl Responder, DestinationError> {
     let tenant_id = extract_tenant_id(&req)?;
     let mut destinations = vec![];
-    for destination in db::destinations::read_all_destinations(&pool, tenant_id, &encryption_key).await? {
+    for destination in
+        db::destinations::read_all_destinations(&pool, tenant_id, &encryption_key).await?
+    {
         let destination = GetDestinationResponse {
             id: destination.id,
             tenant_id: destination.tenant_id,

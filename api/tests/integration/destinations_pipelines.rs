@@ -5,12 +5,12 @@ use crate::{
         spawn_test_app, CreateDestinationPipelineResponse, DestinationResponse, PipelineResponse,
         PostDestinationPipelineRequest,
     },
-    integration::images_test::create_default_image,
-    integration::pipelines_test::{new_pipeline_config, updated_pipeline_config},
     integration::destination_test::{
         create_destination, new_destination_config, new_name, updated_destination_config,
         updated_name,
     },
+    integration::images_test::create_default_image,
+    integration::pipelines_test::{new_pipeline_config, updated_pipeline_config},
     integration::sources_test::create_source,
     integration::tenants_test::{create_tenant, create_tenant_with_id_and_name},
 };

@@ -80,7 +80,10 @@ impl BigQueryBatchDestination {
     }
 
     #[expect(clippy::result_large_err)]
-    fn get_table_schema(&self, table_id: TableId) -> Result<&TableSchema, BigQueryDestinationError> {
+    fn get_table_schema(
+        &self,
+        table_id: TableId,
+    ) -> Result<&TableSchema, BigQueryDestinationError> {
         self.table_schemas
             .as_ref()
             .ok_or(BigQueryDestinationError::MissingTableSchemas)?
@@ -211,7 +214,9 @@ impl BatchDestination for BigQueryBatchDestination {
                         if commit_lsn == final_lsn {
                             new_last_lsn = commit_lsn;
                         } else {
-                            Err(BigQueryDestinationError::IncorrectCommitLsn(commit_lsn, final_lsn))?
+                            Err(BigQueryDestinationError::IncorrectCommitLsn(
+                                commit_lsn, final_lsn,
+                            ))?
                         }
                     } else {
                         Err(BigQueryDestinationError::CommitWithoutBegin)?
