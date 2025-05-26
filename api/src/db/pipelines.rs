@@ -92,15 +92,15 @@ pub async fn read_pipeline(
         select p.id,
             p.tenant_id,
             source_id,
-            sr.name as source_name,
+            s.name as source_name,
             destination_id,
-            sn.name as sink_name,
+            d.name as sink_name,
             replicator_id,
             publication_name,
             p.config
         from app.pipelines p
-        join app.sources sr on p.source_id = sr.id
-        join app.destinations sn on p.destination_id = sn.id
+        join app.sources s on p.source_id = s.id
+        join app.destinations d on p.destination_id = d.id
         where p.tenant_id = $1 and p.id = $2
         "#,
         tenant_id,
@@ -207,15 +207,15 @@ pub async fn read_all_pipelines(
         select p.id,
             p.tenant_id,
             source_id,
-            sr.name as source_name,
+            s.name as source_name,
             destination_id,
-            sn.name as sink_name,
+            d.name as sink_name,
             replicator_id,
             publication_name,
             p.config
         from app.pipelines p
-        join app.sources sr on p.source_id = sr.id
-        join app.destinations sn on p.destination_id = sn.id
+        join app.sources s on p.source_id = s.id
+        join app.destinations d on p.destination_id = d.id
         where p.tenant_id = $1
         "#,
         tenant_id,
