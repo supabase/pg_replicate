@@ -42,17 +42,22 @@ impl PgDatabase {
         table_name: TableName,
         columns: &[(&str, &str)], // (column_name, column_type)
     ) -> Result<TableId, tokio_postgres::Error> {
-        let columns_str = columns
-            .iter()
-            .map(|(name, typ)| format!("{} {}", name, typ))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let create_table_query = format!(
-            "create table {} (id bigserial primary key, {})",
-            table_name.as_quoted_identifier(),
-            columns_str
+        let mut create_table_query = format!(
+            "create table {} (id bigserial primary key",
+            table_name.as_quoted_identifier()
         );
+
+        if !columns.is_empty() {
+            let columns_str = columns
+                .iter()
+                .map(|(name, typ)| format!("{} {}", name, typ))
+                .collect::<Vec<_>>()
+                .join(", ");
+            create_table_query.push_str(", ");
+            create_table_query.push_str(&columns_str);
+        }
+
+        create_table_query.push(')');
         self.client.execute(&create_table_query, &[]).await?;
 
         // Get the OID of the newly created table
@@ -77,16 +82,23 @@ impl PgDatabase {
         columns: &[&str],
         values: &[&(dyn tokio_postgres::types::ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::Error> {
-        let columns_str = columns.join(", ");
-        let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${}", i)).collect();
-        let placeholders_str = placeholders.join(", ");
+        let insert_query = if columns.is_empty() {
+            format!(
+                "insert into {} default values",
+                table_name.as_quoted_identifier()
+            )
+        } else {
+            let columns_str = columns.join(", ");
+            let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${}", i)).collect();
+            let placeholders_str = placeholders.join(", ");
 
-        let insert_query = format!(
-            "insert into {} ({}) values ({})",
-            table_name.as_quoted_identifier(),
-            columns_str,
-            placeholders_str
-        );
+            format!(
+                "insert into {} ({}) values ({})",
+                table_name.as_quoted_identifier(),
+                columns_str,
+                placeholders_str
+            )
+        };
 
         self.client.execute(&insert_query, values).await
     }
