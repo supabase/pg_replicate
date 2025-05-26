@@ -9,7 +9,7 @@ use tokio_postgres::types::PgLsn;
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::{sinks::BatchSink, PipelineResumptionState},
+    pipeline::{destinations::BatchSink, PipelineResumptionState},
 };
 
 use super::{

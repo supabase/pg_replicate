@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        sinks::bigquery::BigQueryBatchSink,
+        destinations::bigquery::BigQueryBatchSink,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
