@@ -54,7 +54,11 @@ async fn double_users_ages(database: &PgDatabase) {
         .unwrap();
 }
 
-fn assert_users_table_schema(sink: &TestSink, users_table_id: TableId, schema_index: usize) {
+fn assert_users_table_schema(
+    destination: &TestDestination,
+    users_table_id: TableId,
+    schema_index: usize,
+) {
     let additional_expected_columns = [ColumnSchema {
         name: "age".to_string(),
         typ: Type::INT4,
@@ -86,7 +90,7 @@ fn get_users_age_sum_from_rows(destination: &TestDestination, users_table_id: Ta
     actual_sum
 }
 
-fn get_users_age_sum_from_events(
+fn get_users_age_sum_from_dml_events(
     destination: &TestDestination,
     users_table_id: TableId,
     // We use a range since events are not indexed by table id but just an ordered sequence which
@@ -177,7 +181,8 @@ async fn test_cdc_with_insert_and_update() {
     };
 
     // We create a pipeline that subscribes to the changes of the users table.
-    let mut pipeline = spawn_async_pg_pipeline(&database.options, mode.clone(), sink.clone()).await;
+    let mut pipeline =
+        spawn_async_pg_pipeline(&database.options, mode.clone(), destination.clone()).await;
 
     // We insert 100 rows.
     fill_users(&database, 100).await;
@@ -189,19 +194,20 @@ async fn test_cdc_with_insert_and_update() {
     // Wait for all events to be processed.
     let expected_sum = get_expected_ages_sum(100);
     wait_for_condition(|| {
-        let actual_sum = get_users_age_sum_from_events(&destination, users_table_id, 0..100);
+        let actual_sum = get_users_age_sum_from_dml_events(&destination, users_table_id, 0..100);
         actual_sum == expected_sum
     })
     .await;
 
     pipeline.stop_and_wait(pipeline_task_handle).await;
 
-    assert_users_table_schema(&sink, users_table_id, 0);
-    assert_eq!(sink.get_tables_copied(), 0);
-    assert_eq!(sink.get_tables_truncated(), 0);
+    assert_users_table_schema(&destination, users_table_id, 0);
+    assert_eq!(destination.get_tables_copied(), 0);
+    assert_eq!(destination.get_tables_truncated(), 0);
 
     // We recreate the pipeline with the same details since we want to resume streaming.
-    let mut pipeline = spawn_async_pg_pipeline(&database.options, mode.clone(), sink.clone()).await;
+    let mut pipeline =
+        spawn_async_pg_pipeline(&database.options, mode.clone(), destination.clone()).await;
 
     // We double the user ages.
     double_users_ages(&database).await;
@@ -212,16 +218,16 @@ async fn test_cdc_with_insert_and_update() {
     // Wait for all events to be processed.
     let expected_sum = expected_sum * 2;
     wait_for_condition(|| {
-        let actual_sum = get_users_age_sum_from_dml_events(&sink, users_table_id, 100..200);
+        let actual_sum = get_users_age_sum_from_dml_events(&destination, users_table_id, 100..200);
         actual_sum == expected_sum
     })
     .await;
 
     pipeline.stop_and_wait(pipeline_task_handle).await;
 
-    assert_users_table_schema(&sink, users_table_id, 1);
-    assert_eq!(sink.get_tables_copied(), 0);
-    assert_eq!(sink.get_tables_truncated(), 0);
+    assert_users_table_schema(&destination, users_table_id, 1);
+    assert_eq!(destination.get_tables_copied(), 0);
+    assert_eq!(destination.get_tables_truncated(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -239,7 +245,7 @@ async fn test_cdc_table_schema_consistency() {
         .await
         .unwrap();
 
-    let sink = TestSink::new();
+    let destination = TestDestination::new();
     let slot_name = "tables_slot";
 
     // We create a pipeline that subscribes to the changes of the table.
@@ -249,7 +255,7 @@ async fn test_cdc_table_schema_consistency() {
             publication: "publication_1".to_owned(),
             slot_name: slot_name.to_owned(),
         },
-        sink.clone(),
+        destination.clone(),
     )
     .await;
 
@@ -259,7 +265,7 @@ async fn test_cdc_table_schema_consistency() {
 
     // We get the consistent table schemas which are the ones created on the first pipeline run
     // when the slot was not created.
-    let consistent_table_schemas = sink.get_tables_schemas()[0].clone();
+    let consistent_table_schemas = destination.get_tables_schemas()[0].clone();
 
     // We create a new table.
     database
@@ -281,7 +287,7 @@ async fn test_cdc_table_schema_consistency() {
             publication: "publication_2".to_owned(),
             slot_name: slot_name.to_owned(),
         },
-        sink.clone(),
+        destination.clone(),
     )
     .await;
 
@@ -296,5 +302,8 @@ async fn test_cdc_table_schema_consistency() {
     //
     // This test is ignored because it fails, but it HAS to be unignored once the pipeline behavior
     // is fixed. We expect either to throw an error or to restart the replication with a new slot.
-    assert_eq!(sink.get_tables_schemas()[1], consistent_table_schemas);
+    assert_eq!(
+        destination.get_tables_schemas()[1],
+        consistent_table_schemas
+    );
 }
