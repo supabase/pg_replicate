@@ -13,23 +13,23 @@ use crate::{
     db::{
         self,
         pipelines::PipelineConfig,
-        sinks::{sink_exists, SinkConfig},
-        sinks_pipelines::SinkPipelineDbError,
+        sinks::{destination_exists, DestinationConfig},
+        sinks_pipelines::DestinationPipelineDbError,
         sources::source_exists,
     },
     encryption::EncryptionKey,
     routes::extract_tenant_id,
 };
 
-use super::{sinks::SinkError, ErrorMessage, TenantIdError};
+use super::{sinks::DestinationError, ErrorMessage, TenantIdError};
 
 #[derive(Deserialize, ToSchema)]
-pub struct PostSinkPipelineRequest {
-    #[schema(example = "Sink Name", required = true)]
-    pub sink_name: String,
+pub struct PostDestinationPipelineRequest {
+    #[schema(example = "Destination Name", required = true)]
+    pub destination_name: String,
 
     #[schema(required = true)]
-    pub sink_config: SinkConfig,
+    pub destination_config: DestinationConfig,
 
     #[schema(required = true)]
     pub source_id: i64,
@@ -42,7 +42,7 @@ pub struct PostSinkPipelineRequest {
 }
 
 #[derive(Debug, Error)]
-enum SinkPipelineError {
+enum DestinationPipelineError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -55,24 +55,25 @@ enum SinkPipelineError {
     #[error("source with id {0} not found")]
     SourceNotFound(i64),
 
-    #[error("sink with id {0} not found")]
-    SinkNotFound(i64),
+    #[error("destination with id {0} not found")]
+    DestinationNotFound(i64),
 
     #[error("pipeline with id {0} not found")]
     PipelineNotFound(i64),
 
-    #[error("sinks error: {0}")]
-    Sink(#[from] SinkError),
+    #[error("destinations error: {0}")]
+    Destination(#[from] DestinationError),
 
-    #[error("sinks and pipelines db error: {0}")]
-    SinkPipelineDb(#[from] SinkPipelineDbError),
+    #[error("destinations and pipelines db error: {0}")]
+    DestinationPipelineDb(#[from] DestinationPipelineDbError),
 }
 
-impl SinkPipelineError {
+impl DestinationPipelineError {
     fn to_message(&self) -> String {
         match self {
             // Do not expose internal database details in error messages
-            SinkPipelineError::DatabaseError(_) | SinkPipelineError::SinkPipelineDb(_) => {
+            DestinationPipelineError::DatabaseError(_)
+            | DestinationPipelineError::DestinationPipelineDb(_) => {
                 "internal server error".to_string()
             }
             // Every other message is ok, as they do not divulge sensitive information
@@ -81,17 +82,19 @@ impl SinkPipelineError {
     }
 }
 
-impl ResponseError for SinkPipelineError {
+impl ResponseError for DestinationPipelineError {
     fn status_code(&self) -> StatusCode {
         match self {
-            SinkPipelineError::Sink(e) => e.status_code(),
-            SinkPipelineError::DatabaseError(_)
-            | SinkPipelineError::NoDefaultImageFound
-            | SinkPipelineError::SinkPipelineDb(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            SinkPipelineError::TenantId(_)
-            | SinkPipelineError::SourceNotFound(_)
-            | SinkPipelineError::SinkNotFound(_)
-            | SinkPipelineError::PipelineNotFound(_) => StatusCode::BAD_REQUEST,
+            DestinationPipelineError::Destination(e) => e.status_code(),
+            DestinationPipelineError::DatabaseError(_)
+            | DestinationPipelineError::NoDefaultImageFound
+            | DestinationPipelineError::DestinationPipelineDb(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            DestinationPipelineError::TenantId(_)
+            | DestinationPipelineError::SourceNotFound(_)
+            | DestinationPipelineError::DestinationNotFound(_)
+            | DestinationPipelineError::PipelineNotFound(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -108,57 +111,57 @@ impl ResponseError for SinkPipelineError {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct PostSinkPipelineResponse {
-    sink_id: i64,
+pub struct PostDestinationPipelineResponse {
+    destination_id: i64,
     pipeline_id: i64,
 }
 
 #[utoipa::path(
     context_path = "/v1",
-    request_body = PostSinkPipelineRequest,
+    request_body = PostDestinationPipelineRequest,
     responses(
-        (status = 200, description = "Create a new sink and a pipeline", body = PostSinkPipelineResponse),
+        (status = 200, description = "Create a new destination and a pipeline", body = PostDestinationPipelineResponse),
         (status = 500, description = "Internal server error")
     )
 )]
-#[post("/sinks-pipelines")]
-pub async fn create_sinks_and_pipelines(
+#[post("/destinations-pipelines")]
+pub async fn create_destinations_and_pipelines(
     req: HttpRequest,
     pool: Data<PgPool>,
-    sink_and_pipeline: Json<PostSinkPipelineRequest>,
+    destination_and_pipeline: Json<PostDestinationPipelineRequest>,
     encryption_key: Data<EncryptionKey>,
-) -> Result<impl Responder, SinkPipelineError> {
-    let sink_and_pipeline = sink_and_pipeline.0;
-    let PostSinkPipelineRequest {
-        sink_name,
-        sink_config,
+) -> Result<impl Responder, DestinationPipelineError> {
+    let destination_and_pipeline = destination_and_pipeline.0;
+    let PostDestinationPipelineRequest {
+        destination_name,
+        destination_config,
         source_id,
         publication_name,
         pipeline_config,
-    } = sink_and_pipeline;
+    } = destination_and_pipeline;
     let tenant_id = extract_tenant_id(&req)?;
 
     if !source_exists(&pool, tenant_id, source_id).await? {
-        return Err(SinkPipelineError::SourceNotFound(source_id));
+        return Err(DestinationPipelineError::SourceNotFound(source_id));
     }
 
     let image = db::images::read_default_image(&pool)
         .await?
-        .ok_or(SinkPipelineError::NoDefaultImageFound)?;
-    let (sink_id, pipeline_id) = db::sinks_pipelines::create_sink_and_pipeline(
+        .ok_or(DestinationPipelineError::NoDefaultImageFound)?;
+    let (destination_id, pipeline_id) = db::sinks_pipelines::create_destination_and_pipeline(
         &pool,
         tenant_id,
         source_id,
-        &sink_name,
-        sink_config,
+        &destination_name,
+        destination_config,
         image.id,
         &publication_name,
         pipeline_config,
         &encryption_key,
     )
     .await?;
-    let response = PostSinkPipelineResponse {
-        sink_id,
+    let response = PostDestinationPipelineResponse {
+        destination_id,
         pipeline_id,
     };
     Ok(Json(response))
@@ -166,57 +169,61 @@ pub async fn create_sinks_and_pipelines(
 
 #[utoipa::path(
     context_path = "/v1",
-    request_body = PostSinkPipelineRequest,
+    request_body = PostDestinationPipelineRequest,
     responses(
-        (status = 200, description = "Update a sink and a pipeline", body = PostSinkPipelineResponse),
-        (status = 404, description = "Pipeline or sink not found"),
+        (status = 200, description = "Update a destination and a pipeline", body = PostDestinationPipelineResponse),
+        (status = 404, description = "Pipeline or destination not found"),
         (status = 500, description = "Internal server error")
     )
 )]
-#[post("/sinks-pipelines/{sink_id}/{pipeline_id}")]
-pub async fn update_sinks_and_pipelines(
+#[post("/destinations-pipelines/{destination_id}/{pipeline_id}")]
+pub async fn update_destinations_and_pipelines(
     req: HttpRequest,
     pool: Data<PgPool>,
-    sink_and_pipeline_ids: Path<(i64, i64)>,
-    sink_and_pipeline: Json<PostSinkPipelineRequest>,
+    destination_and_pipeline_ids: Path<(i64, i64)>,
+    destination_and_pipeline: Json<PostDestinationPipelineRequest>,
     encryption_key: Data<EncryptionKey>,
-) -> Result<impl Responder, SinkPipelineError> {
-    let sink_and_pipeline = sink_and_pipeline.0;
-    let PostSinkPipelineRequest {
-        sink_name,
-        sink_config,
+) -> Result<impl Responder, DestinationPipelineError> {
+    let destination_and_pipeline = destination_and_pipeline.0;
+    let PostDestinationPipelineRequest {
+        destination_name,
+        destination_config,
         source_id,
         publication_name,
         pipeline_config,
-    } = sink_and_pipeline;
+    } = destination_and_pipeline;
     let tenant_id = extract_tenant_id(&req)?;
-    let (sink_id, pipeline_id) = sink_and_pipeline_ids.into_inner();
+    let (destination_id, pipeline_id) = destination_and_pipeline_ids.into_inner();
 
     if !source_exists(&pool, tenant_id, source_id).await? {
-        return Err(SinkPipelineError::SourceNotFound(source_id));
+        return Err(DestinationPipelineError::SourceNotFound(source_id));
     }
 
-    if !sink_exists(&pool, tenant_id, sink_id).await? {
-        return Err(SinkPipelineError::SinkNotFound(sink_id));
+    if !destination_exists(&pool, tenant_id, destination_id).await? {
+        return Err(DestinationPipelineError::DestinationNotFound(
+            destination_id,
+        ));
     }
 
-    db::sinks_pipelines::update_sink_and_pipeline(
+    db::sinks_pipelines::update_destination_and_pipeline(
         &pool,
         tenant_id,
-        sink_id,
+        destination_id,
         pipeline_id,
         source_id,
-        &sink_name,
-        sink_config,
+        &destination_name,
+        destination_config,
         &publication_name,
         pipeline_config,
         &encryption_key,
     )
     .await
     .map_err(|e| match e {
-        SinkPipelineDbError::SinkNotFound(sink_id) => SinkPipelineError::SinkNotFound(sink_id),
-        SinkPipelineDbError::PipelineNotFound(pipeline_id) => {
-            SinkPipelineError::PipelineNotFound(pipeline_id)
+        DestinationPipelineDbError::DestinationNotFound(destination_id) => {
+            DestinationPipelineError::DestinationNotFound(destination_id)
+        }
+        DestinationPipelineDbError::PipelineNotFound(pipeline_id) => {
+            DestinationPipelineError::PipelineNotFound(pipeline_id)
         }
         e => e.into(),
     })?;

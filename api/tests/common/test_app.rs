@@ -1,7 +1,7 @@
 use crate::common::database::create_etl_api_database;
 use api::{
     configuration::{get_settings, Settings},
-    db::{pipelines::PipelineConfig, sinks::SinkConfig, sources::SourceConfig},
+    db::{pipelines::PipelineConfig, sinks::DestinationConfig, sources::SourceConfig},
     encryption::{self, generate_random_key},
     startup::run,
 };
@@ -86,54 +86,54 @@ pub struct CreateTenantSourceResponse {
 }
 
 #[derive(Serialize)]
-pub struct PostSinkPipelineRequest {
-    pub sink_name: String,
-    pub sink_config: SinkConfig,
+pub struct PostDestinationPipelineRequest {
+    pub destination_name: String,
+    pub destination_config: DestinationConfig,
     pub source_id: i64,
     pub publication_name: String,
     pub pipeline_config: PipelineConfig,
 }
 
 #[derive(Deserialize)]
-pub struct CreateSinkPipelineResponse {
-    pub sink_id: i64,
+pub struct CreateDestinationPipelineResponse {
+    pub destination_id: i64,
     pub pipeline_id: i64,
 }
 
 #[derive(Serialize)]
-pub struct CreateSinkRequest {
+pub struct CreateDestinationRequest {
     pub name: String,
-    pub config: SinkConfig,
+    pub config: DestinationConfig,
 }
 
 #[derive(Deserialize)]
-pub struct CreateSinkResponse {
+pub struct CreateDestinationResponse {
     pub id: i64,
 }
 
 #[derive(Serialize)]
-pub struct UpdateSinkRequest {
+pub struct UpdateDestinationRequest {
     pub name: String,
-    pub config: SinkConfig,
+    pub config: DestinationConfig,
 }
 
 #[derive(Deserialize)]
-pub struct SinkResponse {
+pub struct DestinationResponse {
     pub id: i64,
     pub tenant_id: String,
     pub name: String,
-    pub config: SinkConfig,
+    pub config: DestinationConfig,
 }
 
 #[derive(Deserialize)]
-pub struct SinksResponse {
-    pub sinks: Vec<SinkResponse>,
+pub struct DestinationsResponse {
+    pub destinations: Vec<DestinationResponse>,
 }
 
 #[derive(Serialize)]
 pub struct CreatePipelineRequest {
     pub source_id: i64,
-    pub sink_id: i64,
+    pub destination_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
 }
@@ -148,7 +148,7 @@ pub struct PipelineResponse {
     pub id: i64,
     pub tenant_id: String,
     pub source_id: i64,
-    pub sink_id: i64,
+    pub destination_id: i64,
     pub replicator_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
@@ -162,7 +162,7 @@ pub struct PipelinesResponse {
 #[derive(Serialize)]
 pub struct UpdatePipelineRequest {
     pub source_id: i64,
-    pub sink_id: i64,
+    pub destination_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
 }
@@ -351,51 +351,68 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
-    pub async fn create_sink(
+    pub async fn create_destination(
         &self,
         tenant_id: &str,
-        sink: &CreateSinkRequest,
+        destination: &CreateDestinationRequest,
     ) -> reqwest::Response {
-        self.post_authenticated(format!("{}/v1/sinks", &self.address))
+        self.post_authenticated(format!("{}/v1/destinations", &self.address))
             .header("tenant_id", tenant_id)
-            .json(sink)
+            .json(destination)
             .send()
             .await
             .expect("Failed to execute request.")
     }
 
-    pub async fn read_sink(&self, tenant_id: &str, sink_id: i64) -> reqwest::Response {
-        self.get_authenticated(format!("{}/v1/sinks/{sink_id}", &self.address))
-            .header("tenant_id", tenant_id)
-            .send()
-            .await
-            .expect("failed to execute request")
-    }
-
-    pub async fn update_sink(
+    pub async fn read_destination(
         &self,
         tenant_id: &str,
-        sink_id: i64,
-        sink: &UpdateSinkRequest,
+        destination_id: i64,
     ) -> reqwest::Response {
-        self.post_authenticated(format!("{}/v1/sinks/{sink_id}", &self.address))
-            .header("tenant_id", tenant_id)
-            .json(sink)
-            .send()
-            .await
-            .expect("failed to execute request")
+        self.get_authenticated(format!(
+            "{}/v1/destinations/{destination_id}",
+            &self.address
+        ))
+        .header("tenant_id", tenant_id)
+        .send()
+        .await
+        .expect("failed to execute request")
     }
 
-    pub async fn delete_sink(&self, tenant_id: &str, sink_id: i64) -> reqwest::Response {
-        self.delete_authenticated(format!("{}/v1/sinks/{sink_id}", &self.address))
-            .header("tenant_id", tenant_id)
-            .send()
-            .await
-            .expect("Failed to execute request.")
+    pub async fn update_destination(
+        &self,
+        tenant_id: &str,
+        destination_id: i64,
+        destination: &UpdateDestinationRequest,
+    ) -> reqwest::Response {
+        self.post_authenticated(format!(
+            "{}/v1/destinations/{destination_id}",
+            &self.address
+        ))
+        .header("tenant_id", tenant_id)
+        .json(destination)
+        .send()
+        .await
+        .expect("failed to execute request")
     }
 
-    pub async fn read_all_sinks(&self, tenant_id: &str) -> reqwest::Response {
-        self.get_authenticated(format!("{}/v1/sinks", &self.address))
+    pub async fn delete_destination(
+        &self,
+        tenant_id: &str,
+        destination_id: i64,
+    ) -> reqwest::Response {
+        self.delete_authenticated(format!(
+            "{}/v1/destinations/{destination_id}",
+            &self.address
+        ))
+        .header("tenant_id", tenant_id)
+        .send()
+        .await
+        .expect("Failed to execute request.")
+    }
+
+    pub async fn read_all_destinations(&self, tenant_id: &str) -> reqwest::Response {
+        self.get_authenticated(format!("{}/v1/destinations", &self.address))
             .header("tenant_id", tenant_id)
             .send()
             .await
@@ -453,32 +470,32 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
-    pub async fn create_sink_pipeline(
+    pub async fn create_destination_pipeline(
         &self,
         tenant_id: &str,
-        sink_pipeline: &PostSinkPipelineRequest,
+        destination_pipeline: &PostDestinationPipelineRequest,
     ) -> reqwest::Response {
-        self.post_authenticated(format!("{}/v1/sinks-pipelines", &self.address))
+        self.post_authenticated(format!("{}/v1/destinations-pipelines", &self.address))
             .header("tenant_id", tenant_id)
-            .json(sink_pipeline)
+            .json(destination_pipeline)
             .send()
             .await
             .expect("Failed to execute request.")
     }
 
-    pub async fn update_sink_pipeline(
+    pub async fn update_destination_pipeline(
         &self,
         tenant_id: &str,
-        sink_id: i64,
+        destination_id: i64,
         pipeline_id: i64,
-        sink_pipeline: &PostSinkPipelineRequest,
+        destination_pipeline: &PostDestinationPipelineRequest,
     ) -> reqwest::Response {
         self.post_authenticated(format!(
-            "{}/v1/sinks-pipelines/{sink_id}/{pipeline_id}",
+            "{}/v1/destinations-pipelines/{destination_id}/{pipeline_id}",
             &self.address
         ))
         .header("tenant_id", tenant_id)
-        .json(sink_pipeline)
+        .json(destination_pipeline)
         .send()
         .await
         .expect("Failed to execute request.")

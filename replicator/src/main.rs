@@ -1,7 +1,7 @@
 use std::{io::BufReader, time::Duration, vec};
 
 use configuration::{
-    get_configuration, BatchSettings, Settings, SinkSettings, SourceSettings, TlsSettings,
+    get_configuration, BatchSettings, DestinationSettings, Settings, SourceSettings, TlsSettings,
 };
 use etl::{
     pipeline::{
@@ -18,7 +18,7 @@ use tracing::{info, instrument};
 
 mod configuration;
 
-// APP_SOURCE__POSTGRES__PASSWORD and APP_SINK__BIG_QUERY__PROJECT_ID environment variables must be set
+// APP_SOURCE__POSTGRES__PASSWORD and APP_DESTINATION__BIG_QUERY__PROJECT_ID environment variables must be set
 // before running because these are sensitive values which can't be configured in the config files
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -56,14 +56,17 @@ async fn start_replication(settings: Settings) -> anyhow::Result<()> {
         "source settings"
     );
 
-    let SinkSettings::BigQuery {
+    let DestinationSettings::BigQuery {
         project_id,
         dataset_id,
         service_account_key: _,
         max_staleness_mins,
-    } = &settings.sink;
+    } = &settings.destination;
 
-    info!(project_id, dataset_id, max_staleness_mins, "sink settings");
+    info!(
+        project_id,
+        dataset_id, max_staleness_mins, "destination settings"
+    );
 
     let BatchSettings {
         max_size,
@@ -124,12 +127,12 @@ async fn start_replication(settings: Settings) -> anyhow::Result<()> {
     )
     .await?;
 
-    let SinkSettings::BigQuery {
+    let DestinationSettings::BigQuery {
         project_id,
         dataset_id,
         service_account_key,
         max_staleness_mins,
-    } = settings.sink;
+    } = settings.destination;
 
     let bigquery_destination = BigQueryBatchDestination::new_with_key(
         project_id,

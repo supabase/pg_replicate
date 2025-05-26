@@ -56,7 +56,7 @@ impl Debug for SourceSettings {
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum SinkSettings {
+pub enum DestinationSettings {
     BigQuery {
         /// BigQuery project id
         project_id: String,
@@ -73,7 +73,7 @@ pub enum SinkSettings {
     },
 }
 
-impl Debug for SinkSettings {
+impl Debug for DestinationSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::BigQuery {
@@ -137,7 +137,7 @@ impl TlsSettings {
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Settings {
     pub source: SourceSettings,
-    pub sink: SinkSettings,
+    pub destination: DestinationSettings,
     pub batch: BatchSettings,
     pub tls: TlsSettings,
     pub project: String,
@@ -163,7 +163,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
             configuration_directory.join(environment_filename),
         ))
         // Add in settings from environment variables (with a prefix of APP and '__' as separator)
-        // E.g. `APP_SINK__BIG_QUERY__PROJECT_ID=my-project-id would set `Settings { sink: BigQuery { project_id }}` to my-project-id
+        // E.g. `APP_DESTINATION__BIG_QUERY__PROJECT_ID=my-project-id would set `Settings { destination: BigQuery { project_id }}` to my-project-id
         .add_source(
             config::Environment::with_prefix("APP")
                 .prefix_separator("_")
@@ -210,7 +210,7 @@ impl TryFrom<String> for Environment {
 mod tests {
     use crate::{
         configuration::{Settings, TlsSettings},
-        BatchSettings, SinkSettings, SourceSettings,
+        BatchSettings, DestinationSettings, SourceSettings,
     };
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
                     "publication": "replicator_publication"
                 }
             },
-            "sink": {
+            "destination": {
                 "big_query": {
                     "project_id": "project-id",
                     "dataset_id": "dataset-id",
@@ -255,7 +255,7 @@ mod tests {
                 slot_name: "replicator_slot".to_string(),
                 publication: "replicator_publication".to_string(),
             },
-            sink: SinkSettings::BigQuery {
+            destination: DestinationSettings::BigQuery {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
                 service_account_key: "key".to_string(),
@@ -287,7 +287,7 @@ mod tests {
                 slot_name: "replicator_slot".to_string(),
                 publication: "replicator_publication".to_string(),
             },
-            sink: SinkSettings::BigQuery {
+            destination: DestinationSettings::BigQuery {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
                 service_account_key: "key".to_string(),
@@ -303,7 +303,7 @@ mod tests {
             },
             project: "abcdefghijklmnopqrst".to_string(),
         };
-        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","password":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"key"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false},"project":"abcdefghijklmnopqrst"}"#;
+        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","password":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"destination":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"key"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false},"project":"abcdefghijklmnopqrst"}"#;
         let actual = serde_json::to_string(&actual);
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());

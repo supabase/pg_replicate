@@ -6,7 +6,7 @@ source:
     username: "postgres"
     slot_name: "replicator_slot"
     publication: "replicator_publication"
-sink:
+destination:
   big_query:
     project_id: "project-id"
     dataset_id: "dataset-id"

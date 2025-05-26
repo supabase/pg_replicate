@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 use crate::{
     db::{
         self,
-        sinks::{SinkConfig, SinksDbError},
+        sinks::{DestinationConfig, DestinationsDbError},
     },
     encryption::EncryptionKey,
     routes::extract_tenant_id,
@@ -22,39 +22,39 @@ use crate::{
 use super::{ErrorMessage, TenantIdError};
 
 #[derive(Debug, Error)]
-pub enum SinkError {
+pub enum DestinationError {
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
 
-    #[error("sink with id {0} not found")]
-    SinkNotFound(i64),
+    #[error("destination with id {0} not found")]
+    DestinationNotFound(i64),
 
     #[error("tenant id error: {0}")]
     TenantId(#[from] TenantIdError),
 
-    #[error("sinks db error: {0}")]
-    SinksDb(#[from] SinksDbError),
+    #[error("destinations db error: {0}")]
+    DestinationsDb(#[from] DestinationsDbError),
 }
 
-impl SinkError {
+impl DestinationError {
     pub fn to_message(&self) -> String {
         match self {
             // Do not expose internal database details in error messages
-            SinkError::DatabaseError(_) => "internal server error".to_string(),
+            DestinationError::DatabaseError(_) => "internal server error".to_string(),
             // Every other message is ok, as they do not divulge sensitive information
             e => e.to_string(),
         }
     }
 }
 
-impl ResponseError for SinkError {
+impl ResponseError for DestinationError {
     fn status_code(&self) -> StatusCode {
         match self {
-            SinkError::DatabaseError(_) | SinkError::SinksDb(_) => {
+            DestinationError::DatabaseError(_) | DestinationError::DestinationsDb(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            SinkError::SinkNotFound(_) => StatusCode::NOT_FOUND,
-            SinkError::TenantId(_) => StatusCode::BAD_REQUEST,
+            DestinationError::DestinationNotFound(_) => StatusCode::NOT_FOUND,
+            DestinationError::TenantId(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -71,169 +71,177 @@ impl ResponseError for SinkError {
 }
 
 #[derive(Deserialize, ToSchema)]
-pub struct PostSinkRequest {
+pub struct PostDestinationRequest {
     pub name: String,
     #[schema(required = true)]
-    pub config: SinkConfig,
+    pub config: DestinationConfig,
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct PostSinkResponse {
+pub struct PostDestinationResponse {
     id: i64,
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct GetSinkResponse {
+pub struct GetDestinationResponse {
     #[schema(example = 1)]
     id: i64,
     #[schema(example = 1)]
     tenant_id: String,
-    #[schema(example = "BigQuery Sink")]
+    #[schema(example = "BigQuery Destination")]
     name: String,
-    config: SinkConfig,
+    config: DestinationConfig,
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct GetSinksResponse {
-    sinks: Vec<GetSinkResponse>,
+pub struct GetDestinationsResponse {
+    destinations: Vec<GetDestinationResponse>,
 }
 
 #[utoipa::path(
     context_path = "/v1",
-    request_body = PostSinkRequest,
+    request_body = PostDestinationRequest,
     responses(
-        (status = 200, description = "Create new sink", body = PostSinkResponse),
+        (status = 200, description = "Create new destination", body = PostDestinationResponse),
         (status = 500, description = "Internal server error")
     )
 )]
-#[post("/sinks")]
-pub async fn create_sink(
+#[post("/destinations")]
+pub async fn create_destination(
     req: HttpRequest,
     pool: Data<PgPool>,
     encryption_key: Data<EncryptionKey>,
-    sink: Json<PostSinkRequest>,
-) -> Result<impl Responder, SinkError> {
-    let sink = sink.0;
+    destination: Json<PostDestinationRequest>,
+) -> Result<impl Responder, DestinationError> {
+    let destination = destination.0;
     let tenant_id = extract_tenant_id(&req)?;
-    let name = sink.name;
-    let config = sink.config;
-    let id = db::sinks::create_sink(&pool, tenant_id, &name, config, &encryption_key).await?;
-    let response = PostSinkResponse { id };
+    let name = destination.name;
+    let config = destination.config;
+    let id =
+        db::sinks::create_destination(&pool, tenant_id, &name, config, &encryption_key).await?;
+    let response = PostDestinationResponse { id };
     Ok(Json(response))
 }
 
 #[utoipa::path(
     context_path = "/v1",
     params(
-        ("sink_id" = i64, Path, description = "Id of the sink"),
+        ("destination_id" = i64, Path, description = "Id of the destination"),
     ),
     responses(
-        (status = 200, description = "Return sink with id = sink_id", body = GetSourceResponse),
-        (status = 404, description = "Sink not found"),
+        (status = 200, description = "Return destination with id = destination_id", body = GetSourceResponse),
+        (status = 404, description = "Destination not found"),
         (status = 500, description = "Internal server error")
     )
 )]
-#[get("/sinks/{sink_id}")]
-pub async fn read_sink(
+#[get("/destinations/{destination_id}")]
+pub async fn read_destination(
     req: HttpRequest,
     pool: Data<PgPool>,
     encryption_key: Data<EncryptionKey>,
-    sink_id: Path<i64>,
-) -> Result<impl Responder, SinkError> {
+    destination_id: Path<i64>,
+) -> Result<impl Responder, DestinationError> {
     let tenant_id = extract_tenant_id(&req)?;
-    let sink_id = sink_id.into_inner();
-    let response = db::sinks::read_sink(&pool, tenant_id, sink_id, &encryption_key)
+    let destination_id = destination_id.into_inner();
+    let response = db::sinks::read_destination(&pool, tenant_id, destination_id, &encryption_key)
         .await?
-        .map(|s| GetSinkResponse {
+        .map(|s| GetDestinationResponse {
             id: s.id,
             tenant_id: s.tenant_id,
             name: s.name,
             config: s.config,
         })
-        .ok_or(SinkError::SinkNotFound(sink_id))?;
+        .ok_or(DestinationError::DestinationNotFound(destination_id))?;
     Ok(Json(response))
 }
 
 #[utoipa::path(
     context_path = "/v1",
-    request_body = PostSinkRequest,
+    request_body = PostDestinationRequest,
     params(
-        ("sink_id" = i64, Path, description = "Id of the sink"),
+        ("destination_id" = i64, Path, description = "Id of the destination"),
     ),
     responses(
-        (status = 200, description = "Update sink with id = sink_id"),
-        (status = 404, description = "Sink not found"),
+        (status = 200, description = "Update destination with id = destination_id"),
+        (status = 404, description = "Destination not found"),
         (status = 500, description = "Internal server error")
     )
 )]
-#[post("/sinks/{sink_id}")]
-pub async fn update_sink(
+#[post("/destinations/{destination_id}")]
+pub async fn update_destination(
     req: HttpRequest,
     pool: Data<PgPool>,
-    sink_id: Path<i64>,
+    destination_id: Path<i64>,
     encryption_key: Data<EncryptionKey>,
-    sink: Json<PostSinkRequest>,
-) -> Result<impl Responder, SinkError> {
-    let sink = sink.0;
+    destination: Json<PostDestinationRequest>,
+) -> Result<impl Responder, DestinationError> {
+    let destination = destination.0;
     let tenant_id = extract_tenant_id(&req)?;
-    let sink_id = sink_id.into_inner();
-    let name = sink.name;
-    let config = sink.config;
-    db::sinks::update_sink(&pool, tenant_id, &name, sink_id, config, &encryption_key)
-        .await?
-        .ok_or(SinkError::SinkNotFound(sink_id))?;
+    let destination_id = destination_id.into_inner();
+    let name = destination.name;
+    let config = destination.config;
+    db::sinks::update_destination(
+        &pool,
+        tenant_id,
+        &name,
+        destination_id,
+        config,
+        &encryption_key,
+    )
+    .await?
+    .ok_or(DestinationError::DestinationNotFound(destination_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
 #[utoipa::path(
     context_path = "/v1",
     params(
-        ("sink_id" = i64, Path, description = "Id of the sink"),
+        ("destination_id" = i64, Path, description = "Id of the destination"),
     ),
     responses(
-        (status = 200, description = "Delete sink with id = sink_id"),
-        (status = 404, description = "Sink not found"),
+        (status = 200, description = "Delete destination with id = destination_id"),
+        (status = 404, description = "Destination not found"),
         (status = 500, description = "Internal server error")
     )
 )]
-#[delete("/sinks/{sink_id}")]
-pub async fn delete_sink(
+#[delete("/destinations/{destination_id}")]
+pub async fn delete_destination(
     req: HttpRequest,
     pool: Data<PgPool>,
-    sink_id: Path<i64>,
-) -> Result<impl Responder, SinkError> {
+    destination_id: Path<i64>,
+) -> Result<impl Responder, DestinationError> {
     let tenant_id = extract_tenant_id(&req)?;
-    let sink_id = sink_id.into_inner();
-    db::sinks::delete_sink(&pool, tenant_id, sink_id)
+    let destination_id = destination_id.into_inner();
+    db::sinks::delete_destination(&pool, tenant_id, destination_id)
         .await?
-        .ok_or(SinkError::SinkNotFound(sink_id))?;
+        .ok_or(DestinationError::DestinationNotFound(destination_id))?;
     Ok(HttpResponse::Ok().finish())
 }
 
 #[utoipa::path(
     context_path = "/v1",
     responses(
-        (status = 200, description = "Return all sinks"),
+        (status = 200, description = "Return all destinations"),
         (status = 500, description = "Internal server error")
     )
 )]
-#[get("/sinks")]
-pub async fn read_all_sinks(
+#[get("/destinations")]
+pub async fn read_all_destinations(
     req: HttpRequest,
     pool: Data<PgPool>,
     encryption_key: Data<EncryptionKey>,
-) -> Result<impl Responder, SinkError> {
+) -> Result<impl Responder, DestinationError> {
     let tenant_id = extract_tenant_id(&req)?;
-    let mut sinks = vec![];
-    for sink in db::sinks::read_all_sinks(&pool, tenant_id, &encryption_key).await? {
-        let sink = GetSinkResponse {
-            id: sink.id,
-            tenant_id: sink.tenant_id,
-            name: sink.name,
-            config: sink.config,
+    let mut destinations = vec![];
+    for destination in db::sinks::read_all_destinations(&pool, tenant_id, &encryption_key).await? {
+        let destination = GetDestinationResponse {
+            id: destination.id,
+            tenant_id: destination.tenant_id,
+            name: destination.name,
+            config: destination.config,
         };
-        sinks.push(sink);
+        destinations.push(destination);
     }
-    let response = GetSinksResponse { sinks };
+    let response = GetDestinationsResponse { destinations };
     Ok(Json(response))
 }

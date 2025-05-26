@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
-pub enum BigQuerySinkError {
+pub enum BigQueryDestinationError {
     #[error("big query error: {0}")]
     BigQuery(#[from] BQError),
 
@@ -33,7 +33,7 @@ pub enum BigQuerySinkError {
     CommitWithoutBegin,
 }
 
-impl DestinationError for BigQuerySinkError {}
+impl DestinationError for BigQueryDestinationError {}
 
 pub struct BigQueryBatchDestination {
     client: BigQueryClient,
@@ -80,12 +80,12 @@ impl BigQueryBatchDestination {
     }
 
     #[expect(clippy::result_large_err)]
-    fn get_table_schema(&self, table_id: TableId) -> Result<&TableSchema, BigQuerySinkError> {
+    fn get_table_schema(&self, table_id: TableId) -> Result<&TableSchema, BigQueryDestinationError> {
         self.table_schemas
             .as_ref()
-            .ok_or(BigQuerySinkError::MissingTableSchemas)?
+            .ok_or(BigQueryDestinationError::MissingTableSchemas)?
             .get(&table_id)
-            .ok_or(BigQuerySinkError::MissingTableId(table_id))
+            .ok_or(BigQueryDestinationError::MissingTableId(table_id))
     }
 
     fn table_name_in_bq(table_name: &TableName) -> String {
@@ -95,7 +95,7 @@ impl BigQueryBatchDestination {
 
 #[async_trait]
 impl BatchDestination for BigQueryBatchDestination {
-    type Error = BigQuerySinkError;
+    type Error = BigQueryDestinationError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         info!("getting resumption state from bigquery");
         let copied_table_column_schemas = [ColumnSchema {
@@ -211,10 +211,10 @@ impl BatchDestination for BigQueryBatchDestination {
                         if commit_lsn == final_lsn {
                             new_last_lsn = commit_lsn;
                         } else {
-                            Err(BigQuerySinkError::IncorrectCommitLsn(commit_lsn, final_lsn))?
+                            Err(BigQueryDestinationError::IncorrectCommitLsn(commit_lsn, final_lsn))?
                         }
                     } else {
-                        Err(BigQuerySinkError::CommitWithoutBegin)?
+                        Err(BigQueryDestinationError::CommitWithoutBegin)?
                     }
                 }
                 CdcEvent::Insert((table_id, mut table_row)) => {

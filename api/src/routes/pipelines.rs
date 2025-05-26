@@ -18,7 +18,7 @@ use crate::{
         images::Image,
         pipelines::{Pipeline, PipelineConfig},
         replicators::Replicator,
-        sinks::{sink_exists, Sink, SinkConfig, SinksDbError},
+        sinks::{destination_exists, Destination, DestinationConfig, DestinationsDbError},
         sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
@@ -46,8 +46,8 @@ enum PipelineError {
     #[error("source with id {0} not found")]
     SourceNotFound(i64),
 
-    #[error("sink with id {0} not found")]
-    SinkNotFound(i64),
+    #[error("destination with id {0} not found")]
+    DestinationNotFound(i64),
 
     #[error("replicator with pipeline id {0} not found")]
     ReplicatorNotFound(i64),
@@ -61,7 +61,7 @@ enum PipelineError {
     #[error("tenant id error: {0}")]
     TenantId(#[from] TenantIdError),
 
-    #[error("invalid sink config")]
+    #[error("invalid destination config")]
     InvalidConfig(#[from] serde_json::Error),
 
     #[error("k8s error: {0}")]
@@ -70,8 +70,8 @@ enum PipelineError {
     #[error("sources db error: {0}")]
     SourcesDb(#[from] SourcesDbError),
 
-    #[error("sinks db error: {0}")]
-    SinksDb(#[from] SinksDbError),
+    #[error("destinations db error: {0}")]
+    DestinationsDb(#[from] DestinationsDbError),
 
     #[error("trusted root certs config not found")]
     TrustedRootCertsConfigMissing,
@@ -97,13 +97,13 @@ impl ResponseError for PipelineError {
             | PipelineError::ImageNotFound(_)
             | PipelineError::NoDefaultImageFound
             | PipelineError::SourcesDb(_)
-            | PipelineError::SinksDb(_)
+            | PipelineError::DestinationsDb(_)
             | PipelineError::K8sError(_)
             | PipelineError::TrustedRootCertsConfigMissing => StatusCode::INTERNAL_SERVER_ERROR,
             PipelineError::PipelineNotFound(_) => StatusCode::NOT_FOUND,
             PipelineError::TenantId(_)
             | PipelineError::SourceNotFound(_)
-            | PipelineError::SinkNotFound(_) => StatusCode::BAD_REQUEST,
+            | PipelineError::DestinationNotFound(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -122,7 +122,7 @@ impl ResponseError for PipelineError {
 #[derive(Deserialize, ToSchema)]
 pub struct PostPipelineRequest {
     pub source_id: i64,
-    pub sink_id: i64,
+    pub destination_id: i64,
     pub publication_name: String,
     pub config: PipelineConfig,
 }
@@ -138,8 +138,8 @@ pub struct GetPipelineResponse {
     tenant_id: String,
     source_id: i64,
     source_name: String,
-    sink_id: i64,
-    sink_name: String,
+    destination_id: i64,
+    destination_name: String,
     replicator_id: i64,
     publication_name: String,
     config: PipelineConfig,
@@ -172,8 +172,8 @@ pub async fn create_pipeline(
         return Err(PipelineError::SourceNotFound(pipeline.source_id));
     }
 
-    if !sink_exists(&pool, tenant_id, pipeline.sink_id).await? {
-        return Err(PipelineError::SinkNotFound(pipeline.sink_id));
+    if !destination_exists(&pool, tenant_id, pipeline.destination_id).await? {
+        return Err(PipelineError::DestinationNotFound(pipeline.destination_id));
     }
 
     let image = db::images::read_default_image(&pool)
@@ -184,7 +184,7 @@ pub async fn create_pipeline(
         &pool,
         tenant_id,
         pipeline.source_id,
-        pipeline.sink_id,
+        pipeline.destination_id,
         image.id,
         &pipeline.publication_name,
         &config,
@@ -224,8 +224,8 @@ pub async fn read_pipeline(
                 tenant_id: s.tenant_id,
                 source_id: s.source_id,
                 source_name: s.source_name,
-                sink_id: s.destination_id,
-                sink_name: s.destination_name,
+                destination_id: s.destination_id,
+                destination_name: s.destination_name,
                 replicator_id: s.replicator_id,
                 publication_name: s.publication_name,
                 config,
@@ -239,7 +239,7 @@ pub async fn read_pipeline(
 
 #[utoipa::path(
     context_path = "/v1",
-    request_body = PostSinkRequest,
+    request_body = PostDestinationRequest,
     params(
         ("pipeline_id" = i64, Path, description = "Id of the pipeline"),
     ),
@@ -261,15 +261,15 @@ pub async fn update_pipeline(
     let pipeline_id = pipeline_id.into_inner();
     let config = &pipeline.config;
     let source_id = pipeline.source_id;
-    let sink_id = pipeline.sink_id;
+    let destination_id = pipeline.destination_id;
     let publication_name = pipeline.publication_name;
 
     if !source_exists(&pool, tenant_id, source_id).await? {
         return Err(PipelineError::SourceNotFound(source_id));
     }
 
-    if !sink_exists(&pool, tenant_id, sink_id).await? {
-        return Err(PipelineError::SinkNotFound(sink_id));
+    if !destination_exists(&pool, tenant_id, destination_id).await? {
+        return Err(PipelineError::DestinationNotFound(destination_id));
     }
 
     db::pipelines::update_pipeline(
@@ -277,7 +277,7 @@ pub async fn update_pipeline(
         tenant_id,
         pipeline_id,
         source_id,
-        sink_id,
+        destination_id,
         &publication_name,
         config,
     )
@@ -333,8 +333,8 @@ pub async fn read_all_pipelines(
             tenant_id: pipeline.tenant_id,
             source_id: pipeline.source_id,
             source_name: pipeline.source_name,
-            sink_id: pipeline.destination_id,
-            sink_name: pipeline.destination_name,
+            destination_id: pipeline.destination_id,
+            destination_name: pipeline.destination_name,
             replicator_id: pipeline.replicator_id,
             publication_name: pipeline.publication_name,
             config,
@@ -363,13 +363,13 @@ pub async fn start_pipeline(
     let tenant_id = extract_tenant_id(&req)?;
     let pipeline_id = pipeline_id.into_inner();
 
-    let (pipeline, replicator, image, source, sink) =
+    let (pipeline, replicator, image, source, destination) =
         read_data(&pool, tenant_id, pipeline_id, &encryption_key).await?;
 
     let (secrets, config) = create_configs(
         &k8s_client,
         source.config,
-        sink.config,
+        destination.config,
         pipeline,
         tenant_id.to_string(),
     )
@@ -486,7 +486,7 @@ async fn read_data(
     tenant_id: &str,
     pipeline_id: i64,
     encryption_key: &EncryptionKey,
-) -> Result<(Pipeline, Replicator, Image, Source, Sink), PipelineError> {
+) -> Result<(Pipeline, Replicator, Image, Source, Destination), PipelineError> {
     let pipeline = db::pipelines::read_pipeline(pool, tenant_id, pipeline_id)
         .await?
         .ok_or(PipelineError::PipelineNotFound(pipeline_id))?;
@@ -500,18 +500,18 @@ async fn read_data(
     let source = db::sources::read_source(pool, tenant_id, source_id, encryption_key)
         .await?
         .ok_or(PipelineError::SourceNotFound(source_id))?;
-    let sink_id = pipeline.destination_id;
-    let sink = db::sinks::read_sink(pool, tenant_id, sink_id, encryption_key)
+    let destination_id = pipeline.destination_id;
+    let destination = db::sinks::read_destination(pool, tenant_id, destination_id, encryption_key)
         .await?
-        .ok_or(PipelineError::SinkNotFound(sink_id))?;
+        .ok_or(PipelineError::DestinationNotFound(destination_id))?;
 
-    Ok((pipeline, replicator, image, source, sink))
+    Ok((pipeline, replicator, image, source, destination))
 }
 
 async fn create_configs(
     k8s_client: &Arc<HttpK8sClient>,
     source_config: SourceConfig,
-    sink_config: SinkConfig,
+    destination_config: DestinationConfig,
     pipeline: Pipeline,
     project: String,
 ) -> Result<(Secrets, replicator_config::Config), PipelineError> {
@@ -524,12 +524,12 @@ async fn create_configs(
         slot_name,
     } = source_config;
 
-    let SinkConfig::BigQuery {
+    let DestinationConfig::BigQuery {
         project_id,
         dataset_id,
         service_account_key: bigquery_service_account_key,
         max_staleness_mins,
-    } = sink_config;
+    } = destination_config;
 
     let secrets = Secrets {
         postgres_password: postgres_password.unwrap_or_default(),
@@ -546,7 +546,7 @@ async fn create_configs(
         publication,
     };
 
-    let sink_config = replicator_config::SinkConfig::BigQuery {
+    let destination_config = replicator_config::DestinationConfig::BigQuery {
         project_id,
         dataset_id,
         max_staleness_mins,
@@ -576,7 +576,7 @@ async fn create_configs(
 
     let config = replicator_config::Config {
         source: source_config,
-        sink: sink_config,
+        destination: destination_config,
         batch: batch_config,
         tls: tls_config,
         project,

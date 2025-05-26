@@ -49,7 +49,7 @@ impl Debug for SourceConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum SinkConfig {
+pub enum DestinationConfig {
     BigQuery {
         /// BigQuery project id
         project_id: String,
@@ -63,7 +63,7 @@ pub enum SinkConfig {
     },
 }
 
-impl Debug for SinkConfig {
+impl Debug for DestinationConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::BigQuery {
@@ -101,7 +101,7 @@ pub struct TlsConfig {
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Config {
     pub source: SourceConfig,
-    pub sink: SinkConfig,
+    pub destination: DestinationConfig,
     pub batch: BatchConfig,
     pub tls: TlsConfig,
     pub project: String,
@@ -109,7 +109,9 @@ pub struct Config {
 
 #[cfg(test)]
 mod tests {
-    use crate::replicator_config::{BatchConfig, Config, SinkConfig, SourceConfig, TlsConfig};
+    use crate::replicator_config::{
+        BatchConfig, Config, DestinationConfig, SourceConfig, TlsConfig,
+    };
 
     #[test]
     pub fn deserialize_settings_test() {
@@ -124,7 +126,7 @@ mod tests {
                     "publication": "replicator_publication"
                 }
             },
-            "sink": {
+            "destination": {
                 "big_query": {
                     "project_id": "project-id",
                     "dataset_id": "dataset-id"
@@ -150,7 +152,7 @@ mod tests {
                 slot_name: "replicator_slot".to_string(),
                 publication: "replicator_publication".to_string(),
             },
-            sink: SinkConfig::BigQuery {
+            destination: DestinationConfig::BigQuery {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
                 max_staleness_mins: None,
@@ -180,7 +182,7 @@ mod tests {
                 slot_name: "replicator_slot".to_string(),
                 publication: "replicator_publication".to_string(),
             },
-            sink: SinkConfig::BigQuery {
+            destination: DestinationConfig::BigQuery {
                 project_id: "project-id".to_string(),
                 dataset_id: "dataset-id".to_string(),
                 max_staleness_mins: None,
@@ -195,7 +197,7 @@ mod tests {
             },
             project: "abcdefghijklmnopqrst".to_string(),
         };
-        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"sink":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false},"project":"abcdefghijklmnopqrst"}"#;
+        let expected = r#"{"source":{"postgres":{"host":"localhost","port":5432,"name":"postgres","username":"postgres","slot_name":"replicator_slot","publication":"replicator_publication"}},"destination":{"big_query":{"project_id":"project-id","dataset_id":"dataset-id"}},"batch":{"max_size":1000,"max_fill_secs":10},"tls":{"trusted_root_certs":"","enabled":false},"project":"abcdefghijklmnopqrst"}"#;
         let actual = serde_json::to_string(&actual);
         assert!(actual.is_ok());
         assert_eq!(expected, actual.unwrap());

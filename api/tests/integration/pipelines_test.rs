@@ -7,7 +7,7 @@ use crate::{
         PipelinesResponse, TestApp, UpdatePipelineRequest,
     },
     integration::images_test::create_default_image,
-    integration::sinks_test::create_sink,
+    integration::sinks_test::create_destination,
     integration::sources_test::create_source,
     integration::tenants_test::create_tenant,
     integration::tenants_test::create_tenant_with_id_and_name,
@@ -35,13 +35,13 @@ pub async fn create_pipeline_with_config(
     app: &TestApp,
     tenant_id: &str,
     source_id: i64,
-    sink_id: i64,
+    destination_id: i64,
     config: PipelineConfig,
 ) -> i64 {
     create_default_image(app).await;
     let pipeline = CreatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config,
     };
@@ -60,12 +60,12 @@ async fn pipeline_can_be_created() {
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
 
     // Act
     let pipeline = CreatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -98,12 +98,12 @@ async fn pipeline_with_another_tenants_source_cant_be_created() {
     )
     .await;
     let source2_id = create_source(&app, tenant2_id).await;
-    let sink1_id = create_sink(&app, tenant1_id).await;
+    let destinaion1_id = create_destination(&app, tenant1_id).await;
 
     // Act
     let pipeline = CreatePipelineRequest {
         source_id: source2_id,
-        sink_id: sink1_id,
+        destination_id: destinaion1_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -114,7 +114,7 @@ async fn pipeline_with_another_tenants_source_cant_be_created() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn pipeline_with_another_tenants_sink_cant_be_created() {
+async fn pipeline_with_another_tenants_destination_cant_be_created() {
     // Arrange
     let app = spawn_test_app().await;
     create_default_image(&app).await;
@@ -131,12 +131,12 @@ async fn pipeline_with_another_tenants_sink_cant_be_created() {
     )
     .await;
     let source1_id = create_source(&app, tenant1_id).await;
-    let sink2_id = create_sink(&app, tenant2_id).await;
+    let destination2_id = create_destination(&app, tenant2_id).await;
 
     // Act
     let pipeline = CreatePipelineRequest {
         source_id: source1_id,
-        sink_id: sink2_id,
+        destination_id: destination2_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -153,11 +153,11 @@ async fn an_existing_pipeline_can_be_read() {
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -177,10 +177,10 @@ async fn an_existing_pipeline_can_be_read() {
         .json()
         .await
         .expect("failed to deserialize response");
-    assert_eq!(response.id, sink_id);
+    assert_eq!(response.id, destination_id);
     assert_eq!(&response.tenant_id, tenant_id);
     assert_eq!(response.source_id, source_id);
-    assert_eq!(response.sink_id, sink_id);
+    assert_eq!(response.destination_id, destination_id);
     assert!(response.replicator_id != 0);
     assert_eq!(response.config, pipeline.config);
 }
@@ -205,11 +205,11 @@ async fn an_existing_pipeline_can_be_updated() {
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -222,10 +222,10 @@ async fn an_existing_pipeline_can_be_updated() {
 
     // Act
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
     let updated_config = UpdatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "updated_publication".to_string(),
         config: updated_pipeline_config(),
     };
@@ -243,7 +243,7 @@ async fn an_existing_pipeline_can_be_updated() {
     assert_eq!(response.id, pipeline_id);
     assert_eq!(&response.tenant_id, tenant_id);
     assert_eq!(response.source_id, source_id);
-    assert_eq!(response.sink_id, sink_id);
+    assert_eq!(response.destination_id, destination_id);
     assert_eq!(response.publication_name, "updated_publication".to_string());
     assert_eq!(response.config, updated_config.config);
 }
@@ -266,11 +266,11 @@ async fn pipeline_with_another_tenants_source_cant_be_updated() {
     )
     .await;
     let source1_id = create_source(&app, tenant1_id).await;
-    let sink1_id = create_sink(&app, tenant1_id).await;
+    let destination1_id = create_destination(&app, tenant1_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id: source1_id,
-        sink_id: sink1_id,
+        destination_id: destination1_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -285,7 +285,7 @@ async fn pipeline_with_another_tenants_source_cant_be_updated() {
     let source2_id = create_source(&app, tenant2_id).await;
     let updated_config = UpdatePipelineRequest {
         source_id: source2_id,
-        sink_id: sink1_id,
+        destination_id: destination1_id,
         publication_name: "updated_publication".to_string(),
         config: updated_pipeline_config(),
     };
@@ -298,7 +298,7 @@ async fn pipeline_with_another_tenants_source_cant_be_updated() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn pipeline_with_another_tenants_sink_cant_be_updated() {
+async fn pipeline_with_another_tenants_destination_cant_be_updated() {
     // Arrange
     let app = spawn_test_app().await;
     create_default_image(&app).await;
@@ -315,11 +315,11 @@ async fn pipeline_with_another_tenants_sink_cant_be_updated() {
     )
     .await;
     let source1_id = create_source(&app, tenant1_id).await;
-    let sink1_id = create_sink(&app, tenant1_id).await;
+    let destination1_id = create_destination(&app, tenant1_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id: source1_id,
-        sink_id: sink1_id,
+        destination_id: destination1_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -331,10 +331,10 @@ async fn pipeline_with_another_tenants_sink_cant_be_updated() {
     let pipeline_id = response.id;
 
     // Act
-    let sink2_id = create_sink(&app, tenant2_id).await;
+    let destination2_id = create_destination(&app, tenant2_id).await;
     let updated_config = UpdatePipelineRequest {
         source_id: source1_id,
-        sink_id: sink2_id,
+        destination_id: destination2_id,
         publication_name: "updated_publication".to_string(),
         config: updated_pipeline_config(),
     };
@@ -352,12 +352,12 @@ async fn a_non_existing_pipeline_cant_be_updated() {
     let app = spawn_test_app().await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
 
     // Act
     let updated_config = UpdatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config: updated_pipeline_config(),
     };
@@ -374,11 +374,11 @@ async fn an_existing_pipeline_can_be_deleted() {
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -419,17 +419,22 @@ async fn all_pipelines_can_be_read() {
     let tenant_id = &create_tenant(&app).await;
     let source1_id = create_source(&app, tenant_id).await;
     let source2_id = create_source(&app, tenant_id).await;
-    let sink1_id = create_sink(&app, tenant_id).await;
-    let sink2_id = create_sink(&app, tenant_id).await;
+    let destination1_id = create_destination(&app, tenant_id).await;
+    let destination2_id = create_destination(&app, tenant_id).await;
 
-    let pipeline1_id =
-        create_pipeline_with_config(&app, tenant_id, source1_id, sink1_id, new_pipeline_config())
-            .await;
+    let pipeline1_id = create_pipeline_with_config(
+        &app,
+        tenant_id,
+        source1_id,
+        destination1_id,
+        new_pipeline_config(),
+    )
+    .await;
     let pipeline2_id = create_pipeline_with_config(
         &app,
         tenant_id,
         source2_id,
-        sink2_id,
+        destination2_id,
         updated_pipeline_config(),
     )
     .await;
@@ -448,13 +453,13 @@ async fn all_pipelines_can_be_read() {
             let config = new_pipeline_config();
             assert_eq!(&pipeline.tenant_id, tenant_id);
             assert_eq!(pipeline.source_id, source1_id);
-            assert_eq!(pipeline.sink_id, sink1_id);
+            assert_eq!(pipeline.destination_id, destination1_id);
             assert_eq!(pipeline.config, config);
         } else if pipeline.id == pipeline2_id {
             let config = updated_pipeline_config();
             assert_eq!(&pipeline.tenant_id, tenant_id);
             assert_eq!(pipeline.source_id, source2_id);
-            assert_eq!(pipeline.sink_id, sink2_id);
+            assert_eq!(pipeline.destination_id, destination2_id);
             assert_eq!(pipeline.config, config);
         }
     }
@@ -467,11 +472,11 @@ async fn deleting_a_source_cascade_deletes_the_pipeline() {
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -491,17 +496,17 @@ async fn deleting_a_source_cascade_deletes_the_pipeline() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn deleting_a_sink_cascade_deletes_the_pipeline() {
+async fn deleting_a_destination_cascade_deletes_the_pipeline() {
     // Arrange
     let app = spawn_test_app().await;
     create_default_image(&app).await;
     let tenant_id = &create_tenant(&app).await;
     let source_id = create_source(&app, tenant_id).await;
-    let sink_id = create_sink(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
 
     let pipeline = CreatePipelineRequest {
         source_id,
-        sink_id,
+        destination_id,
         publication_name: "publication".to_string(),
         config: new_pipeline_config(),
     };
@@ -513,7 +518,7 @@ async fn deleting_a_sink_cascade_deletes_the_pipeline() {
     let pipeline_id = response.id;
 
     // Act
-    app.delete_sink(tenant_id, sink_id).await;
+    app.delete_destination(tenant_id, destination_id).await;
 
     // Assert
     let response = app.read_pipeline(tenant_id, pipeline_id).await;
