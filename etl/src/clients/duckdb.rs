@@ -335,9 +335,7 @@ impl DuckDbClient {
 
     pub fn set_last_lsn(&self, lsn: PgLsn) -> Result<(), duckdb::Error> {
         let lsn: u64 = lsn.into();
-        let mut stmt = self
-            .conn
-            .prepare("update etl.last_lsn set lsn = ?")?;
+        let mut stmt = self.conn.prepare("update etl.last_lsn set lsn = ?")?;
         stmt.execute([lsn])?;
         Ok(())
     }

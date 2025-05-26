@@ -1,8 +1,6 @@
 use std::{error::Error, time::Duration};
 
 use clap::{Args, Parser, Subcommand};
-use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseOptions;
 use etl::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
@@ -12,6 +10,8 @@ use etl::{
     },
     SslMode,
 };
+use postgres::schema::TableName;
+use postgres::tokio::options::PgDatabaseOptions;
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

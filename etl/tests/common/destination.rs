@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use postgres::schema::{TableId, TableSchema};
-use std::cmp::max;
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
 use etl::conversions::cdc_event::CdcEvent;
 use etl::conversions::table_row::TableRow;
 use etl::pipeline::destinations::{BatchDestination, InfallibleDestinationError};
 use etl::pipeline::PipelineResumptionState;
+use postgres::schema::{TableId, TableSchema};
+use std::cmp::max;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use tokio_postgres::types::PgLsn;
 
 /// A test sink that captures replication events and data for verification.
