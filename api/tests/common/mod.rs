@@ -1,4 +1,4 @@
-//! Common test utilities for supabase_etl API tests.
+//! Common test utilities for etl API tests.
 //!
 //! This module provides shared functionality used across integration tests:
 //!

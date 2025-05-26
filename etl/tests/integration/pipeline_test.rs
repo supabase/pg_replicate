@@ -6,8 +6,8 @@ use crate::common::wait_for_condition;
 use postgres::schema::{ColumnSchema, TableId};
 use postgres::tokio::test_utils::PgDatabase;
 use std::ops::Range;
-use supabase_etl::conversions::cdc_event::CdcEvent;
-use supabase_etl::conversions::Cell;
+use etl::conversions::cdc_event::CdcEvent;
+use etl::conversions::Cell;
 use tokio_postgres::types::Type;
 
 fn get_expected_ages_sum(num_users: usize) -> i32 {

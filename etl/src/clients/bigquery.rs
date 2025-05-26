@@ -345,7 +345,7 @@ impl BigQueryClient {
         loop {
             let (rows, num_processed_rows) =
                 StorageApi::create_rows(table_descriptor, table_rows, MAX_SIZE_BYTES);
-            let trace_id = "supabase_etl bigquery client".to_string();
+            let trace_id = "etl bigquery client".to_string();
             let mut response_stream = self
                 .client
                 .storage_mut()

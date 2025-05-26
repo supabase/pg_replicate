@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["api", "supabase_etl", "postgres", "replicator", "telemetry"]
+members = ["api", "etl", "postgres", "replicator", "telemetry"]
 
 [workspace.dependencies]
 api = { path = "api" }
-supabase_etl = { path = "supabase_etl" }
+etl = { path = "etl" }
 postgres = { path = "postgres" }
 replicator = { path = "replicator" }
 telemetry = { path = "telemetry" }

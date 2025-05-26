@@ -3,7 +3,7 @@ use std::{error::Error, time::Duration};
 use clap::{Args, Parser, Subcommand};
 use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseOptions;
-use supabase_etl::{
+use etl::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
         destinations::duckdb::DuckDbDestination,
