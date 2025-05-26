@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use destinations::SinkError;
+use destinations::DestinationError;
 use postgres::schema::TableId;
 use sources::SourceError;
 use thiserror::Error;
@@ -24,12 +24,12 @@ pub struct PipelineResumptionState {
 }
 
 #[derive(Debug, Error)]
-pub enum PipelineError<SrcErr: SourceError, SnkErr: SinkError> {
+pub enum PipelineError<SrcErr: SourceError, DstErr: DestinationError> {
     #[error("source error: {0}")]
     Source(#[source] SrcErr),
 
-    #[error("sink error: {0}")]
-    Sink(#[source] SnkErr),
+    #[error("destination error: {0}")]
+    Destination(#[source] DstErr),
 
     #[error("source error: {0}")]
     CommonSource(#[from] sources::CommonSourceError),

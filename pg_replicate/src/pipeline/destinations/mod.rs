@@ -16,16 +16,16 @@ pub mod duckdb;
 #[cfg(feature = "stdout")]
 pub mod stdout;
 
-pub trait SinkError: std::error::Error + Send + Sync + 'static {}
+pub trait DestinationError: std::error::Error + Send + Sync + 'static {}
 
 #[derive(Debug, Error)]
 #[error("unreachable")]
-pub enum InfallibleSinkError {}
-impl SinkError for InfallibleSinkError {}
+pub enum InfallibleDestinationError {}
+impl DestinationError for InfallibleDestinationError {}
 
 #[async_trait]
-pub trait BatchSink {
-    type Error: SinkError;
+pub trait BatchDestination {
+    type Error: DestinationError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error>;
     async fn write_table_schemas(
         &mut self,

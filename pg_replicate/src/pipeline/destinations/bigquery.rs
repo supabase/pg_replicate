@@ -7,7 +7,7 @@ use thiserror::Error;
 use tokio_postgres::types::{PgLsn, Type};
 use tracing::info;
 
-use super::{BatchSink, SinkError};
+use super::{BatchDestination, DestinationError};
 use crate::clients::bigquery::table_schema_to_descriptor;
 use crate::{
     clients::bigquery::BigQueryClient,
@@ -33,9 +33,9 @@ pub enum BigQuerySinkError {
     CommitWithoutBegin,
 }
 
-impl SinkError for BigQuerySinkError {}
+impl DestinationError for BigQuerySinkError {}
 
-pub struct BigQueryBatchSink {
+pub struct BigQueryBatchDestination {
     client: BigQueryClient,
     dataset_id: String,
     table_schemas: Option<HashMap<TableId, TableSchema>>,
@@ -44,15 +44,15 @@ pub struct BigQueryBatchSink {
     max_staleness_mins: u16,
 }
 
-impl BigQueryBatchSink {
+impl BigQueryBatchDestination {
     pub async fn new_with_key_path(
         project_id: String,
         dataset_id: String,
         gcp_sa_key_path: &str,
         max_staleness_mins: u16,
-    ) -> Result<BigQueryBatchSink, BQError> {
+    ) -> Result<BigQueryBatchDestination, BQError> {
         let client = BigQueryClient::new_with_key_path(project_id, gcp_sa_key_path).await?;
-        Ok(BigQueryBatchSink {
+        Ok(BigQueryBatchDestination {
             client,
             dataset_id,
             table_schemas: None,
@@ -67,9 +67,9 @@ impl BigQueryBatchSink {
         dataset_id: String,
         gcp_sa_key: &str,
         max_staleness_mins: u16,
-    ) -> Result<BigQueryBatchSink, BQError> {
+    ) -> Result<BigQueryBatchDestination, BQError> {
         let client = BigQueryClient::new_with_key(project_id, gcp_sa_key).await?;
-        Ok(BigQueryBatchSink {
+        Ok(BigQueryBatchDestination {
             client,
             dataset_id,
             table_schemas: None,
@@ -94,7 +94,7 @@ impl BigQueryBatchSink {
 }
 
 #[async_trait]
-impl BatchSink for BigQueryBatchSink {
+impl BatchDestination for BigQueryBatchDestination {
     type Error = BigQuerySinkError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         info!("getting resumption state from bigquery");
