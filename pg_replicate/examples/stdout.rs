@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        destinations::stdout::StdoutSink,
+        destinations::stdout::StdoutDestination,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
@@ -125,10 +125,11 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let stdout_sink = StdoutSink;
+    let stdout_destination = StdoutDestination;
 
     let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
-    let mut pipeline = BatchDataPipeline::new(postgres_source, stdout_sink, action, batch_config);
+    let mut pipeline =
+        BatchDataPipeline::new(postgres_source, stdout_destination, action, batch_config);
 
     pipeline.start().await?;
 

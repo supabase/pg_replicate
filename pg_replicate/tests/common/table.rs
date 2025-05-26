@@ -1,4 +1,4 @@
-use crate::common::sink::TestSink;
+use crate::common::destination::TestDestination;
 use postgres::schema::{ColumnSchema, TableId, TableName};
 
 /// Verifies that a table's schema matches the expected configuration.
@@ -10,17 +10,17 @@ use postgres::schema::{ColumnSchema, TableId, TableName};
 /// # Panics
 ///
 /// Panics if:
-/// - The table ID is not found in the sink's schema
+/// - The table ID is not found in the destinations's schema
 /// - The schema index is out of bounds
 /// - Any column property doesn't match the expected configuration
 pub fn assert_table_schema(
-    sink: &TestSink,
+    destination: &TestDestination,
     table_id: TableId,
     schema_index: usize,
     expected_table_name: TableName,
     expected_columns: &[ColumnSchema],
 ) {
-    let tables_schemas = &sink.get_tables_schemas()[schema_index];
+    let tables_schemas = &destination.get_tables_schemas()[schema_index];
     let table_schema = tables_schemas.get(&table_id).unwrap();
 
     assert_eq!(table_schema.table_id, table_id);

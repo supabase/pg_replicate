@@ -1,14 +1,14 @@
 /// Common utilities and helpers for testing PostgreSQL replication functionality.
 ///
 /// This module provides shared testing infrastructure including database management,
-/// pipeline testing utilities, sink testing helpers, and table manipulation utilities.
+/// pipeline testing utilities, destination testing helpers, and table manipulation utilities.
 /// It also includes common testing patterns like waiting for conditions to be met.
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
 pub mod database;
+pub mod destination;
 pub mod pipeline;
-pub mod sink;
 pub mod table;
 
 /// The maximum duration to wait for test conditions to be met.

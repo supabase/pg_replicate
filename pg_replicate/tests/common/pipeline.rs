@@ -1,6 +1,6 @@
 use pg_replicate::pipeline::batching::data_pipeline::{BatchDataPipeline, BatchDataPipelineHandle};
 use pg_replicate::pipeline::batching::BatchConfig;
-use pg_replicate::pipeline::destinations::BatchSink;
+use pg_replicate::pipeline::destinations::BatchDestination;
 use pg_replicate::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
 use pg_replicate::pipeline::PipelineAction;
 use postgres::schema::TableName;
@@ -37,10 +37,10 @@ pub fn test_slot_name(slot_name: &str) -> String {
 /// # Panics
 ///
 /// Panics if the PostgreSQL source cannot be created.
-pub async fn spawn_pg_pipeline<Snk: BatchSink>(
+pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
     options: &PgDatabaseOptions,
     mode: PipelineMode,
-    sink: Snk,
+    destination: Snk,
 ) -> BatchDataPipeline<PostgresSource, Snk> {
     let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
 
@@ -55,7 +55,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
             .await
             .expect("Failure when creating the Postgres source for copying tables");
             let action = PipelineAction::TableCopiesOnly;
-            BatchDataPipeline::new(source, sink, action, batch_config)
+            BatchDataPipeline::new(source, destination, action, batch_config)
         }
         PipelineMode::Cdc {
             publication,
@@ -70,7 +70,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
             .await
             .expect("Failure when creating the Postgres source for cdc");
             let action = PipelineAction::CdcOnly;
-            BatchDataPipeline::new(source, sink, action, batch_config)
+            BatchDataPipeline::new(source, destination, action, batch_config)
         }
     };
 
@@ -81,12 +81,12 @@ pub async fn spawn_pg_pipeline<Snk: BatchSink>(
 ///
 /// This function creates a pipeline and wraps it in a [`PipelineRunner`] for
 /// easier management of the pipeline lifecycle.
-pub async fn spawn_async_pg_pipeline<Snk: BatchSink + Send + 'static>(
+pub async fn spawn_async_pg_pipeline<Dst: BatchDestination + Send + 'static>(
     options: &PgDatabaseOptions,
     mode: PipelineMode,
-    sink: Snk,
-) -> PipelineRunner<Snk> {
-    let pipeline = spawn_pg_pipeline(options, mode, sink).await;
+    destination: Dst,
+) -> PipelineRunner<Dst> {
+    let pipeline = spawn_pg_pipeline(options, mode, destination).await;
     PipelineRunner::new(pipeline)
 }
 
@@ -94,12 +94,12 @@ pub async fn spawn_async_pg_pipeline<Snk: BatchSink + Send + 'static>(
 ///
 /// This struct provides methods to run and stop a pipeline, handling the
 /// pipeline's state and ensuring proper cleanup.
-pub struct PipelineRunner<Snk: BatchSink> {
+pub struct PipelineRunner<Snk: BatchDestination> {
     pipeline: Option<BatchDataPipeline<PostgresSource, Snk>>,
     pipeline_handle: BatchDataPipelineHandle,
 }
 
-impl<Snk: BatchSink + Send + 'static> PipelineRunner<Snk> {
+impl<Snk: BatchDestination + Send + 'static> PipelineRunner<Snk> {
     /// Creates a new pipeline runner with the specified pipeline.
     pub fn new(pipeline: BatchDataPipeline<PostgresSource, Snk>) -> Self {
         let pipeline_handle = pipeline.handle();

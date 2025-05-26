@@ -9,7 +9,7 @@ use tracing::error;
 use crate::{
     clients::duckdb::DuckDbClient,
     conversions::{cdc_event::CdcEvent, table_row::TableRow},
-    pipeline::{destinations::SinkError, PipelineResumptionState},
+    pipeline::{destinations::DestinationError, PipelineResumptionState},
 };
 
 pub enum DuckDbRequest {
@@ -54,7 +54,7 @@ pub enum DuckDbExecutorError {
     SendError(#[from] SendError<DuckDbRequest>),
 }
 
-impl SinkError for DuckDbExecutorError {}
+impl DestinationError for DuckDbExecutorError {}
 
 pub(super) struct DuckDbExecutor {
     pub(super) client: DuckDbClient,

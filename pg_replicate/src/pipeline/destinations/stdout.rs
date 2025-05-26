@@ -10,13 +10,13 @@ use crate::{
     pipeline::PipelineResumptionState,
 };
 
-use super::{BatchSink, InfallibleSinkError};
+use super::{BatchDestination, InfallibleDestinationError};
 
-pub struct StdoutSink;
+pub struct StdoutDestination;
 
 #[async_trait]
-impl BatchSink for StdoutSink {
-    type Error = InfallibleSinkError;
+impl BatchDestination for StdoutDestination {
+    type Error = InfallibleDestinationError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         Ok(PipelineResumptionState {
             copied_tables: HashSet::new(),

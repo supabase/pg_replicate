@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        destinations::duckdb::DuckDbSink,
+        destinations::duckdb::DuckDbDestination,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
@@ -149,14 +149,14 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let duckdb_sink = match (
+    let duckdb_destination = match (
         db_args.duckdb.duckdb_file,
         db_args.duckdb.motherduck_access_token,
         db_args.duckdb.motherduck_db_name,
     ) {
-        (Some(duckdb_file), None, None) => DuckDbSink::file(duckdb_file).await?,
+        (Some(duckdb_file), None, None) => DuckDbDestination::file(duckdb_file).await?,
         (None, Some(access_token), Some(db_name)) => {
-            DuckDbSink::mother_duck(&access_token, &db_name).await?
+            DuckDbDestination::mother_duck(&access_token, &db_name).await?
         }
         _ => {
             unreachable!()
@@ -164,7 +164,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     };
 
     let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
-    let mut pipeline = BatchDataPipeline::new(postgres_source, duckdb_sink, action, batch_config);
+    let mut pipeline =
+        BatchDataPipeline::new(postgres_source, duckdb_destination, action, batch_config);
 
     pipeline.start().await?;
 

@@ -991,7 +991,7 @@ impl ArrayCell {
 /// Converts a [`TableSchema`] to [`TableDescriptor`].
 ///
 /// This function is defined here and doesn't use the [`From`] trait because it's not possible since
-/// [`TableSchema`] is in another crate and we don't want to pollute the `postgres` crate with sink
+/// [`TableSchema`] is in another crate and we don't want to pollute the `postgres` crate with destination
 /// specific internals.
 pub fn table_schema_to_descriptor(table_schema: &TableSchema) -> TableDescriptor {
     let mut field_descriptors = Vec::with_capacity(table_schema.column_schemas.len());

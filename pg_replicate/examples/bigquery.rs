@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 use pg_replicate::{
     pipeline::{
         batching::{data_pipeline::BatchDataPipeline, BatchConfig},
-        destinations::bigquery::BigQueryBatchSink,
+        destinations::bigquery::BigQueryBatchDestination,
         sources::postgres::{PostgresSource, TableNamesFrom},
         PipelineAction,
     },
@@ -155,7 +155,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let bigquery_sink = BigQueryBatchSink::new_with_key_path(
+    let bigquery_destination = BigQueryBatchDestination::new_with_key_path(
         bq_args.bq_project_id,
         bq_args.bq_dataset_id,
         &bq_args.bq_sa_key_file,
@@ -167,7 +167,8 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
         bq_args.max_batch_size,
         Duration::from_secs(bq_args.max_batch_fill_duration_secs),
     );
-    let mut pipeline = BatchDataPipeline::new(postgres_source, bigquery_sink, action, batch_config);
+    let mut pipeline =
+        BatchDataPipeline::new(postgres_source, bigquery_destination, action, batch_config);
 
     pipeline.start().await?;
 
