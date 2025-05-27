@@ -10,5 +10,5 @@ where
 pub trait WorkerHandle<S> {
     fn state(&self) -> S;
 
-    fn wait(&mut self) -> impl Future<Output = ()> + Send;
+    fn wait(self) -> impl Future<Output = ()> + Send;
 }
