@@ -1,39 +1,16 @@
+use crate::v2::destination::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::base::{Worker, WorkerHandle};
-use std::sync::{Arc, Mutex};
+use crate::v2::workers::table_sync::TableSyncWorkerHandles;
 use tokio::task::JoinHandle;
-use tokio_postgres::types::PgLsn;
-
-#[derive(Debug)]
-struct StateInner {
-    last_lsn: PgLsn,
-}
-
-#[derive(Debug, Clone)]
-pub struct ApplyWorkerState {
-    inner: Arc<Mutex<StateInner>>,
-}
-
-impl ApplyWorkerState {
-    fn new(lsn: PgLsn) -> Self {
-        let inner = StateInner { last_lsn: lsn };
-
-        Self {
-            inner: Arc::new(Mutex::new(inner)),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct ApplyWorkerHandle {
-    state: ApplyWorkerState,
     handle: Option<JoinHandle<()>>,
 }
 
-impl WorkerHandle<ApplyWorkerState> for ApplyWorkerHandle {
-    fn state(&self) -> ApplyWorkerState {
-        self.state.clone()
-    }
+impl WorkerHandle<()> for ApplyWorkerHandle {
+    fn state(&self) -> () {}
 
     async fn wait(&mut self) {
         let Some(handle) = self.handle.take() else {
@@ -46,37 +23,50 @@ impl WorkerHandle<ApplyWorkerState> for ApplyWorkerHandle {
 }
 
 #[derive(Debug)]
-pub struct ApplyWorker<S> {
+pub struct ApplyWorker<S, D> {
     state_store: S,
+    destination: D,
+    table_sync_workers: TableSyncWorkerHandles,
 }
 
-impl<S> ApplyWorker<S>
+impl<S, D> ApplyWorker<S, D>
 where
     S: PipelineStateStore,
+    D: Destination,
 {
-    pub fn new(state_store: S) -> Self {
-        Self { state_store }
+    pub fn new(state_store: S, destination: D, table_sync_workers: TableSyncWorkerHandles) -> Self {
+        Self {
+            state_store,
+            destination,
+            table_sync_workers,
+        }
     }
 }
 
-impl<S> Worker<ApplyWorkerHandle, ApplyWorkerState> for ApplyWorker<S>
+impl<S, D> Worker<ApplyWorkerHandle, ()> for ApplyWorker<S, D>
 where
-    S: PipelineStateStore,
+    S: PipelineStateStore + Send + 'static,
+    D: Destination + Send + 'static,
 {
     async fn start(self) -> ApplyWorkerHandle {
-        let state = ApplyWorkerState::new(PgLsn::from(0));
-
-        let handle = tokio::spawn(apply_loop(state.clone()));
+        let handle = tokio::spawn(apply_worker(self.state_store, self.table_sync_workers));
 
         ApplyWorkerHandle {
-            state,
             handle: Some(handle),
         }
     }
 }
 
-async fn apply_loop(state: ApplyWorkerState) {
-    loop {}
+async fn apply_worker<S>(state_store: S, table_sync_workers: TableSyncWorkerHandles)
+where
+    S: PipelineStateStore + Send + 'static,
+{
+    let pipeline_state = state_store.load_pipeline_state().await;
+
+    // Steps:
+    // 1. Run apply loop which is a struct that takes an implementation of trait called TableSync which calls the
+    //   sync tables method every time
+    // 2. Implement TableSync for this specific worker which does some specific amount of work
 }
 
-fn sync_tables_for_apply() {}
+// TODO: implementing TablesSyncing.

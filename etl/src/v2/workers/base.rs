@@ -1,12 +1,14 @@
+use std::future::Future;
+
 pub trait Worker<H, S>
 where
     H: WorkerHandle<S>,
 {
-    async fn start(self) -> H;
+    fn start(self) -> impl Future<Output = H> + Send;
 }
 
 pub trait WorkerHandle<S> {
     fn state(&self) -> S;
 
-    async fn wait(&mut self);
+    fn wait(&mut self) -> impl Future<Output = ()> + Send;
 }

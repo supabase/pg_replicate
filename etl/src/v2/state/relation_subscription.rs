@@ -1,15 +1,36 @@
 use postgres::schema::Oid;
+use std::borrow::Borrow;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug)]
 pub struct RelationSubscriptionState {
     /// The relation (table) OID to which this subscription refers.
-    rel_id: Oid,
+    pub rel_id: Oid,
     /// The status of the subscription bound to a relation.
-    status: RelationSubscriptionStatus,
+    pub status: RelationSubscriptionStatus,
 }
 
-#[derive(Debug)]
+impl RelationSubscriptionState {
+    pub fn set_status(&mut self, status: RelationSubscriptionStatus) {
+        self.status = status;
+    }
+}
+
+impl PartialEq for RelationSubscriptionState {
+    fn eq(&self, other: &Self) -> bool {
+        self.rel_id == other.rel_id
+    }
+}
+
+impl Borrow<Oid> for RelationSubscriptionState {
+    fn borrow(&self) -> &Oid {
+        &self.rel_id
+    }
+}
+
+impl Eq for RelationSubscriptionState {}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum RelationSubscriptionStatus {
     Init,
     DataSync,

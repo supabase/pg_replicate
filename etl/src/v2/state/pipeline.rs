@@ -3,7 +3,7 @@ use tokio_postgres::types::PgLsn;
 #[derive(Debug)]
 pub struct PipelineState {
     /// The last LSN which was applied by a pipeline.
-    last_lsn: PgLsn,
+    pub last_lsn: PgLsn,
 }
 
 impl Default for PipelineState {
