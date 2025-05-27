@@ -1,5 +1,5 @@
 use crate::v2::destination::Destination;
-use crate::v2::state::relation_subscription::RelationSubscriptionState;
+use crate::v2::state::relation_subscription::TableReplicationState;
 use crate::v2::state::store::base::PipelineStateStore;
 use postgres::schema::Oid;
 use std::future::Future;
@@ -7,8 +7,8 @@ use tokio_postgres::types::PgLsn;
 
 pub trait ApplyLoopHook<S, D>
 where
-    S: PipelineStateStore + Send + 'static,
-    D: Destination + Send + 'static,
+    S: PipelineStateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
 {
     fn process_syncing_tables(
         &self,

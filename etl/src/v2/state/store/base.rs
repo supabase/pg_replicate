@@ -1,5 +1,5 @@
 use crate::v2::state::pipeline::PipelineState;
-use crate::v2::state::relation_subscription::RelationSubscriptionState;
+use crate::v2::state::relation_subscription::TableReplicationState;
 use postgres::schema::Oid;
 use std::future::Future;
 
@@ -8,17 +8,17 @@ pub trait PipelineStateStore {
 
     fn store_pipeline_state(&self, state: PipelineState) -> impl Future<Output = ()> + Send;
 
-    fn load_relation_subscription_states(
+    fn load_table_replication_states(
         &self,
-    ) -> impl Future<Output = Vec<RelationSubscriptionState>> + Send;
+    ) -> impl Future<Output = Vec<TableReplicationState>> + Send;
 
-    fn load_relation_subscription_state(
+    fn load_table_replication_state(
         &self,
-        rel_id: &Oid,
-    ) -> impl Future<Output = RelationSubscriptionState> + Send;
+        table_id: &Oid,
+    ) -> impl Future<Output = Option<TableReplicationState>> + Send;
 
-    fn store_relation_subscription_state(
+    fn store_table_replication_state(
         &self,
-        state: RelationSubscriptionState,
+        state: TableReplicationState,
     ) -> impl Future<Output = ()> + Send;
 }

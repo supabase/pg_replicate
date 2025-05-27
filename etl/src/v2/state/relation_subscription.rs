@@ -3,40 +3,37 @@ use std::borrow::Borrow;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug)]
-pub struct RelationSubscriptionState {
-    /// The relation (table) OID to which this subscription refers.
-    pub rel_id: Oid,
-    /// The status of the subscription bound to a relation.
-    pub status: RelationSubscriptionStatus,
+pub struct TableReplicationState {
+    /// The table (relation) OID to which this subscription refers.
+    pub id: Oid,
+    /// The phase of replication of the table.
+    pub phase: TableReplicationPhase,
 }
 
-impl RelationSubscriptionState {
-    pub fn set_status(&mut self, status: RelationSubscriptionStatus) {
-        self.status = status;
-    }
-}
-
-impl PartialEq for RelationSubscriptionState {
+impl PartialEq for TableReplicationState {
     fn eq(&self, other: &Self) -> bool {
-        self.rel_id == other.rel_id
+        self.id == other.id
     }
 }
 
-impl Borrow<Oid> for RelationSubscriptionState {
+impl Borrow<Oid> for TableReplicationState {
     fn borrow(&self) -> &Oid {
-        &self.rel_id
+        &self.id
     }
 }
 
-impl Eq for RelationSubscriptionState {}
+impl Eq for TableReplicationState {}
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum RelationSubscriptionStatus {
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum TableReplicationPhase {
     Init,
     DataSync,
     FinishedCopy,
     SyncWait,
-    Catchup,
+    Catchup {
+        /// The LSN to catch up to.
+        lsn: PgLsn,
+    },
     SyncDone {
         /// The LSN up to which the table sync arrived.
         lsn: PgLsn,
@@ -45,19 +42,52 @@ pub enum RelationSubscriptionStatus {
     Unknown,
 }
 
-impl RelationSubscriptionStatus {
+impl TableReplicationPhase {
+    pub fn as_type(&self) -> TableReplicationPhaseType {
+        self.into()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum TableReplicationPhaseType {
+    Init,
+    DataSync,
+    FinishedCopy,
+    SyncWait,
+    Catchup,
+    SyncDone,
+    Ready,
+    Unknown,
+}
+
+impl TableReplicationPhaseType {
     pub fn should_store(&self) -> bool {
         match self {
-            RelationSubscriptionStatus::Init => true,
-            RelationSubscriptionStatus::DataSync => true,
-            RelationSubscriptionStatus::FinishedCopy => true,
-            RelationSubscriptionStatus::SyncDone { .. } => true,
-            RelationSubscriptionStatus::Ready => true,
+            Self::Init => true,
+            Self::DataSync => true,
+            Self::FinishedCopy => true,
+            Self::SyncDone => true,
+            Self::Ready => true,
             // We set `false` to the statuses which are exclusively used for cross-task synchronization
             // and do not need to be stored.
-            RelationSubscriptionStatus::SyncWait => false,
-            RelationSubscriptionStatus::Catchup => false,
-            RelationSubscriptionStatus::Unknown => false,
+            Self::SyncWait => false,
+            Self::Catchup => false,
+            Self::Unknown => false,
+        }
+    }
+}
+
+impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
+    fn from(phase: &'a TableReplicationPhase) -> Self {
+        match phase {
+            TableReplicationPhase::Init => Self::Init,
+            TableReplicationPhase::DataSync => Self::DataSync,
+            TableReplicationPhase::FinishedCopy => Self::FinishedCopy,
+            TableReplicationPhase::SyncWait => Self::SyncWait,
+            TableReplicationPhase::Catchup { .. } => Self::Catchup,
+            TableReplicationPhase::SyncDone { .. } => Self::SyncDone,
+            TableReplicationPhase::Ready => Self::Ready,
+            TableReplicationPhase::Unknown => Self::Unknown,
         }
     }
 }

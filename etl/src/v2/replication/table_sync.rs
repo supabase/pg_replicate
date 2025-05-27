@@ -1,5 +1,5 @@
 use crate::v2::destination::Destination;
-use crate::v2::state::relation_subscription::RelationSubscriptionStatus;
+use crate::v2::state::relation_subscription::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::table_sync::TableSyncWorkerState;
 use postgres::schema::Oid;
@@ -30,13 +30,16 @@ pub async fn start_table_sync<S, D>(
 
     // Wait until the catchup is reached
 
-    println!("Setting status");
-    table_sync_worker
-        .set_status(RelationSubscriptionStatus::SyncWait)
-        .await;
+    println!("Syncing table");
+    let mut inner = table_sync_worker.inner().write().await;
+    inner.set_phase(TableReplicationPhase::SyncWait);
+    println!("Table sync done");
 
+    println!("Synchronization done, waiting for catchup");
     let _ = table_sync_worker
-        .wait_for_status(RelationSubscriptionStatus::Catchup)
+        .wait_for_phase_type(TableReplicationPhaseType::Catchup)
         .await;
+    println!("Catchup signal received, proceeding");
+
     println!("CATCHUP REACHED");
 }

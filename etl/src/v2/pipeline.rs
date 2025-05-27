@@ -94,6 +94,6 @@ where
         };
 
         apply_worker.wait().await;
-        table_sync_workers.wait().await;
+        table_sync_workers.wait_all().await;
     }
 }

@@ -2,13 +2,14 @@ use crate::v2::destination::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
 use crate::v2::replication::table_sync::start_table_sync;
 use crate::v2::state::relation_subscription::{
-    RelationSubscriptionState, RelationSubscriptionStatus,
+    TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::base::{Worker, WorkerHandle};
 use postgres::schema::Oid;
 use std::collections::HashMap;
 use std::future::Future;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use tokio::sync::{Notify, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -29,12 +30,12 @@ impl TableSyncWorkers {
 
     pub async fn start_worker<S, D>(&self, worker: TableSyncWorker<S, D>) -> bool
     where
-        S: PipelineStateStore + Send + 'static,
-        D: Destination + Send + 'static,
+        S: PipelineStateStore + Clone + Send + 'static,
+        D: Destination + Clone + Send + 'static,
     {
         let mut workers = self.workers.write().await;
 
-        let rel_id = worker.rel_id;
+        let rel_id = worker.table_id;
         if workers.contains_key(&rel_id) {
             return false;
         }
@@ -45,25 +46,40 @@ impl TableSyncWorkers {
         true
     }
 
-    pub async fn get_worker_state(&self, oid: Oid) -> Option<TableSyncWorkerState> {
+    pub async fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
         let handles = self.workers.read().await;
-        Some(handles.get(&oid)?.state.clone())
+        Some(handles.get(&table_id)?.state.clone())
     }
 
-    pub async fn remove_worker(&self, oid: Oid) {
+    pub async fn remove_worker(&self, table_id: Oid) {
         let mut handles = self.workers.write().await;
-        handles.remove(&oid);
+        handles.remove(&table_id);
     }
 
-    pub async fn wait(&self) {
-        let mut handles = self.workers.write().await;
+    pub async fn wait_all(&self) {
+        let mut workers = self.workers.write().await;
+
+        let workers = mem::take(&mut *workers);
+        for (_, worker) in workers {
+            worker.wait().await;
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct StateInner {
-    relation_subscription_state: RelationSubscriptionState,
-    state_change: Arc<Notify>,
+    table_replication_state: TableReplicationState,
+    phase_change: Arc<Notify>,
+}
+
+impl StateInner {
+    pub fn set_phase(&mut self, phase: TableReplicationPhase) {
+        self.table_replication_state.phase = phase;
+    }
+
+    pub fn get_phase(&self) -> TableReplicationPhase {
+        self.table_replication_state.phase
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -72,10 +88,10 @@ pub struct TableSyncWorkerState {
 }
 
 impl TableSyncWorkerState {
-    fn new(relation_subscription_state: RelationSubscriptionState) -> Self {
+    fn new(relation_subscription_state: TableReplicationState) -> Self {
         let inner = StateInner {
-            relation_subscription_state,
-            state_change: Arc::new(Notify::new()),
+            table_replication_state: relation_subscription_state,
+            phase_change: Arc::new(Notify::new()),
         };
 
         Self {
@@ -83,14 +99,14 @@ impl TableSyncWorkerState {
         }
     }
 
-    pub async fn set_status(&self, status: RelationSubscriptionStatus) {
-        let mut inner = self.inner.write().await;
-        inner.relation_subscription_state.status = status;
+    pub fn inner(&self) -> &RwLock<StateInner> {
+        &self.inner
     }
 
-    pub async fn wait_for_status(
+    // TODO: check how we can design the system to actually return either a write or read lock.
+    pub async fn wait_for_phase_type(
         &self,
-        status: RelationSubscriptionStatus,
+        phase_type: TableReplicationPhaseType,
     ) -> RwLockReadGuard<'_, StateInner> {
         loop {
             // We grab hold of the state change notify in case we don't immediately have the state
@@ -98,11 +114,11 @@ impl TableSyncWorkerState {
             let state_change = {
                 let inner = self.inner.read().await;
 
-                if inner.relation_subscription_state.status == status {
+                if inner.table_replication_state.phase.as_type() == phase_type {
                     return inner;
                 }
 
-                inner.state_change.clone()
+                inner.phase_change.clone()
             };
 
             // We wait for a state change.
@@ -110,18 +126,10 @@ impl TableSyncWorkerState {
 
             // We read the state and return the lock to the state.
             let inner = self.inner.read().await;
-            if inner.relation_subscription_state.status == status {
+            if inner.table_replication_state.phase.as_type() == phase_type {
                 return inner;
             }
         }
-    }
-}
-
-impl Deref for TableSyncWorkerState {
-    type Target = RwLock<StateInner>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 
@@ -137,6 +145,8 @@ impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
     }
 
     async fn wait(mut self) {
+        // TODO: figure out a way to mark a state as invalid if the worker crashed or it
+        //  was stopped since via reference counting we are blind on this.
         let Some(handle) = self.handle.take() else {
             return;
         };
@@ -150,15 +160,15 @@ impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
 pub struct TableSyncWorker<S, D> {
     state_store: S,
     destination: D,
-    rel_id: Oid,
+    table_id: Oid,
 }
 
 impl<S, D> TableSyncWorker<S, D> {
-    pub fn new(state_store: S, destination: D, rel_id: Oid) -> Self {
+    pub fn new(state_store: S, destination: D, table_id: Oid) -> Self {
         Self {
             state_store,
             destination,
-            rel_id,
+            table_id,
         }
     }
 }
@@ -169,10 +179,15 @@ where
     D: Destination + Clone + Send + 'static,
 {
     async fn start(self) -> TableSyncWorkerHandle {
-        let relation_subscription_state = self
+        println!("Starting table sync worker");
+        let Some(relation_subscription_state) = self
             .state_store
-            .load_relation_subscription_state(&self.rel_id)
-            .await;
+            .load_table_replication_state(&self.table_id)
+            .await
+        else {
+            println!("The table doesn't exist in the store, stopping table sync worker");
+            return TableSyncWorkerHandle { state: self.state_store, handle: None };
+        };
 
         let state = TableSyncWorkerState::new(relation_subscription_state);
 
@@ -191,7 +206,7 @@ where
             // from its consistent snapshot.
             // TODO: check if this is the right LSN to start with.
             let hook = Hook {
-                rel_id: self.rel_id,
+                rel_id: self.table_id,
             };
             start_apply_loop(self.state_store, self.destination, hook, PgLsn::from(0)).await;
         });
@@ -210,8 +225,8 @@ struct Hook {
 
 impl<S, D> ApplyLoopHook<S, D> for Hook
 where
-    S: PipelineStateStore + Send + 'static,
-    D: Destination + Send + 'static,
+    S: PipelineStateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
 {
     async fn process_syncing_tables(
         &self,
