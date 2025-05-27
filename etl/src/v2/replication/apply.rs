@@ -1,6 +1,6 @@
 use crate::v2::destination::Destination;
-use crate::v2::state::relation_subscription::TableReplicationState;
 use crate::v2::state::store::base::PipelineStateStore;
+
 use postgres::schema::Oid;
 use std::future::Future;
 use tokio_postgres::types::PgLsn;
@@ -17,7 +17,7 @@ where
         current_lsn: PgLsn,
     ) -> impl Future<Output = ()> + Send;
 
-    fn should_apply_changes(&self, rel_id: Oid) -> bool;
+    fn should_apply_changes(&self, table_id: Oid) -> bool;
 }
 
 pub async fn start_apply_loop<S, D, T>(state_store: S, destination: D, hook: T, last_lsn: PgLsn)

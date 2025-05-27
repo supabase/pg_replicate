@@ -35,13 +35,16 @@ impl TableSyncWorkers {
     {
         let mut workers = self.workers.write().await;
 
-        let rel_id = worker.table_id;
-        if workers.contains_key(&rel_id) {
+        let table_id = worker.table_id;
+        if workers.contains_key(&table_id) {
             return false;
         }
 
-        let handle = worker.start().await;
-        workers.insert(rel_id, handle);
+        let Some(handle) = worker.start().await else {
+            return false;
+        };
+
+        workers.insert(table_id, handle);
 
         true
     }
@@ -178,7 +181,7 @@ where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    async fn start(self) -> TableSyncWorkerHandle {
+    async fn start(self) -> Option<TableSyncWorkerHandle> {
         println!("Starting table sync worker");
         let Some(relation_subscription_state) = self
             .state_store
@@ -186,7 +189,7 @@ where
             .await
         else {
             println!("The table doesn't exist in the store, stopping table sync worker");
-            return TableSyncWorkerHandle { state: self.state_store, handle: None };
+            return None;
         };
 
         let state = TableSyncWorkerState::new(relation_subscription_state);
@@ -206,21 +209,21 @@ where
             // from its consistent snapshot.
             // TODO: check if this is the right LSN to start with.
             let hook = Hook {
-                rel_id: self.table_id,
+                table_id: self.table_id,
             };
             start_apply_loop(self.state_store, self.destination, hook, PgLsn::from(0)).await;
         });
 
-        TableSyncWorkerHandle {
+        Some(TableSyncWorkerHandle {
             state,
             handle: Some(handle),
-        }
+        })
     }
 }
 
 #[derive(Debug)]
 struct Hook {
-    rel_id: Oid,
+    table_id: Oid,
 }
 
 impl<S, D> ApplyLoopHook<S, D> for Hook
@@ -236,7 +239,7 @@ where
     ) -> () {
     }
 
-    fn should_apply_changes(&self, rel_id: Oid) -> bool {
-        self.rel_id == rel_id
+    fn should_apply_changes(&self, table_id: Oid) -> bool {
+        self.table_id == table_id
     }
 }

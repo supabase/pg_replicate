@@ -49,7 +49,7 @@ where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    async fn start(self) -> ApplyWorkerHandle {
+    async fn start(self) -> Option<ApplyWorkerHandle> {
         println!("Starting apply worker");
         let handle = tokio::spawn(async move {
             // We load the initial state that will be used for the apply worker.
@@ -69,9 +69,9 @@ where
             .await;
         });
 
-        ApplyWorkerHandle {
+        Some(ApplyWorkerHandle {
             handle: Some(handle),
-        }
+        })
     }
 }
 
@@ -130,7 +130,7 @@ where
         }
     }
 
-    fn should_apply_changes(&self, rel_id: Oid) -> bool {
+    fn should_apply_changes(&self, table_id: Oid) -> bool {
         /*
         TODO: we have to figure out how remote final lsn is hooked.
             (rel->state == SUBREL_STATE_READY ||

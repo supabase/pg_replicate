@@ -1,4 +1,5 @@
 use postgres::tokio::options::PgDatabaseOptions;
+use thiserror::Error;
 
 use crate::v2::destination::Destination;
 use crate::v2::replication::client::PgReplicationClient;
@@ -6,6 +7,12 @@ use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle};
 use crate::v2::workers::table_sync::TableSyncWorkers;
+
+#[derive(Debug, Error)]
+pub enum PipelineError {
+    #[error("An error occurred in a worker")]
+    WorkerError,
+}
 
 #[derive(Debug)]
 enum PipelineWorkers {
@@ -52,7 +59,7 @@ where
         }
     }
 
-    pub async fn start(&mut self) {
+    pub async fn start(&mut self) -> Result<(), PipelineError> {
         // We synchronize the relation subscription states with the publication, to make sure we
         // always know which tables to work with. Maybe in the future we also want to react in real
         // time to new relation ids being sent over by the cdc event stream.
@@ -68,12 +75,15 @@ where
             table_sync_workers.clone(),
         )
         .start()
-        .await;
+        .await
+        .ok_or(PipelineError::WorkerError)?;
 
         self.workers = PipelineWorkers::Started {
             apply_worker,
             table_sync_workers,
         };
+
+        Ok(())
     }
 
     async fn sync_relation_subscription_states(&self) {

@@ -4,7 +4,7 @@ pub trait Worker<H, S>
 where
     H: WorkerHandle<S>,
 {
-    fn start(self) -> impl Future<Output = H> + Send;
+    fn start(self) -> impl Future<Output = Option<H>> + Send;
 }
 
 pub trait WorkerHandle<S> {
