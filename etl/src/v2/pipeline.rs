@@ -1,4 +1,5 @@
 use thiserror::Error;
+use tracing::{error, info};
 
 use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
@@ -48,6 +49,11 @@ where
     }
 
     pub async fn start(&mut self) -> Result<(), PipelineError> {
+        info!(
+            "Starting pipeline for publication {}",
+            self.publication_name
+        );
+
         // We synchronize the relation subscription states with the publication, to make sure we
         // always know which tables to work with. Maybe in the future we also want to react in real
         // time to new relation ids being sent over by the cdc event stream.
@@ -64,7 +70,10 @@ where
         )
         .start()
         .await
-        .ok_or(PipelineError::WorkerError)?;
+        .ok_or_else(|| {
+            error!("Failed to start apply worker");
+            PipelineError::WorkerError
+        })?;
 
         self.workers = PipelineWorkers::Started {
             apply_worker,
@@ -75,6 +84,7 @@ where
     }
 
     async fn sync_relation_subscription_states(&self) {
+        info!("Synchronizing relation subscription states");
         // TODO: in this function we want to:
         //  1. Load all tables for the publication
         //  2. For each table, we check if it already exists in the store
@@ -88,15 +98,20 @@ where
             table_sync_workers,
         } = self.workers
         else {
+            info!("Pipeline was not started, nothing to wait for");
             return;
         };
 
+        info!("Waiting for pipeline workers to complete");
         // We first wait for the apply worker to finish, since that must be done before waiting for
         // the table sync workers to finish, otherwise if we wait for sync workers first, we might
         // be having the apply worker that spawns new sync workers after we waited for the current
         // ones to finish.
         apply_worker.wait().await;
+        info!("Apply worker completed");
+
         let mut table_sync_workers = table_sync_workers.write().await;
         table_sync_workers.wait_all().await;
+        info!("All table sync workers completed");
     }
 }

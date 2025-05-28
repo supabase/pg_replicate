@@ -1,5 +1,5 @@
 use crate::v2::state::pipeline::PipelineState;
-use crate::v2::state::relation_subscription::TableReplicationState;
+use crate::v2::state::table::TableReplicationState;
 use postgres::schema::Oid;
 use std::future::Future;
 

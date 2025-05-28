@@ -1,12 +1,13 @@
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
 use crate::v2::replication::table_sync::start_table_sync;
-use crate::v2::state::relation_subscription::{
+use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
-use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::base::{CatchFuture, Worker, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
+use tracing::{info, warn};
 
 use postgres::schema::Oid;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 
-const PHASE_CHANGE_REFRESH_FRQUENCY: Duration = Duration::from_millis(100);
+const PHASE_CHANGE_REFRESH_FREQUENCY: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 pub struct TableSyncWorkerStateInner {
@@ -25,6 +26,11 @@ pub struct TableSyncWorkerStateInner {
 
 impl TableSyncWorkerStateInner {
     pub fn set_phase(&mut self, phase: TableReplicationPhase) {
+        info!(
+            "Table {} phase changing from {:?} to {:?}",
+            self.table_replication_state.id, self.table_replication_state.phase, phase
+        );
+
         self.table_replication_state.phase = phase;
         // We want to notify all waiters that there was a phase change.
         //
@@ -42,6 +48,11 @@ impl TableSyncWorkerStateInner {
 
         // If we should store this phase change, we want to do it via the supplied state store.
         if phase.as_type().should_store() {
+            info!(
+                "Storing phase change for table {} to {:?}",
+                self.table_replication_state.id, phase
+            );
+
             let new_table_replication_state =
                 self.table_replication_state.clone().with_phase(phase);
             state_store
@@ -82,6 +93,8 @@ impl TableSyncWorkerState {
         &self,
         phase_type: TableReplicationPhaseType,
     ) -> RwLockReadGuard<'_, TableSyncWorkerStateInner> {
+        info!("Waiting for phase type '{:?}'", phase_type);
+
         loop {
             // We grab hold of the phase change notify in case we don't immediately have the state
             // that we want.
@@ -97,7 +110,7 @@ impl TableSyncWorkerState {
             // We wait for a state change within a timeout. This is done since it might be that a
             // notification is missed and in that case we want to avoid blocking indefinitely.
             let _ =
-                tokio::time::timeout(PHASE_CHANGE_REFRESH_FRQUENCY, phase_change.notified()).await;
+                tokio::time::timeout(PHASE_CHANGE_REFRESH_FREQUENCY, phase_change.notified()).await;
 
             // We read the state and return the lock to the state.
             let inner = self.inner.read().await;
@@ -160,11 +173,17 @@ where
     D: Destination + Clone + Send + 'static,
 {
     async fn start(self) -> Option<TableSyncWorkerHandle> {
+        info!("Starting table sync worker for table {}", self.table_id);
+
         let Some(relation_subscription_state) = self
             .state_store
             .load_table_replication_state(&self.table_id)
             .await
         else {
+            warn!(
+                "No replication state found for table {}, cannot start sync worker",
+                self.table_id
+            );
             return None;
         };
 
@@ -198,6 +217,10 @@ where
         let table_sync_worker = CatchFuture::new(table_sync_worker, move || {
             let pool = pool.clone();
             async move {
+                info!(
+                    "Table sync worker for table {} failed, removing from pool",
+                    table_id
+                );
                 let mut pool = pool.write().await;
                 pool.remove_worker(table_id).await;
             }
@@ -234,9 +257,23 @@ where
         destination: D,
         current_lsn: PgLsn,
     ) -> () {
+        info!(
+            "Processing syncing tables for table sync worker with LSN {}",
+            current_lsn
+        );
+
+        // This is intentionally empty as table sync workers don't need to process other tables
     }
 
     async fn should_apply_changes(&self, table_id: Oid, _remote_final_lsn: PgLsn) -> bool {
-        self.table_id == table_id
+        let should_apply = self.table_id == table_id;
+        if should_apply {
+            info!(
+                "Table sync worker for table {} will apply changes",
+                table_id
+            );
+        }
+
+        should_apply
     }
 }

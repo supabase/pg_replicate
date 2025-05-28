@@ -1,8 +1,6 @@
 use crate::v2::destination::base::Destination;
-use crate::v2::state::relation_subscription::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::table_sync::TableSyncWorkerState;
-use tokio_postgres::types::PgLsn;
 
 pub async fn start_table_sync<S, D>(
     state_store: S,

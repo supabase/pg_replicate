@@ -1,10 +1,11 @@
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
-use crate::v2::state::relation_subscription::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerHandle};
 use crate::v2::workers::table_sync::TableSyncWorker;
 use std::time::Duration;
+use tracing::{error, info, warn};
 
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use postgres::schema::Oid;
@@ -53,9 +54,14 @@ where
     D: Destination + Clone + Send + 'static,
 {
     async fn start(self) -> Option<ApplyWorkerHandle> {
+        info!("Starting apply worker");
         let apply_worker = async move {
             // We load the initial state that will be used for the apply worker.
             let pipeline_state = self.state_store.load_pipeline_state().await;
+            info!(
+                "Loaded initial pipeline state with LSN: {}",
+                pipeline_state.last_lsn
+            );
 
             // We start the applying loop by starting from the last LSN that we know was applied
             // by the destination.
@@ -99,6 +105,10 @@ where
         current_lsn: PgLsn,
     ) -> () {
         let table_replication_states = state_store.load_table_replication_states().await;
+        info!(
+            "Processing syncing tables for apply worker with LSN {}",
+            current_lsn
+        );
 
         for table_replication_state in table_replication_states {
             if let TableReplicationPhase::SyncDone { lsn } = table_replication_state.phase {
@@ -110,12 +120,6 @@ where
                         .await;
                 }
             } else {
-                // This lock is held for the entire time we are checking for the phase of a worker, and
-                // it's done to make sure that the worker is not removed from the pool in the meanwhile.
-                //
-                // If we want to be very accurate, the presence of a handle within the workers pool
-                // doesn't say anything about the state of the actual worker task, but it's fair to assume
-                // if it's inside the pool, the task is likely running.
                 let pool = self.pool.read().await;
                 if let Some(table_sync_worker_state) =
                     pool.get_worker_state(table_replication_state.id).await
@@ -134,6 +138,10 @@ where
                             .await;
                     }
                 } else {
+                    info!(
+                        "Creating new sync worker for table {}",
+                        table_replication_state.id
+                    );
                     // We drop the read lock before acquiring a write lock to add the new worker.
                     drop(pool);
 

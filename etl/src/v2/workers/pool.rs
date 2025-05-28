@@ -4,6 +4,7 @@ use std::mem;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{info, warn};
 
 use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
@@ -31,31 +32,50 @@ impl TableSyncWorkerPoolInner {
     {
         let table_id = worker.table_id();
         if self.workers.contains_key(&table_id) {
+            warn!("Worker for table {} already exists in pool", table_id);
             return false;
         }
 
+        info!("Starting new worker for table {}", table_id);
         let Some(handle) = worker.start().await else {
+            warn!("Failed to start worker for table {}", table_id);
             return false;
         };
 
         self.workers.insert(table_id, handle);
+        info!("Successfully added worker for table {} to pool", table_id);
 
         true
     }
 
     pub async fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
-        Some(self.workers.get(&table_id)?.state().clone())
+        let state = self.workers.get(&table_id)?.state().clone();
+        info!("Retrieved worker state for table {}", table_id);
+
+        Some(state)
     }
 
     pub async fn remove_worker(&mut self, table_id: Oid) {
-        self.workers.remove(&table_id);
+        if self.workers.remove(&table_id).is_some() {
+            info!("Removed worker for table {} from pool", table_id);
+        } else {
+            warn!(
+                "Attempted to remove non-existent worker for table {}",
+                table_id
+            );
+        }
     }
 
     pub async fn wait_all(&mut self) {
+        let worker_count = self.workers.len();
+        info!("Waiting for {} workers to complete", worker_count);
+
         let workers = mem::take(&mut self.workers);
-        for (_, worker) in workers {
+        for (table_id, worker) in workers {
             worker.wait().await;
         }
+
+        info!("All {} workers completed", worker_count);
     }
 }
 

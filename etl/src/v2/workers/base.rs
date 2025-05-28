@@ -1,4 +1,4 @@
-use futures::future::{BoxFuture, CatchUnwind, FutureExt};
+use futures::future::{CatchUnwind, FutureExt};
 use pin_project_lite::pin_project;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;

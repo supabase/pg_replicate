@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::v2::state::pipeline::PipelineState;
-use crate::v2::state::relation_subscription::TableReplicationState;
 use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug)]
 struct Inner {
