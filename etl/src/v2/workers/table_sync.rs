@@ -10,9 +10,12 @@ use crate::v2::workers::pool::TableSyncWorkerPool;
 
 use postgres::schema::Oid;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
+
+const PHASE_CHANGE_REFRESH_FRQUENCY: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 pub struct TableSyncWorkerStateInner {
@@ -29,14 +32,21 @@ impl TableSyncWorkerStateInner {
         // no permit is stored, only active listeners will be notified.
         self.phase_change.notify_waiters();
     }
-    
-    pub async fn set_phase_with<S: PipelineStateStore>(&mut self, phase: TableReplicationPhase, state_store: S) {
+
+    pub async fn set_phase_with<S: PipelineStateStore>(
+        &mut self,
+        phase: TableReplicationPhase,
+        state_store: S,
+    ) {
         self.set_phase(phase);
-        
+
         // If we should store this phase change, we want to do it via the supplied state store.
         if phase.as_type().should_store() {
-            let new_table_replication_state = self.table_replication_state.clone().with_phase(phase);
-            state_store.store_table_replication_state(new_table_replication_state).await;
+            let new_table_replication_state =
+                self.table_replication_state.clone().with_phase(phase);
+            state_store
+                .store_table_replication_state(new_table_replication_state)
+                .await;
         }
     }
 
@@ -77,8 +87,6 @@ impl TableSyncWorkerState {
             // that we want.
             let phase_change = {
                 let inner = self.inner.read().await;
-                
-                println!("[1] READ {:?}, EXPECTED {:?}", inner.table_replication_state.phase.as_type(), phase_type);
                 if inner.table_replication_state.phase.as_type() == phase_type {
                     return inner;
                 }
@@ -86,12 +94,13 @@ impl TableSyncWorkerState {
                 inner.phase_change.clone()
             };
 
-            // We wait for a state change.
-            phase_change.notified().await;
+            // We wait for a state change within a timeout. This is done since it might be that a
+            // notification is missed and in that case we want to avoid blocking indefinitely.
+            let _ =
+                tokio::time::timeout(PHASE_CHANGE_REFRESH_FRQUENCY, phase_change.notified()).await;
 
             // We read the state and return the lock to the state.
             let inner = self.inner.read().await;
-            println!("[2] READ {:?}, EXPECTED {:?}", inner.table_replication_state.phase.as_type(), phase_type);
             if inner.table_replication_state.phase.as_type() == phase_type {
                 return inner;
             }
@@ -151,13 +160,11 @@ where
     D: Destination + Clone + Send + 'static,
 {
     async fn start(self) -> Option<TableSyncWorkerHandle> {
-        println!("Starting table sync worker");
         let Some(relation_subscription_state) = self
             .state_store
             .load_table_replication_state(&self.table_id)
             .await
         else {
-            println!("The table doesn't exist in the store, stopping table sync worker");
             return None;
         };
 
@@ -191,7 +198,6 @@ where
         let table_sync_worker = CatchFuture::new(table_sync_worker, move || {
             let pool = pool.clone();
             async move {
-                println!("Removing worker from pool due to failure");
                 let mut pool = pool.write().await;
                 pool.remove_worker(table_id).await;
             }

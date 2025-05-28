@@ -1,10 +1,10 @@
-use std::time::Duration;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
 use crate::v2::state::relation_subscription::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::base::{Worker, WorkerHandle};
 use crate::v2::workers::table_sync::TableSyncWorker;
+use std::time::Duration;
 
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use postgres::schema::Oid;
@@ -53,7 +53,6 @@ where
     D: Destination + Clone + Send + 'static,
 {
     async fn start(self) -> Option<ApplyWorkerHandle> {
-        println!("Starting apply worker");
         let apply_worker = async move {
             // We load the initial state that will be used for the apply worker.
             let pipeline_state = self.state_store.load_pipeline_state().await;
@@ -130,11 +129,9 @@ where
                     drop(inner);
 
                     if catchup_started {
-                        println!("Waiting for the table to be sync done");
                         let _ = table_sync_worker_state
                             .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
                             .await;
-                        println!("Table sync worker was sync done, now it finished")
                     }
                 } else {
                     // We drop the read lock before acquiring a write lock to add the new worker.
