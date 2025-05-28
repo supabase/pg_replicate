@@ -1,3 +1,4 @@
+use std::time::Duration;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
 use crate::v2::state::relation_subscription::{TableReplicationPhase, TableReplicationPhaseType};
@@ -8,6 +9,7 @@ use crate::v2::workers::table_sync::TableSyncWorker;
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use postgres::schema::Oid;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug)]
@@ -98,7 +100,6 @@ where
         current_lsn: PgLsn,
     ) -> () {
         let table_replication_states = state_store.load_table_replication_states().await;
-        println!("Loaded replication states: {:?}", table_replication_states);
 
         for table_replication_state in table_replication_states {
             if let TableReplicationPhase::SyncDone { lsn } = table_replication_state.phase {
@@ -120,21 +121,20 @@ where
                 if let Some(table_sync_worker_state) =
                     pool.get_worker_state(table_replication_state.id).await
                 {
-                    let mut inner = table_sync_worker_state.inner().write().await;
-
                     let mut catchup_started = false;
+                    let mut inner = table_sync_worker_state.inner().write().await;
                     if inner.phase().as_type() == TableReplicationPhaseType::SyncWait {
                         inner.set_phase(TableReplicationPhase::Catchup { lsn: current_lsn });
                         catchup_started = true;
                     }
-
                     drop(inner);
 
                     if catchup_started {
+                        println!("Waiting for the table to be sync done");
                         let _ = table_sync_worker_state
                             .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
                             .await;
-                        println!("Just caught up with the apply worker.")
+                        println!("Table sync worker was sync done, now it finished")
                     }
                 } else {
                     // We drop the read lock before acquiring a write lock to add the new worker.

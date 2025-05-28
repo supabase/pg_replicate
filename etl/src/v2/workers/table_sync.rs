@@ -15,14 +15,29 @@ use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug)]
-pub struct StateInner {
+pub struct TableSyncWorkerStateInner {
     table_replication_state: TableReplicationState,
     phase_change: Arc<Notify>,
 }
 
-impl StateInner {
+impl TableSyncWorkerStateInner {
     pub fn set_phase(&mut self, phase: TableReplicationPhase) {
         self.table_replication_state.phase = phase;
+        // We want to notify all waiters that there was a phase change.
+        //
+        // Note that this notify will not wake up waiters that will be coming in the future since
+        // no permit is stored, only active listeners will be notified.
+        self.phase_change.notify_waiters();
+    }
+    
+    pub async fn set_phase_with<S: PipelineStateStore>(&mut self, phase: TableReplicationPhase, state_store: S) {
+        self.set_phase(phase);
+        
+        // If we should store this phase change, we want to do it via the supplied state store.
+        if phase.as_type().should_store() {
+            let new_table_replication_state = self.table_replication_state.clone().with_phase(phase);
+            state_store.store_table_replication_state(new_table_replication_state).await;
+        }
     }
 
     pub fn phase(&self) -> TableReplicationPhase {
@@ -32,12 +47,12 @@ impl StateInner {
 
 #[derive(Debug, Clone)]
 pub struct TableSyncWorkerState {
-    inner: Arc<RwLock<StateInner>>,
+    inner: Arc<RwLock<TableSyncWorkerStateInner>>,
 }
 
 impl TableSyncWorkerState {
     fn new(relation_subscription_state: TableReplicationState) -> Self {
-        let inner = StateInner {
+        let inner = TableSyncWorkerStateInner {
             table_replication_state: relation_subscription_state,
             phase_change: Arc::new(Notify::new()),
         };
@@ -48,7 +63,7 @@ impl TableSyncWorkerState {
     }
 
     // TODO: find a better API for this.
-    pub fn inner(&self) -> &RwLock<StateInner> {
+    pub fn inner(&self) -> &RwLock<TableSyncWorkerStateInner> {
         &self.inner
     }
 
@@ -56,13 +71,14 @@ impl TableSyncWorkerState {
     pub async fn wait_for_phase_type(
         &self,
         phase_type: TableReplicationPhaseType,
-    ) -> RwLockReadGuard<'_, StateInner> {
+    ) -> RwLockReadGuard<'_, TableSyncWorkerStateInner> {
         loop {
-            // We grab hold of the state change notify in case we don't immediately have the state
+            // We grab hold of the phase change notify in case we don't immediately have the state
             // that we want.
-            let state_change = {
+            let phase_change = {
                 let inner = self.inner.read().await;
-
+                
+                println!("[1] READ {:?}, EXPECTED {:?}", inner.table_replication_state.phase.as_type(), phase_type);
                 if inner.table_replication_state.phase.as_type() == phase_type {
                     return inner;
                 }
@@ -71,10 +87,11 @@ impl TableSyncWorkerState {
             };
 
             // We wait for a state change.
-            state_change.notified().await;
+            phase_change.notified().await;
 
             // We read the state and return the lock to the state.
             let inner = self.inner.read().await;
+            println!("[2] READ {:?}, EXPECTED {:?}", inner.table_replication_state.phase.as_type(), phase_type);
             if inner.table_replication_state.phase.as_type() == phase_type {
                 return inner;
             }
