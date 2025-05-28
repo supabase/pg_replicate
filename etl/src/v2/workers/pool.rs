@@ -35,7 +35,7 @@ impl TableSyncWorkerPoolInner {
             warn!("Worker for table {} already exists in pool", table_id);
             return false;
         }
-        
+
         let Some(handle) = worker.start().await else {
             warn!("Failed to start worker for table {}", table_id);
             return false;
@@ -47,14 +47,14 @@ impl TableSyncWorkerPoolInner {
         true
     }
 
-    pub async fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
+    pub fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
         let state = self.workers.get(&table_id)?.state().clone();
         info!("Retrieved worker state for table {}", table_id);
 
         Some(state)
     }
 
-    pub async fn remove_worker(&mut self, table_id: Oid) {
+    pub fn remove_worker(&mut self, table_id: Oid) {
         if self.workers.remove(&table_id).is_some() {
             info!("Removed worker for table {} from pool", table_id);
         } else {
@@ -70,7 +70,7 @@ impl TableSyncWorkerPoolInner {
         info!("Waiting for {} workers to complete", worker_count);
 
         let workers = mem::take(&mut self.workers);
-        for (table_id, worker) in workers {
+        for (_, worker) in workers {
             worker.wait().await;
         }
 

@@ -13,7 +13,7 @@ use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, RwLock, RwLockReadGuard};
-use tokio::task::JoinHandle;
+use tokio::task::{yield_now, JoinHandle};
 use tokio_postgres::types::PgLsn;
 
 const PHASE_CHANGE_REFRESH_FREQUENCY: Duration = Duration::from_millis(100);
@@ -101,7 +101,10 @@ impl TableSyncWorkerState {
             let phase_change = {
                 let inner = self.inner.read().await;
                 if inner.table_replication_state.phase.as_type() == phase_type {
-                    info!("Phase type '{:?}' was already set, no need to wait", phase_type);
+                    info!(
+                        "Phase type '{:?}' was already set, no need to wait",
+                        phase_type
+                    );
                     return inner;
                 }
 
@@ -206,7 +209,6 @@ where
             // from its consistent snapshot.
             // TODO: check if this is the right LSN to start with, maybe we want the consistent
             //  point of the slot.
-            // TODO: figure out why this loop completely stalls the runtime.
             start_apply_loop(
                 self.state_store,
                 self.destination,
@@ -225,7 +227,7 @@ where
                     table_id
                 );
                 let mut pool = pool.write().await;
-                pool.remove_worker(table_id).await;
+                pool.remove_worker(table_id);
             }
         });
 
@@ -264,7 +266,7 @@ where
         //     "Processing syncing tables for table sync worker with LSN {}",
         //     current_lsn
         // );
-
+        yield_now().await;
         // This is intentionally empty as table sync workers don't need to process other tables
     }
 

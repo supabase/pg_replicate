@@ -1,17 +1,15 @@
+use postgres::schema::Oid;
+use tokio::task::JoinHandle;
+use tokio_postgres::types::PgLsn;
+use tracing::info;
+
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerHandle};
 use crate::v2::workers::table_sync::TableSyncWorker;
-use std::time::Duration;
-use tracing::{error, info, warn};
-
 use crate::v2::workers::pool::TableSyncWorkerPool;
-use postgres::schema::Oid;
-use tokio::task::JoinHandle;
-use tokio::time::sleep;
-use tokio_postgres::types::PgLsn;
 
 #[derive(Debug)]
 pub struct ApplyWorkerHandle {
@@ -55,7 +53,7 @@ where
 {
     async fn start(self) -> Option<ApplyWorkerHandle> {
         info!("Starting apply worker");
-        
+
         let apply_worker = async move {
             // We load the initial state that will be used for the apply worker.
             let pipeline_state = self.state_store.load_pipeline_state().await;
@@ -121,48 +119,50 @@ where
                         .await;
                 }
             } else {
-                let pool = self.pool.read().await;
-                if let Some(table_sync_worker_state) =
-                    pool.get_worker_state(table_replication_state.id).await
                 {
-                    // let mut catchup_started = false;
-                    // let mut inner = table_sync_worker_state.inner().write().await;
-                    // if inner.phase().as_type() == TableReplicationPhaseType::SyncWait {
-                    //     inner.set_phase(TableReplicationPhase::Catchup { lsn: current_lsn });
-                    //     catchup_started = true;
-                    // }
-                    // drop(inner);
-                    // 
-                    // if catchup_started {
-                    //     let _ = table_sync_worker_state
-                    //         .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
-                    //         .await;
-                    // }
-                } else {
-                    info!(
-                        "Creating new sync worker for table {}",
-                        table_replication_state.id
-                    );
-                    // We drop the read lock before acquiring a write lock to add the new worker.
-                    drop(pool);
-                    
-                    let worker = TableSyncWorker::new(
-                        state_store.clone(),
-                        destination.clone(),
-                        table_replication_state.id,
-                        self.pool.clone(),
-                    );
-                    
-                    let mut table_sync_workers = self.pool.write().await;
-                    table_sync_workers.start_worker(worker).await;
+                    let pool = self.pool.read().await;
+                    if let Some(table_sync_worker_state) =
+                        pool.get_worker_state(table_replication_state.id)
+                    {
+                        let mut catchup_started = false;
+                        let mut inner = table_sync_worker_state.inner().write().await;
+                        if inner.phase().as_type() == TableReplicationPhaseType::SyncWait {
+                            inner.set_phase(TableReplicationPhase::Catchup { lsn: current_lsn });
+                            catchup_started = true;
+                        }
+                        drop(inner);
+
+                        if catchup_started {
+                            let _ = table_sync_worker_state
+                                .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
+                                .await;
+                        }
+
+                        continue;
+                    }
                 }
+
+                info!(
+                    "Creating new sync worker for table {}",
+                    table_replication_state.id
+                );
+
+                let worker = TableSyncWorker::new(
+                    state_store.clone(),
+                    destination.clone(),
+                    table_replication_state.id,
+                    self.pool.clone(),
+                );
+
+                let mut table_sync_workers = self.pool.write().await;
+                table_sync_workers.start_worker(worker).await;
             }
         }
     }
 
     async fn should_apply_changes(&self, table_id: Oid, remote_final_lsn: PgLsn) -> bool {
         let pool = self.pool.read().await;
-        let Some(table_sync_worker_state) = pool.get_worker_state(table_id).await else {
+        let Some(table_sync_worker_state) = pool.get_worker_state(table_id) else {
             return false;
         };
 
