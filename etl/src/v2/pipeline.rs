@@ -4,7 +4,7 @@ use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle};
-use crate::v2::workers::table_sync::TableSyncWorkers;
+use crate::v2::workers::pool::TableSyncWorkerPool;
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
@@ -19,7 +19,7 @@ enum PipelineWorkers {
         // TODO: investigate whether we could benefit from a central launcher that deals at a high-level
         //  with workers management, which should not be done in the pipeline.
         apply_worker: ApplyWorkerHandle,
-        table_sync_workers: TableSyncWorkers,
+        table_sync_workers: TableSyncWorkerPool,
     },
 }
 
@@ -54,7 +54,7 @@ where
         self.sync_relation_subscription_states().await;
 
         // We create the table sync workers shared memory area.
-        let table_sync_workers = TableSyncWorkers::new();
+        let table_sync_workers = TableSyncWorkerPool::new();
 
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
@@ -91,7 +91,12 @@ where
             return;
         };
 
+        // We first wait for the apply worker to finish, since that must be done before waiting for
+        // the table sync workers to finish, otherwise if we wait for sync workers first, we might
+        // be having the apply worker that spawns new sync workers after we waited for the current
+        // ones to finish.
         apply_worker.wait().await;
+        let mut table_sync_workers = table_sync_workers.write().await;
         table_sync_workers.wait_all().await;
     }
 }

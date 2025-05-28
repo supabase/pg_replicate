@@ -34,11 +34,9 @@ pub async fn start_table_sync<S, D>(
     inner.set_phase(TableReplicationPhase::SyncWait);
     println!("Table sync done");
 
-    println!("Synchronization done, waiting for catchup");
+    println!("Waiting for catchup");
     let _ = table_sync_worker
         .wait_for_phase_type(TableReplicationPhaseType::Catchup)
         .await;
     println!("Catchup signal received, proceeding");
-
-    println!("CATCHUP REACHED");
 }

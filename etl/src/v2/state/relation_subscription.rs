@@ -11,6 +11,10 @@ pub struct TableReplicationState {
 }
 
 impl TableReplicationState {
+    pub fn new(id: Oid, phase: TableReplicationPhase) -> Self {
+        Self { id, phase }
+    }
+
     pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {
         TableReplicationState { phase, ..self }
     }

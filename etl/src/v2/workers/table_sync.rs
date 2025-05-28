@@ -5,68 +5,14 @@ use crate::v2::state::relation_subscription::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
 use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::workers::base::{Worker, WorkerHandle};
+use crate::v2::workers::base::{CatchFuture, Worker, WorkerHandle};
+use crate::v2::workers::pool::TableSyncWorkerPool;
 
 use postgres::schema::Oid;
-use std::collections::HashMap;
-use std::mem;
 use std::sync::Arc;
 use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
-
-#[derive(Debug, Clone)]
-pub struct TableSyncWorkers {
-    workers: Arc<RwLock<HashMap<Oid, TableSyncWorkerHandle>>>,
-}
-
-impl TableSyncWorkers {
-    pub fn new() -> TableSyncWorkers {
-        Self {
-            workers: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
-    pub async fn start_worker<S, D>(&self, worker: TableSyncWorker<S, D>) -> bool
-    where
-        S: PipelineStateStore + Clone + Send + 'static,
-        D: Destination + Clone + Send + 'static,
-    {
-        let mut workers = self.workers.write().await;
-
-        let table_id = worker.table_id;
-        if workers.contains_key(&table_id) {
-            return false;
-        }
-
-        let Some(handle) = worker.start().await else {
-            return false;
-        };
-
-        workers.insert(table_id, handle);
-
-        true
-    }
-
-    pub async fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
-        let handles = self.workers.read().await;
-        Some(handles.get(&table_id)?.state.clone())
-    }
-
-    pub async fn remove_worker(&self, table_id: Oid) {
-        let mut handles = self.workers.write().await;
-        handles.remove(&table_id);
-    }
-
-    pub async fn wait_all(&self) {
-        let mut workers = self.workers.write().await;
-
-        let workers = mem::take(&mut *workers);
-        for (_, worker) in workers {
-            worker.wait().await;
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct StateInner {
@@ -79,7 +25,7 @@ impl StateInner {
         self.table_replication_state.phase = phase;
     }
 
-    pub fn get_phase(&self) -> TableReplicationPhase {
+    pub fn phase(&self) -> TableReplicationPhase {
         self.table_replication_state.phase
     }
 }
@@ -101,6 +47,7 @@ impl TableSyncWorkerState {
         }
     }
 
+    // TODO: find a better API for this.
     pub fn inner(&self) -> &RwLock<StateInner> {
         &self.inner
     }
@@ -163,15 +110,21 @@ pub struct TableSyncWorker<S, D> {
     state_store: S,
     destination: D,
     table_id: Oid,
+    pool: TableSyncWorkerPool,
 }
 
 impl<S, D> TableSyncWorker<S, D> {
-    pub fn new(state_store: S, destination: D, table_id: Oid) -> Self {
+    pub fn new(state_store: S, destination: D, table_id: Oid, pool: TableSyncWorkerPool) -> Self {
         Self {
             state_store,
             destination,
             table_id,
+            pool,
         }
+    }
+
+    pub fn table_id(&self) -> Oid {
+        self.table_id
     }
 }
 
@@ -194,7 +147,7 @@ where
         let state = TableSyncWorkerState::new(relation_subscription_state);
 
         let state_clone = state.clone();
-        let handle = tokio::spawn(async move {
+        let table_sync_worker = async move {
             // We first start syncing the table.
             start_table_sync(
                 self.state_store.clone(),
@@ -206,12 +159,28 @@ where
             // If we succeed syncing the table, we want to start the same apply loop as in the apply
             // worker but starting from the `0/0` LSN which means that the slot is starting streaming
             // from its consistent snapshot.
-            // TODO: check if this is the right LSN to start with.
-            let hook = Hook {
-                table_id: self.table_id,
-            };
-            start_apply_loop(self.state_store, self.destination, hook, PgLsn::from(0)).await;
+            // TODO: check if this is the right LSN to start with, maybe we want the consistent
+            //  point of the slot.
+            start_apply_loop(
+                self.state_store,
+                self.destination,
+                Hook::new(self.table_id),
+                PgLsn::from(0),
+            )
+            .await;
+        };
+        let pool = self.pool.clone();
+        let table_id = self.table_id;
+        let table_sync_worker = CatchFuture::new(table_sync_worker, move || {
+            let pool = pool.clone();
+            async move {
+                println!("Removing worker from pool due to failure");
+                let mut pool = pool.write().await;
+                pool.remove_worker(table_id).await;
+            }
         });
+
+        let handle = tokio::spawn(table_sync_worker);
 
         Some(TableSyncWorkerHandle {
             state,
@@ -223,6 +192,12 @@ where
 #[derive(Debug)]
 struct Hook {
     table_id: Oid,
+}
+
+impl Hook {
+    fn new(table_id: Oid) -> Self {
+        Self { table_id }
+    }
 }
 
 impl<S, D> ApplyLoopHook<S, D> for Hook
