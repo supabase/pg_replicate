@@ -35,8 +35,7 @@ impl TableSyncWorkerPoolInner {
             warn!("Worker for table {} already exists in pool", table_id);
             return false;
         }
-
-        info!("Starting new worker for table {}", table_id);
+        
         let Some(handle) = worker.start().await else {
             warn!("Failed to start worker for table {}", table_id);
             return false;

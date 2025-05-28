@@ -55,6 +55,7 @@ where
 {
     async fn start(self) -> Option<ApplyWorkerHandle> {
         info!("Starting apply worker");
+        
         let apply_worker = async move {
             // We load the initial state that will be used for the apply worker.
             let pipeline_state = self.state_store.load_pipeline_state().await;
@@ -124,19 +125,19 @@ where
                 if let Some(table_sync_worker_state) =
                     pool.get_worker_state(table_replication_state.id).await
                 {
-                    let mut catchup_started = false;
-                    let mut inner = table_sync_worker_state.inner().write().await;
-                    if inner.phase().as_type() == TableReplicationPhaseType::SyncWait {
-                        inner.set_phase(TableReplicationPhase::Catchup { lsn: current_lsn });
-                        catchup_started = true;
-                    }
-                    drop(inner);
-
-                    if catchup_started {
-                        let _ = table_sync_worker_state
-                            .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
-                            .await;
-                    }
+                    // let mut catchup_started = false;
+                    // let mut inner = table_sync_worker_state.inner().write().await;
+                    // if inner.phase().as_type() == TableReplicationPhaseType::SyncWait {
+                    //     inner.set_phase(TableReplicationPhase::Catchup { lsn: current_lsn });
+                    //     catchup_started = true;
+                    // }
+                    // drop(inner);
+                    // 
+                    // if catchup_started {
+                    //     let _ = table_sync_worker_state
+                    //         .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
+                    //         .await;
+                    // }
                 } else {
                     info!(
                         "Creating new sync worker for table {}",
@@ -144,14 +145,14 @@ where
                     );
                     // We drop the read lock before acquiring a write lock to add the new worker.
                     drop(pool);
-
+                    
                     let worker = TableSyncWorker::new(
                         state_store.clone(),
                         destination.clone(),
                         table_replication_state.id,
                         self.pool.clone(),
                     );
-
+                    
                     let mut table_sync_workers = self.pool.write().await;
                     table_sync_workers.start_worker(worker).await;
                 }

@@ -101,6 +101,7 @@ impl TableSyncWorkerState {
             let phase_change = {
                 let inner = self.inner.read().await;
                 if inner.table_replication_state.phase.as_type() == phase_type {
+                    info!("Phase type '{:?}' was already set, no need to wait", phase_type);
                     return inner;
                 }
 
@@ -115,6 +116,7 @@ impl TableSyncWorkerState {
             // We read the state and return the lock to the state.
             let inner = self.inner.read().await;
             if inner.table_replication_state.phase.as_type() == phase_type {
+                info!("Phase type '{:?}' was noticed", phase_type);
                 return inner;
             }
         }
@@ -204,6 +206,7 @@ where
             // from its consistent snapshot.
             // TODO: check if this is the right LSN to start with, maybe we want the consistent
             //  point of the slot.
+            // TODO: figure out why this loop completely stalls the runtime.
             start_apply_loop(
                 self.state_store,
                 self.destination,
@@ -257,10 +260,10 @@ where
         destination: D,
         current_lsn: PgLsn,
     ) -> () {
-        info!(
-            "Processing syncing tables for table sync worker with LSN {}",
-            current_lsn
-        );
+        // info!(
+        //     "Processing syncing tables for table sync worker with LSN {}",
+        //     current_lsn
+        // );
 
         // This is intentionally empty as table sync workers don't need to process other tables
     }
