@@ -1,6 +1,6 @@
 use tokio_postgres::types::PgLsn;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PipelineState {
     /// The last LSN which was applied by a pipeline.
     pub last_lsn: PgLsn,

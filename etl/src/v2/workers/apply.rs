@@ -1,10 +1,10 @@
-use crate::v2::destination::Destination;
+use crate::v2::destination::base::Destination;
+use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
+use crate::v2::state::relation_subscription::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::base::{Worker, WorkerHandle};
 use crate::v2::workers::table_sync::{TableSyncWorker, TableSyncWorkers};
 
-use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
-use crate::v2::state::relation_subscription::{TableReplicationPhase, TableReplicationPhaseType};
 use postgres::schema::Oid;
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
@@ -95,7 +95,13 @@ where
 
         for table_replication_state in table_replication_states {
             if let TableReplicationPhase::SyncDone { lsn } = table_replication_state.phase {
-                // TODO: implement of syncdone.
+                if current_lsn >= lsn {
+                    let table_replication_state = table_replication_state
+                        .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
+                    state_store
+                        .store_table_replication_state(table_replication_state)
+                        .await;
+                }
             } else {
                 if let Some(table_sync_worker_state) = self
                     .table_sync_workers
@@ -130,13 +136,18 @@ where
         }
     }
 
-    fn should_apply_changes(&self, table_id: Oid) -> bool {
-        /*
-        TODO: we have to figure out how remote final lsn is hooked.
-            (rel->state == SUBREL_STATE_READY ||
-                        (rel->state == SUBREL_STATE_SYNCDONE &&
-                         rel->statelsn <= remote_final_lsn));
-         */
-        false
+    async fn should_apply_changes(&self, table_id: Oid, remote_final_lsn: PgLsn) -> bool {
+        let Some(table_sync_worker_state) =
+            self.table_sync_workers.get_worker_state(table_id).await
+        else {
+            return false;
+        };
+
+        let inner = table_sync_worker_state.inner().read().await;
+        match inner.get_phase() {
+            TableReplicationPhase::Ready { .. } => true,
+            TableReplicationPhase::SyncDone { lsn } => lsn <= remote_final_lsn,
+            _ => false,
+        }
     }
 }

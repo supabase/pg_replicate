@@ -1,5 +1,5 @@
-mod destination;
+pub mod destination;
 pub mod pipeline;
-mod replication;
-mod state;
-mod workers;
+pub mod replication;
+pub mod state;
+pub mod workers;

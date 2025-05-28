@@ -2,12 +2,18 @@ use postgres::schema::Oid;
 use std::borrow::Borrow;
 use tokio_postgres::types::PgLsn;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TableReplicationState {
     /// The table (relation) OID to which this subscription refers.
     pub id: Oid,
     /// The phase of replication of the table.
     pub phase: TableReplicationPhase,
+}
+
+impl TableReplicationState {
+    pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {
+        TableReplicationState { phase, ..self }
+    }
 }
 
 impl PartialEq for TableReplicationState {
@@ -38,7 +44,10 @@ pub enum TableReplicationPhase {
         /// The LSN up to which the table sync arrived.
         lsn: PgLsn,
     },
-    Ready,
+    Ready {
+        /// The LSN of the apply worker which set this state to ready.
+        lsn: PgLsn,
+    },
     Unknown,
 }
 
@@ -86,7 +95,7 @@ impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
             TableReplicationPhase::SyncWait => Self::SyncWait,
             TableReplicationPhase::Catchup { .. } => Self::Catchup,
             TableReplicationPhase::SyncDone { .. } => Self::SyncDone,
-            TableReplicationPhase::Ready => Self::Ready,
+            TableReplicationPhase::Ready { .. } => Self::Ready,
             TableReplicationPhase::Unknown => Self::Unknown,
         }
     }

@@ -1,8 +1,6 @@
-use postgres::tokio::options::PgDatabaseOptions;
 use thiserror::Error;
 
-use crate::v2::destination::Destination;
-use crate::v2::replication::client::PgReplicationClient;
+use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle};
@@ -29,7 +27,6 @@ enum PipelineWorkers {
 pub struct Pipeline<S, D> {
     id: u64,
     publication_name: String,
-    replication_client: PgReplicationClient,
     state_store: S,
     destination: D,
     workers: PipelineWorkers,
@@ -40,19 +37,10 @@ where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    pub async fn new(
-        id: u64,
-        publication_name: String,
-        options: PgDatabaseOptions,
-        state_store: S,
-        destination: D,
-    ) -> Self {
-        let replication_client = PgReplicationClient::new(options.clone());
-
+    pub async fn new(id: u64, publication_name: String, state_store: S, destination: D) -> Self {
         Self {
             id,
             publication_name,
-            replication_client,
             state_store,
             destination,
             workers: PipelineWorkers::NotStarted,

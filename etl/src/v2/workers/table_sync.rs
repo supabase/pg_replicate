@@ -1,4 +1,4 @@
-use crate::v2::destination::Destination;
+use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
 use crate::v2::replication::table_sync::start_table_sync;
 use crate::v2::state::relation_subscription::{
@@ -6,13 +6,12 @@ use crate::v2::state::relation_subscription::{
 };
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::base::{Worker, WorkerHandle};
+
 use postgres::schema::Oid;
 use std::collections::HashMap;
-use std::future::Future;
 use std::mem;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use tokio::sync::{Notify, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 
@@ -239,7 +238,7 @@ where
     ) -> () {
     }
 
-    fn should_apply_changes(&self, table_id: Oid) -> bool {
+    async fn should_apply_changes(&self, table_id: Oid, _remote_final_lsn: PgLsn) -> bool {
         self.table_id == table_id
     }
 }
