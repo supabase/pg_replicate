@@ -5,9 +5,10 @@ use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
-use crate::v2::workers::base::{ReactiveFuture, Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
+use crate::v2::concurrency::future::ReactiveFuture;
 use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;

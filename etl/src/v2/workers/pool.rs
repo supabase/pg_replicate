@@ -1,3 +1,10 @@
+use crate::v2::concurrency::future::ReactiveFutureCallback;
+use crate::v2::destination::base::Destination;
+use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::table_sync::{
+    TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
+};
 use postgres::schema::Oid;
 use std::collections::HashMap;
 use std::mem;
@@ -5,13 +12,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
-
-use crate::v2::destination::base::Destination;
-use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::workers::base::{ReactiveFutureCallback, Worker, WorkerError, WorkerHandle};
-use crate::v2::workers::table_sync::{
-    TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
-};
 
 #[derive(Debug)]
 pub enum TableSyncWorkerInactiveReason {
