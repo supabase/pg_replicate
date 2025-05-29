@@ -5,7 +5,7 @@ use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
-use crate::v2::workers::base::{SafeFuture, Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::base::{ReactiveFuture, Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
 use postgres::schema::Oid;
@@ -217,7 +217,7 @@ where
 
         // We spawn the table sync worker with a safe future, so that we can have controlled teardown
         // on completion or error.
-        let handle = tokio::spawn(SafeFuture::new(
+        let handle = tokio::spawn(ReactiveFuture::new(
             table_sync_worker,
             self.table_id,
             self.pool.workers(),

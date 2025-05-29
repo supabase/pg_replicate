@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::workers::base::{SafeFutureCallback, Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::base::{ReactiveFutureCallback, Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
 };
@@ -118,7 +118,7 @@ impl TableSyncWorkerPoolInner {
     }
 }
 
-impl SafeFutureCallback<Oid> for TableSyncWorkerPoolInner {
+impl ReactiveFutureCallback<Oid> for TableSyncWorkerPoolInner {
     fn on_complete(&mut self, id: Oid) {
         self.set_worker_finished(id, TableSyncWorkerInactiveReason::Success);
     }
