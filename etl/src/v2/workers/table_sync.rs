@@ -247,12 +247,7 @@ where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    async fn process_syncing_tables(
-        &self,
-        state_store: S,
-        destination: D,
-        current_lsn: PgLsn,
-    ) -> () {
+    async fn process_syncing_tables(&self, state_store: S, destination: D, current_lsn: PgLsn) {
         info!(
             "Processing syncing tables for table sync worker with LSN {}",
             current_lsn

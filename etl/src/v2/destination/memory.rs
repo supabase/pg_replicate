@@ -24,5 +24,5 @@ impl MemoryDestination {
 }
 
 impl Destination for MemoryDestination {
-    async fn apply_events(&self, events: Vec<CdcEvent>) -> () {}
+    async fn apply_events(&self, events: Vec<CdcEvent>) {}
 }
