@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 ```
 
-For more examples, please refer to the [examples](https://github.com/imor/etl/tree/main/etl/examples) folder in the source.
+For more examples, please refer to the [examples](https://github.com/supabase/etl/tree/main/etl/examples) folder in the source.
 
 ## Features
 
@@ -131,7 +131,7 @@ The repository is a cargo workspace. Each of the individual sub-folders are crat
 
 Note: DuckDb and MotherDuck destinations do no use the batched pipeline, hence they currently perform poorly. A batched pipeline version of these destinations is planned.
 
-See the [open issues](https://github.com/imor/etl/issues) for a full list of proposed features (and known issues).
+See the [open issues](https://github.com/supabase/etl/issues) for a full list of proposed features (and known issues).
 
 ## License
 
@@ -170,17 +170,17 @@ let pipeline = DataPipeline(postgres_source, duckdb_destination);
 pipeline.start();
 ```
 
-Of course, the real code is more than these four lines, but this is the basic idea. For a complete example look at the [duckdb example](https://github.com/imor/etl/blob/main/etl/examples/duckdb.rs).
+Of course, the real code is more than these four lines, but this is the basic idea. For a complete example look at the [duckdb example](https://github.com/supabase/etl/blob/main/etl/examples/duckdb.rs).
 
 ### Data Sources
 
-A data source is the source for data which the pipeline will copy to the data destination. Currently, the repository has only one data source: [`PostgresSource`](https://github.com/imor/etl/blob/main/etl/src/pipeline/sources/postgres.rs). `PostgresSource` is the primary data source; data in any other source or destination would have originated from it.
+A data source is the source for data which the pipeline will copy to the data destination. Currently, the repository has only one data source: [`PostgresSource`](https://github.com/supabase/etl/blob/main/etl/src/pipeline/sources/postgres.rs). `PostgresSource` is the primary data source; data in any other source or destination would have originated from it.
 
 ### Data Destinations
 
 A data destination is where the data from a data source is copied. There are two kinds of data destinations. Those which retain the essential nature of data coming out of a `PostgresSource` and those which don't. The former kinds of data destinations can act as a data source in future. The latter kind can't act as a data source and are data's final resting place.
 
-For instance, [`DuckDbDestination`](https://github.com/imor/etl/blob/main/etl/src/pipeline/destinations/duckdb.rs) ensures that the change data capture (CDC) stream coming in from a source is materialized into tables in a DuckDB database. Once this lossy data transformation is done, it can not be used as a CDC stream again.
+For instance, [`DuckDbDestination`](https://github.com/supabase/etl/blob/main/etl/src/pipeline/destinations/duckdb.rs) ensures that the change data capture (CDC) stream coming in from a source is materialized into tables in a DuckDB database. Once this lossy data transformation is done, it can not be used as a CDC stream again.
 
 Contrast this with a potential future destination `S3Destination` or `KafkaDestination` which just copies the CDC stream as is. The data deposited in the destination can later be used as if it was coming from Postgres directly.
 
