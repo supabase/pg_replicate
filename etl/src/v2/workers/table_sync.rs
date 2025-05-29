@@ -5,15 +5,15 @@ use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
-use crate::v2::workers::base::{CatchFuture, Worker, WorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
-use tracing::{info, warn};
 
+use tracing::{info, warn};
 use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, RwLock, RwLockReadGuard};
-use tokio::task::{yield_now, JoinHandle};
+use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 
 const PHASE_CHANGE_REFRESH_FREQUENCY: Duration = Duration::from_millis(100);
@@ -25,7 +25,7 @@ pub struct TableSyncWorkerStateInner {
 }
 
 impl TableSyncWorkerStateInner {
-    pub fn set_phase(&mut self, phase: TableReplicationPhase) {
+    fn set_phase(&mut self, phase: TableReplicationPhase) {
         info!(
             "Table {} phase changing from {:?} to {:?}",
             self.table_replication_state.id, self.table_replication_state.phase, phase
@@ -82,13 +82,11 @@ impl TableSyncWorkerState {
             inner: Arc::new(RwLock::new(inner)),
         }
     }
-
-    // TODO: find a better API for this.
+    
     pub fn inner(&self) -> &RwLock<TableSyncWorkerStateInner> {
         &self.inner
     }
-
-    // TODO: check how we can design the system to actually return either a write or read lock.
+    
     pub async fn wait_for_phase_type(
         &self,
         phase_type: TableReplicationPhaseType,
@@ -137,15 +135,14 @@ impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
         self.state.clone()
     }
 
-    async fn wait(mut self) {
-        // TODO: figure out a way to mark a state as invalid if the worker crashed or it
-        //  was stopped since via reference counting we are blind on this.
+    async fn wait(mut self) -> Result<(), WorkerError> {
         let Some(handle) = self.handle.take() else {
-            return;
+            return Ok(());
         };
 
-        // TODO: properly handle failure.
-        handle.await.expect("Table sync worker failed");
+        handle.await?;
+
+        Ok(())
     }
 }
 
@@ -217,19 +214,6 @@ where
             )
             .await;
         };
-        let pool = self.pool.clone();
-        let table_id = self.table_id;
-        let table_sync_worker = CatchFuture::new(table_sync_worker, move || {
-            let pool = pool.clone();
-            async move {
-                info!(
-                    "Table sync worker for table {} failed, removing from pool",
-                    table_id
-                );
-                let mut pool = pool.write().await;
-                pool.remove_worker(table_id);
-            }
-        });
 
         let handle = tokio::spawn(table_sync_worker);
 
@@ -262,12 +246,11 @@ where
         destination: D,
         current_lsn: PgLsn,
     ) -> () {
-        // info!(
-        //     "Processing syncing tables for table sync worker with LSN {}",
-        //     current_lsn
-        // );
-        yield_now().await;
-        // This is intentionally empty as table sync workers don't need to process other tables
+        info!(
+            "Processing syncing tables for table sync worker with LSN {}",
+            current_lsn
+        );
+        // TODO: implement.
     }
 
     async fn should_apply_changes(&self, table_id: Oid, _remote_final_lsn: PgLsn) -> bool {

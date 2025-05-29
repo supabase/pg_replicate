@@ -1,9 +1,20 @@
+use std::any::Any;
 use futures::future::{CatchUnwind, FutureExt};
 use pin_project_lite::pin_project;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use std::pin::{pin, Pin};
+use std::pin::{Pin};
 use std::task::{Context, Poll};
+use thiserror::Error;
+use postgres::schema::Oid;
+
+use crate::v2::workers::pool::{TableSyncWorkerFinish, TableSyncWorkerPool};
+
+#[derive(Debug, Error)]
+pub enum WorkerError {
+    #[error("The worker had an error while waiting")]
+    Join(#[from] tokio::task::JoinError),
+}
 
 pub trait Worker<H, S>
 where
@@ -15,51 +26,70 @@ where
 pub trait WorkerHandle<S> {
     fn state(&self) -> S;
 
-    fn wait(self) -> impl Future<Output = ()> + Send;
+    fn wait(self) -> impl Future<Output = Result<(), WorkerError>> + Send;
+}
+
+enum State {
+    PollMainFuture,
+    PollFinishedWorker(Option<Box<dyn Any + Send>>),
 }
 
 pin_project! {
-    pub struct CatchFuture<Fut, ClbFut> {
+    pub struct TableSyncPoolFuture<Fut> {
         #[pin]
         future: CatchUnwind<AssertUnwindSafe<Fut>>,
-        on_err: Box<dyn FnMut() -> ClbFut + Send>
+        state: State,
+        table_id: Oid,
+        pool: TableSyncWorkerPool,
     }
 }
 
-impl<Fut, ClbFut> CatchFuture<Fut, ClbFut>
-where
-    Fut: Future<Output = ()>,
-    ClbFut: Future<Output = ()>,
-{
-    pub fn new(future: Fut, on_err: impl FnMut() -> ClbFut + Send + 'static) -> Self {
+impl <Fut> TableSyncPoolFuture<Fut>
+where Fut: Future<Output = ()> {
+
+    pub fn new(future: Fut, table_id: Oid, pool: TableSyncWorkerPool) -> Self {
         Self {
             future: AssertUnwindSafe(future).catch_unwind(),
-            on_err: Box::new(on_err),
+            state: State::PollMainFuture,
+            table_id,
+            pool
         }
     }
 }
 
-impl<Fut, ClbFut> Future for CatchFuture<Fut, ClbFut>
-where
-    Fut: Future<Output = ()>,
-    ClbFut: Future<Output = ()>,
-{
+impl<Fut> Future for TableSyncPoolFuture<Fut>
+where Fut: Future<Output = ()> {
+
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
 
-        match this.future.as_mut().poll(cx) {
-            Poll::Ready(Ok(_)) => Poll::Ready(()),
-            // TODO: propagate error in some way.
-            Poll::Ready(Err(err)) => {
-                let on_err_fut = pin!(this.on_err.as_mut()());
-                match on_err_fut.poll(cx) {
-                    Poll::Ready(_) => Poll::Ready(()),
-                    Poll::Pending => Poll::Pending,
+        loop {
+            match this.state {
+                State::PollMainFuture => {
+                    match this.future.as_mut().poll(cx) {
+                        Poll::Ready(Ok(())) => {
+                            *this.state = State::PollFinishedWorker(None);
+                        },
+                        Poll::Ready(Err(err)) => {
+                            *this.state = State::PollFinishedWorker(Some(err));
+                        },
+                        Poll::Pending => {
+                            return Poll::Pending;
+                        }
+                    }
+                },
+                State::PollFinishedWorker(err) => {
+                    let mut pool = this.pool.blocking_write();
+                    let table_sync_worker_finish = match err.take() {
+                        Some(err) => TableSyncWorkerFinish::Error(err),
+                        None => TableSyncWorkerFinish::Success,
+                    };
+                    
+                    pool.finished_worker(*this.table_id, table_sync_worker_finish);
                 }
             }
-            Poll::Pending => Poll::Pending,
         }
     }
 }

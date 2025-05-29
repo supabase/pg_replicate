@@ -1,3 +1,4 @@
+use std::any::Any;
 use postgres::schema::Oid;
 use std::collections::HashMap;
 use std::mem;
@@ -14,14 +15,22 @@ use crate::v2::workers::table_sync::{
 };
 
 #[derive(Debug)]
+pub enum TableSyncWorkerFinish {
+    Success,
+    Error(Box<dyn Any + Send>),
+}
+
+#[derive(Debug)]
 pub struct TableSyncWorkerPoolInner {
-    workers: HashMap<Oid, TableSyncWorkerHandle>,
+    active: HashMap<Oid, TableSyncWorkerHandle>,
+    finished: HashMap<Oid, Vec<(TableSyncWorkerFinish, TableSyncWorkerHandle)>>,
 }
 
 impl TableSyncWorkerPoolInner {
     fn new() -> Self {
         Self {
-            workers: HashMap::new(),
+            active: HashMap::new(),
+            finished: HashMap::new(),
         }
     }
 
@@ -31,7 +40,7 @@ impl TableSyncWorkerPoolInner {
         D: Destination + Clone + Send + 'static,
     {
         let table_id = worker.table_id();
-        if self.workers.contains_key(&table_id) {
+        if self.active.contains_key(&table_id) {
             warn!("Worker for table {} already exists in pool", table_id);
             return false;
         }
@@ -41,35 +50,31 @@ impl TableSyncWorkerPoolInner {
             return false;
         };
 
-        self.workers.insert(table_id, handle);
+        self.active.insert(table_id, handle);
         info!("Successfully added worker for table {} to pool", table_id);
 
         true
     }
 
     pub fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
-        let state = self.workers.get(&table_id)?.state().clone();
+        let state = self.active.get(&table_id)?.state().clone();
         info!("Retrieved worker state for table {}", table_id);
 
         Some(state)
     }
 
-    pub fn remove_worker(&mut self, table_id: Oid) {
-        if self.workers.remove(&table_id).is_some() {
-            info!("Removed worker for table {} from pool", table_id);
-        } else {
-            warn!(
-                "Attempted to remove non-existent worker for table {}",
-                table_id
-            );
+    pub fn finished_worker(&mut self, table_id: Oid, table_sync_worker_finish: TableSyncWorkerFinish) {
+        let removed_worker = self.active.remove(&table_id);
+        if let Some(removed_worker) = removed_worker {
+            self.finished.entry(table_id).or_default().push((table_sync_worker_finish, removed_worker));
         }
     }
 
     pub async fn wait_all(&mut self) {
-        let worker_count = self.workers.len();
+        let worker_count = self.active.len();
         info!("Waiting for {} workers to complete", worker_count);
 
-        let workers = mem::take(&mut self.workers);
+        let workers = mem::take(&mut self.active);
         for (_, worker) in workers {
             worker.wait().await;
         }

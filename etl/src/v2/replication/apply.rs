@@ -1,9 +1,9 @@
-use crate::v2::state::store::base::PipelineStateStore;
-
-use crate::v2::destination::base::Destination;
 use postgres::schema::Oid;
 use std::future::Future;
 use tokio_postgres::types::PgLsn;
+
+use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::destination::base::Destination;
 
 pub trait ApplyLoopHook<S, D>
 where
@@ -30,14 +30,12 @@ where
     D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook<S, D>,
 {
-    loop {
-        // Read from socket until end or until boundary. (Modify custom cdcstream if needed)
+    // Create a select between:
+    //  - Shutdown signal -> when called we stop the apply operation.
+    //  - Logical replication stream socket -> when an event is received, we handle it in a special
+    //      processing component.
+    //  - Else we do the table syncing if we are not at a boundary -> we perform table syncing to make
+    //     sure progress is happening in table sync workers.
 
-        // For each operation apply it and call the table syncing and update the last lsn
-
-        // If the stream ended in a transaction do one last sync, if it did not, do not do it.
-
-        hook.process_syncing_tables(state_store.clone(), destination.clone(), last_lsn)
-            .await;
-    }
+    // TODO: implement.
 }

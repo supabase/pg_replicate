@@ -7,7 +7,7 @@ use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
-use crate::v2::workers::base::{Worker, WorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::table_sync::TableSyncWorker;
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
@@ -19,13 +19,14 @@ pub struct ApplyWorkerHandle {
 impl WorkerHandle<()> for ApplyWorkerHandle {
     fn state(&self) -> () {}
 
-    async fn wait(mut self) {
+    async fn wait(mut self) -> Result<(), WorkerError> {
         let Some(handle) = self.handle.take() else {
-            return;
+            return Ok(());
         };
-
-        // TODO: properly handle failure.
-        handle.await.expect("Apply worker failed");
+        
+        handle.await?;
+        
+        Ok(())
     }
 }
 
@@ -127,7 +128,7 @@ where
                         let mut catchup_started = false;
                         let mut inner = table_sync_worker_state.inner().write().await;
                         if inner.phase().as_type() == TableReplicationPhaseType::SyncWait {
-                            inner.set_phase(TableReplicationPhase::Catchup { lsn: current_lsn });
+                            inner.set_phase_with(TableReplicationPhase::Catchup { lsn: current_lsn }, state_store.clone()).await;
                             catchup_started = true;
                         }
                         drop(inner);
