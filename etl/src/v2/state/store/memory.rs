@@ -31,6 +31,12 @@ impl MemoryPipelineStateStore {
     }
 }
 
+impl Default for MemoryPipelineStateStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PipelineStateStore for MemoryPipelineStateStore {
     async fn load_pipeline_state(&self) -> PipelineState {
         self.inner.read().await.pipeline_state.clone()

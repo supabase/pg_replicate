@@ -24,7 +24,7 @@ where
     ) -> impl Future<Output = bool> + Send;
 }
 
-pub async fn start_apply_loop<S, D, T>(state_store: S, destination: D, hook: T, last_lsn: PgLsn)
+pub async fn start_apply_loop<S, D, T>(_state_store: S, _destination: D, _hook: T, _last_lsn: PgLsn)
 where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,

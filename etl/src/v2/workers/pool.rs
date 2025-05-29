@@ -145,6 +145,12 @@ impl TableSyncWorkerPool {
     }
 }
 
+impl Default for TableSyncWorkerPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Deref for TableSyncWorkerPool {
     type Target = RwLock<TableSyncWorkerPoolInner>;
 
