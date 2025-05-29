@@ -1,4 +1,3 @@
-use std::any::Any;
 use postgres::schema::Oid;
 use std::collections::HashMap;
 use std::mem;
@@ -9,28 +8,34 @@ use tracing::{info, warn};
 
 use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::workers::base::{Worker, WorkerHandle};
+use crate::v2::workers::base::{SafeFutureCallback, Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
 };
 
 #[derive(Debug)]
-pub enum TableSyncWorkerFinish {
+pub enum TableSyncWorkerInactiveReason {
     Success,
-    Error(Box<dyn Any + Send>),
+    Error(String),
 }
 
 #[derive(Debug)]
 pub struct TableSyncWorkerPoolInner {
+    /// The table sync workers that are currently active.
     active: HashMap<Oid, TableSyncWorkerHandle>,
-    finished: HashMap<Oid, Vec<(TableSyncWorkerFinish, TableSyncWorkerHandle)>>,
+    /// The table sync workers that are inactive, meaning that they are completed or errored.
+    ///
+    /// Having the state of finished workers gives us the power to reschedule failed table sync
+    /// workers very cheaply since the state can be fed into a new table worker future as if it was
+    /// read initially from the state store.
+    inactive: HashMap<Oid, Vec<(TableSyncWorkerInactiveReason, TableSyncWorkerHandle)>>,
 }
 
 impl TableSyncWorkerPoolInner {
     fn new() -> Self {
         Self {
             active: HashMap::new(),
-            finished: HashMap::new(),
+            inactive: HashMap::new(),
         }
     }
 
@@ -63,23 +68,63 @@ impl TableSyncWorkerPoolInner {
         Some(state)
     }
 
-    pub fn finished_worker(&mut self, table_id: Oid, table_sync_worker_finish: TableSyncWorkerFinish) {
+    pub fn set_worker_finished(&mut self, table_id: Oid, reason: TableSyncWorkerInactiveReason) {
         let removed_worker = self.active.remove(&table_id);
         if let Some(removed_worker) = removed_worker {
-            self.finished.entry(table_id).or_default().push((table_sync_worker_finish, removed_worker));
+            info!(
+                "Marked worker for table {} as inactive with reason {:?}",
+                table_id, reason
+            );
+
+            self.inactive
+                .entry(table_id)
+                .or_default()
+                .push((reason, removed_worker));
         }
     }
 
-    pub async fn wait_all(&mut self) {
+    pub async fn wait_all(&mut self) -> Vec<WorkerError> {
         let worker_count = self.active.len();
         info!("Waiting for {} workers to complete", worker_count);
 
-        let workers = mem::take(&mut self.active);
-        for (_, worker) in workers {
-            worker.wait().await;
+        let mut errors = Vec::new();
+
+        let active = mem::take(&mut self.active);
+        for (_, worker) in active {
+            if let Err(err) = worker.wait().await {
+                errors.push(err);
+            }
+        }
+
+        let finished = mem::take(&mut self.inactive);
+        for (_, workers) in finished {
+            for (finish, worker) in workers {
+                if let Err(err) = worker.wait().await {
+                    errors.push(err);
+                }
+
+                // If we have a failure in the worker we should not have a failure here, since the
+                // custom future we run table syncs with, catches panics, however, we do not want
+                // to make that assumption here.
+                if let TableSyncWorkerInactiveReason::Error(err) = finish {
+                    errors.push(WorkerError::Caught(err));
+                }
+            }
         }
 
         info!("All {} workers completed", worker_count);
+
+        errors
+    }
+}
+
+impl SafeFutureCallback<Oid> for TableSyncWorkerPoolInner {
+    fn on_complete(&mut self, id: Oid) {
+        self.set_worker_finished(id, TableSyncWorkerInactiveReason::Success);
+    }
+
+    fn on_error(&mut self, id: Oid, error: String) {
+        self.set_worker_finished(id, TableSyncWorkerInactiveReason::Error(error));
     }
 }
 
@@ -93,6 +138,10 @@ impl TableSyncWorkerPool {
         Self {
             workers: Arc::new(RwLock::new(TableSyncWorkerPoolInner::new())),
         }
+    }
+
+    pub fn workers(&self) -> Arc<RwLock<TableSyncWorkerPoolInner>> {
+        self.workers.clone()
     }
 }
 

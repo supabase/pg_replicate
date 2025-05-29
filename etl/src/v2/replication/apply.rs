@@ -2,8 +2,8 @@ use postgres::schema::Oid;
 use std::future::Future;
 use tokio_postgres::types::PgLsn;
 
-use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::destination::base::Destination;
+use crate::v2::state::store::base::PipelineStateStore;
 
 pub trait ApplyLoopHook<S, D>
 where

@@ -102,6 +102,7 @@ where
             return;
         };
 
+        // TODO: handle failure of errors on wait.
         info!("Waiting for pipeline workers to complete");
         // We first wait for the apply worker to finish, since that must be done before waiting for
         // the table sync workers to finish, otherwise if we wait for sync workers first, we might

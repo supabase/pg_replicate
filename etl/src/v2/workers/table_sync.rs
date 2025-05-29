@@ -5,16 +5,16 @@ use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
-use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::base::{SafeFuture, Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
-use tracing::{info, warn};
 use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
+use tracing::{info, warn};
 
 const PHASE_CHANGE_REFRESH_FREQUENCY: Duration = Duration::from_millis(100);
 
@@ -82,11 +82,11 @@ impl TableSyncWorkerState {
             inner: Arc::new(RwLock::new(inner)),
         }
     }
-    
+
     pub fn inner(&self) -> &RwLock<TableSyncWorkerStateInner> {
         &self.inner
     }
-    
+
     pub async fn wait_for_phase_type(
         &self,
         phase_type: TableReplicationPhaseType,
@@ -215,7 +215,13 @@ where
             .await;
         };
 
-        let handle = tokio::spawn(table_sync_worker);
+        // We spawn the table sync worker with a safe future, so that we can have controlled teardown
+        // on completion or error.
+        let handle = tokio::spawn(SafeFuture::new(
+            table_sync_worker,
+            self.table_id,
+            self.pool.workers(),
+        ));
 
         Some(TableSyncWorkerHandle {
             state,

@@ -23,6 +23,6 @@ pub async fn start_table_sync<S, D>(
     // Mark the table as SyncWait in memory only
 
     // Wait until the catchup is reached
-    
+
     // TODO: implement.
 }
