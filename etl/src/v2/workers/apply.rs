@@ -7,7 +7,7 @@ use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::{
-    TableSyncWorker, TableSyncWorkerError, TableSyncWorkerStateError,
+    TableSyncWorker, TableSyncWorkerStateError,
 };
 use postgres::schema::Oid;
 use thiserror::Error;
