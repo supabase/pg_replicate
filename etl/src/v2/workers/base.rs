@@ -1,3 +1,5 @@
+use crate::v2::workers::apply::ApplyWorkerError;
+use crate::v2::workers::table_sync::TableSyncWorkerError;
 use std::future::Future;
 use thiserror::Error;
 
@@ -5,12 +7,18 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum WorkerError {
     /// The worker task failed to join, typically due to a panic or cancellation.
-    #[error("The worker experienced an uncaught error: {0}")]
+    #[error("Worker task failed to join: {0}")]
     Join(#[from] tokio::task::JoinError),
 
     /// The worker encountered a caught error during execution.
-    #[error("The worker experienced a caught error: {0}")]
+    #[error("Worker execution failed: {0}")]
     Caught(String),
+
+    #[error("Apply worker operation failed: {0}")]
+    ApplyWorker(#[from] ApplyWorkerError),
+
+    #[error("Table sync worker operation failed: {0}")]
+    TableSyncWorker(#[from] TableSyncWorkerError),
 }
 
 /// A trait for types that can be started as workers.
@@ -24,7 +32,7 @@ where
     /// Starts the worker and returns a future that resolves to an optional handle.
     ///
     /// The handle can be used to monitor and control the worker's execution.
-    fn start(self) -> impl Future<Output = Option<H>> + Send;
+    fn start(self) -> impl Future<Output = Result<H, WorkerError>> + Send;
 }
 
 /// A handle to a running worker that provides access to its state and completion status.

@@ -1,16 +1,22 @@
-use thiserror::Error;
-use tracing::{error, info};
-
 use crate::v2::destination::base::Destination;
+use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerHandle};
-use crate::v2::workers::base::{Worker, WorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
+use postgres::tokio::options::PgDatabaseOptions;
+use rustls::pki_types::CertificateDer;
+use thiserror::Error;
+use tokio_postgres::config::SslMode;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
-    #[error("An error occurred in a worker")]
-    WorkerError,
+    #[error("Worker operation failed: {0}")]
+    WorkerError(#[from] WorkerError),
+
+    #[error("PostgreSQL replication operation failed: {0}")]
+    PgReplicationClient(#[from] PgReplicationError),
 }
 
 #[derive(Debug)]
@@ -24,10 +30,34 @@ enum PipelineWorkers {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct PipelineIdentity {
+    id: u64,
+    publication_name: String,
+}
+
+impl PipelineIdentity {
+    pub fn new(id: u64, publication_name: &str) -> Self {
+        Self {
+            id,
+            publication_name: publication_name.to_owned(),
+        }
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn publication_name(&self) -> &str {
+        &self.publication_name
+    }
+}
+
 #[derive(Debug)]
 pub struct Pipeline<S, D> {
-    _id: u64,
-    publication_name: String,
+    identity: PipelineIdentity,
+    options: PgDatabaseOptions,
+    trusted_root_certs: Vec<CertificateDer<'static>>,
     state_store: S,
     destination: D,
     workers: PipelineWorkers,
@@ -35,13 +65,20 @@ pub struct Pipeline<S, D> {
 
 impl<S, D> Pipeline<S, D>
 where
-    S: PipelineStateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
+    S: PipelineStateStore + Clone + Send + Sync + 'static,
+    D: Destination + Clone + Send + Sync + 'static,
 {
-    pub async fn new(_id: u64, publication_name: String, state_store: S, destination: D) -> Self {
+    pub async fn new(
+        identity: PipelineIdentity,
+        options: PgDatabaseOptions,
+        trusted_root_certs: Vec<CertificateDer<'static>>,
+        state_store: S,
+        destination: D,
+    ) -> Self {
         Self {
-            _id,
-            publication_name,
+            identity,
+            options,
+            trusted_root_certs,
             state_store,
             destination,
             workers: PipelineWorkers::NotStarted,
@@ -51,45 +88,70 @@ where
     pub async fn start(&mut self) -> Result<(), PipelineError> {
         info!(
             "Starting pipeline for publication {}",
-            self.publication_name
+            self.identity.publication_name()
         );
+
+        // We create the first connection to Postgres. Note that other connections will be created
+        // by duplicating this first one.
+        let replication_client = self.connect().await?;
 
         // We synchronize the relation subscription states with the publication, to make sure we
         // always know which tables to work with. Maybe in the future we also want to react in real
         // time to new relation ids being sent over by the cdc event stream.
-        self.sync_relation_subscription_states().await;
+        self.sync_relation_subscription_states(&replication_client)
+            .await?;
 
-        // We create the table sync workers shared memory area.
-        let table_sync_workers = TableSyncWorkerPool::new();
+        // We create the table sync workers pool to manage all table sync workers in a central place.
+        let pool = TableSyncWorkerPool::new();
 
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
+            self.identity.clone(),
+            replication_client,
+            pool.clone(),
             self.state_store.clone(),
             self.destination.clone(),
-            table_sync_workers.clone(),
         )
         .start()
-        .await
-        .ok_or_else(|| {
-            error!("Failed to start apply worker");
-            PipelineError::WorkerError
-        })?;
+        .await?;
 
         self.workers = PipelineWorkers::Started {
             apply_worker,
-            table_sync_workers,
+            table_sync_workers: pool,
         };
 
         Ok(())
     }
 
-    async fn sync_relation_subscription_states(&self) {
+    async fn sync_relation_subscription_states(
+        &self,
+        replication_client: &PgReplicationClient,
+    ) -> Result<(), PipelineError> {
         info!("Synchronizing relation subscription states");
+
         // TODO: in this function we want to:
         //  1. Load all tables for the publication
         //  2. For each table, we check if it already exists in the store
         //  3. If the table is not there, add it with `Init` state
         //  4. If it's there do not do anything
+
+        Ok(())
+    }
+
+    async fn connect(&self) -> Result<PgReplicationClient, PipelineError> {
+        // We create the main replication client that will be used by the apply worker.
+        let replication_client = match self.options.ssl_mode {
+            SslMode::Disable => PgReplicationClient::connect_no_tls(self.options.clone()).await?,
+            _ => {
+                PgReplicationClient::connect_tls(
+                    self.options.clone(),
+                    self.trusted_root_certs.clone(),
+                )
+                .await?
+            }
+        };
+
+        Ok(replication_client)
     }
 
     pub async fn wait(self) {
