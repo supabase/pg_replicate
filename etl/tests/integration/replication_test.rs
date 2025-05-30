@@ -1,7 +1,7 @@
 use etl::v2::replication::client::PgReplicationClient;
 use futures::StreamExt;
 use postgres::schema::ColumnSchema;
-use postgres::tokio::test_utils::PgDatabase;
+use postgres::tokio::test_utils::{PgDatabase, TableModification};
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
 use postgres_replication::LogicalReplicationStream;
 use tokio::pin;
@@ -83,10 +83,11 @@ async fn test_replication_client_creates_slot() {
         .await
         .unwrap();
 
-    assert!(client
-        .create_slot_with_transaction(&test_slot_name("my_slot"))
+    let slot = client
+        .create_slot(&test_slot_name("my_slot"))
         .await
-        .is_ok());
+        .unwrap();
+    assert!(!slot.consistent_point().to_string().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -98,14 +99,8 @@ async fn test_replication_client_doesnt_recreate_slot() {
         .unwrap();
 
     let slot_name = test_slot_name("my_slot");
-    assert!(client
-        .create_slot_with_transaction(&slot_name)
-        .await
-        .is_ok());
-    assert!(client
-        .create_slot_with_transaction(&slot_name)
-        .await
-        .is_err());
+    assert!(client.create_slot(&slot_name).await.is_ok());
+    assert!(client.create_slot(&slot_name).await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -116,11 +111,7 @@ async fn test_table_schema_copy_is_consistent() {
         .await
         .unwrap();
 
-    let table_1_id = database
-        .create_table(test_table_name("table_1"), &[("age", "integer")])
-        .await
-        .unwrap();
-    let table_1_age_schema = ColumnSchema {
+    let age_schema = ColumnSchema {
         name: "age".to_string(),
         typ: Type::INT4,
         modifier: -1,
@@ -128,13 +119,18 @@ async fn test_table_schema_copy_is_consistent() {
         primary: false,
     };
 
+    let table_1_id = database
+        .create_table(test_table_name("table_1"), &[("age", "integer")])
+        .await
+        .unwrap();
+
     // We create the slot when the database schema contains only 'table_1'.
-    let (transaction, slot) = client
+    let (transaction, _) = client
         .create_slot_with_transaction(&test_slot_name("my_slot"))
         .await
         .unwrap();
 
-    // We create a transaction to read the new schema consistently.
+    // We use the transaction to consistently read the table schemas.
     let table_1_schema = transaction
         .get_table_schemas(&[test_table_name("table_1")], None)
         .await
@@ -144,7 +140,105 @@ async fn test_table_schema_copy_is_consistent() {
         &table_1_schema,
         table_1_id,
         test_table_name("table_1"),
-        &[PgDatabase::id_column_schema(), table_1_age_schema.clone()],
+        &[PgDatabase::id_column_schema(), age_schema.clone()],
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_table_schema_copy_across_multiple_connections() {
+    let database = spawn_database().await;
+
+    let first_client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+    let second_client = first_client.duplicate().await.unwrap();
+
+    let age_schema = ColumnSchema {
+        name: "age".to_string(),
+        typ: Type::INT4,
+        modifier: -1,
+        nullable: true,
+        primary: false,
+    };
+    let year_schema = ColumnSchema {
+        name: "year".to_string(),
+        typ: Type::INT4,
+        modifier: -1,
+        nullable: true,
+        primary: false,
+    };
+
+    let table_1_id = database
+        .create_table(test_table_name("table_1"), &[("age", "integer")])
+        .await
+        .unwrap();
+
+    // We create the slot when the database schema contains only 'table_1'.
+    let (transaction, _) = first_client
+        .create_slot_with_transaction(&test_slot_name("my_slot"))
+        .await
+        .unwrap();
+
+    // We use the transaction to consistently read the table schemas.
+    let table_1_schema = transaction
+        .get_table_schemas(&[test_table_name("table_1")], None)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert_table_schema(
+        &table_1_schema,
+        table_1_id,
+        test_table_name("table_1"),
+        &[PgDatabase::id_column_schema(), age_schema.clone()],
+    );
+
+    // We create a new table in the database and update the schema of the old one.
+    let table_2_id = database
+        .create_table(test_table_name("table_2"), &[("year", "integer")])
+        .await
+        .unwrap();
+    database
+        .alter_table(
+            test_table_name("table_1"),
+            &[TableModification::AddColumn {
+                name: "year",
+                data_type: "integer",
+            }],
+        )
+        .await
+        .unwrap();
+
+    // We create the slot when the database schema contains both 'table_1' and 'table_2'.
+    let (transaction, _) = second_client
+        .create_slot_with_transaction(&test_slot_name("my_slot"))
+        .await
+        .unwrap();
+
+    // We use the transaction to consistently read the table schemas.
+    let table_1_schema = transaction
+        .get_table_schemas(&[test_table_name("table_1")], None)
+        .await
+        .unwrap();
+    let table_2_schema = transaction
+        .get_table_schemas(&[test_table_name("table_2")], None)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert_table_schema(
+        &table_1_schema,
+        table_1_id,
+        test_table_name("table_1"),
+        &[
+            PgDatabase::id_column_schema(),
+            age_schema.clone(),
+            year_schema.clone(),
+        ],
+    );
+    assert_table_schema(
+        &table_2_schema,
+        table_2_id,
+        test_table_name("table_2"),
+        &[PgDatabase::id_column_schema(), year_schema],
     );
 }
 
@@ -167,7 +261,7 @@ async fn test_table_copy_stream_is_consistent() {
         .unwrap();
 
     // We create the slot when the database schema contains only 'table_1' data.
-    let (transaction, slot) = parent_client
+    let (transaction, _) = parent_client
         .create_slot_with_transaction(&test_slot_name("my_slot"))
         .await
         .unwrap();

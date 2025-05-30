@@ -247,57 +247,13 @@ impl PgReplicationClient {
         slot_name: &str,
     ) -> PgReplicationResult<(PgReplicationSlotTransaction, PgReplicationSlot)> {
         let transaction = PgReplicationSlotTransaction::new(self.clone()).await?;
-
-        let query = format!(
-            r#"CREATE_REPLICATION_SLOT {} LOGICAL pgoutput USE_SNAPSHOT"#,
-            quote_identifier(slot_name)
-        );
-
-        let results = self.inner.client.simple_query(&query).await?;
-        for result in results {
-            if let SimpleQueryMessage::Row(row) = result {
-                let consistent_point: PgLsn = row
-                    .get("consistent_point")
-                    .ok_or(PgReplicationError::SlotResponseInvalid)?
-                    .parse()
-                    .map_err(|_| PgReplicationError::InvalidLsn)?;
-
-                let slot = PgReplicationSlot { consistent_point };
-
-                return Ok((transaction, slot));
-            }
-        }
-
-        Err(PgReplicationError::SlotCreation(
-            "No response received".to_string(),
-        ))
+        let slot = self.create_slot_internal(slot_name, true).await?;
+        Ok((transaction, slot))
     }
 
     /// Creates a new logical replication slot with the specified name and no snapshot.
     pub async fn create_slot(&self, slot_name: &str) -> PgReplicationResult<PgReplicationSlot> {
-        let query = format!(
-            r#"CREATE_REPLICATION_SLOT {} LOGICAL pgoutput NOEXPORT_SNAPSHOT"#,
-            quote_identifier(slot_name)
-        );
-
-        let results = self.inner.client.simple_query(&query).await?;
-        for result in results {
-            if let SimpleQueryMessage::Row(row) = result {
-                let consistent_point: PgLsn = row
-                    .get("consistent_point")
-                    .ok_or(PgReplicationError::SlotResponseInvalid)?
-                    .parse()
-                    .map_err(|_| PgReplicationError::InvalidLsn)?;
-
-                let slot = PgReplicationSlot { consistent_point };
-
-                return Ok(slot);
-            }
-        }
-
-        Err(PgReplicationError::SlotCreation(
-            "No response received".to_string(),
-        ))
+        self.create_slot_internal(slot_name, false).await
     }
 
     /// Checks if a publication with the given name exists.
@@ -426,6 +382,43 @@ impl PgReplicationClient {
     async fn rollback_tx(&self) -> PgReplicationResult<()> {
         self.inner.client.simple_query("rollback;").await?;
         Ok(())
+    }
+
+    /// Internal helper method to create a replication slot.
+    ///
+    /// The `use_snapshot` parameter determines whether to use a snapshot for the slot creation.
+    async fn create_slot_internal(
+        &self,
+        slot_name: &str,
+        use_snapshot: bool,
+    ) -> PgReplicationResult<PgReplicationSlot> {
+        let snapshot_option = if use_snapshot {
+            "USE_SNAPSHOT"
+        } else {
+            "NOEXPORT_SNAPSHOT"
+        };
+        let query = format!(
+            r#"CREATE_REPLICATION_SLOT {} LOGICAL pgoutput {}"#,
+            quote_identifier(slot_name),
+            snapshot_option
+        );
+
+        let results = self.inner.client.simple_query(&query).await?;
+        for result in results {
+            if let SimpleQueryMessage::Row(row) = result {
+                let consistent_point: PgLsn = row
+                    .get("consistent_point")
+                    .ok_or(PgReplicationError::SlotResponseInvalid)?
+                    .parse()
+                    .map_err(|_| PgReplicationError::InvalidLsn)?;
+
+                return Ok(PgReplicationSlot { consistent_point });
+            }
+        }
+
+        Err(PgReplicationError::SlotCreation(
+            "No response received".to_string(),
+        ))
     }
 
     /// Retrieves schema information for multiple tables.
