@@ -81,7 +81,7 @@ impl PipelineStateStore for MemoryPipelineStateStore {
         Ok(inner
             .table_replication_states
             .values()
-            .find(|state| state.borrow() == table_id)
+            .find(|state| <TableReplicationState as Borrow<I>>::borrow(state) == table_id)
             .cloned())
     }
 
