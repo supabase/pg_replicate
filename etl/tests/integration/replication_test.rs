@@ -1,0 +1,294 @@
+use etl::v2::replication::client::PgReplicationClient;
+use futures::StreamExt;
+use postgres::schema::ColumnSchema;
+use postgres::tokio::test_utils::PgDatabase;
+use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
+use postgres_replication::LogicalReplicationStream;
+use tokio::pin;
+use tokio_postgres::types::Type;
+use tokio_postgres::CopyOutStream;
+
+use crate::common::database::{spawn_database, test_table_name};
+use crate::common::pipeline::test_slot_name;
+use crate::common::table::assert_table_schema;
+
+async fn count_stream_rows(stream: CopyOutStream) -> u64 {
+    pin!(stream);
+
+    let mut row_count = 0;
+    while let Some(row) = stream.next().await {
+        row.unwrap();
+        row_count += 1;
+    }
+
+    row_count
+}
+
+#[derive(Default)]
+struct MessageCounts {
+    begin_count: u64,
+    commit_count: u64,
+    origin_count: u64,
+    relation_count: u64,
+    type_count: u64,
+    insert_count: u64,
+    update_count: u64,
+    delete_count: u64,
+    truncate_count: u64,
+    other_count: u64,
+}
+
+async fn count_stream_components<F>(
+    stream: LogicalReplicationStream,
+    mut should_stop: F,
+) -> MessageCounts
+where
+    F: FnMut(&MessageCounts) -> bool,
+{
+    let mut counts = MessageCounts::default();
+
+    pin!(stream);
+    while let Some(event) = stream.next().await {
+        if let Ok(event) = event {
+            match event {
+                ReplicationMessage::XLogData(event) => match event.data() {
+                    LogicalReplicationMessage::Begin(_) => counts.begin_count += 1,
+                    LogicalReplicationMessage::Commit(_) => counts.commit_count += 1,
+                    LogicalReplicationMessage::Origin(_) => counts.origin_count += 1,
+                    LogicalReplicationMessage::Relation(_) => counts.relation_count += 1,
+                    LogicalReplicationMessage::Type(_) => counts.type_count += 1,
+                    LogicalReplicationMessage::Insert(_) => counts.insert_count += 1,
+                    LogicalReplicationMessage::Update(_) => counts.update_count += 1,
+                    LogicalReplicationMessage::Delete(_) => counts.delete_count += 1,
+                    LogicalReplicationMessage::Truncate(_) => counts.truncate_count += 1,
+                    _ => counts.other_count += 1,
+                },
+                _ => counts.other_count += 1,
+            }
+        }
+
+        if should_stop(&counts) {
+            break;
+        }
+    }
+
+    counts
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_replication_client_creates_slot() {
+    let database = spawn_database().await;
+
+    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    assert!(client
+        .create_slot_with_transaction(&test_slot_name("my_slot"))
+        .await
+        .is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_replication_client_doesnt_recreate_slot() {
+    let database = spawn_database().await;
+
+    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    let slot_name = test_slot_name("my_slot");
+    assert!(client
+        .create_slot_with_transaction(&slot_name)
+        .await
+        .is_ok());
+    assert!(client
+        .create_slot_with_transaction(&slot_name)
+        .await
+        .is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_table_schema_copy_is_consistent() {
+    let database = spawn_database().await;
+
+    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    let table_1_id = database
+        .create_table(test_table_name("table_1"), &[("age", "integer")])
+        .await
+        .unwrap();
+    let table_1_age_schema = ColumnSchema {
+        name: "age".to_string(),
+        typ: Type::INT4,
+        modifier: -1,
+        nullable: true,
+        primary: false,
+    };
+
+    // We create the slot when the database schema contains only 'table_1'.
+    let (transaction, slot) = client
+        .create_slot_with_transaction(&test_slot_name("my_slot"))
+        .await
+        .unwrap();
+
+    // We create a transaction to read the new schema consistently.
+    let table_1_schema = transaction
+        .get_table_schemas(&[test_table_name("table_1")], None)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert_table_schema(
+        &table_1_schema,
+        table_1_id,
+        test_table_name("table_1"),
+        &[PgDatabase::id_column_schema(), table_1_age_schema.clone()],
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_table_copy_stream_is_consistent() {
+    let database = spawn_database().await;
+
+    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    // We create a table and insert one row.
+    database
+        .create_table(test_table_name("table_1"), &[("age", "integer")])
+        .await
+        .unwrap();
+    database
+        .insert_values(test_table_name("table_1"), &["age"], &[&10])
+        .await
+        .unwrap();
+
+    // We create the slot when the database schema contains only 'table_1' data.
+    let (transaction, slot) = parent_client
+        .create_slot_with_transaction(&test_slot_name("my_slot"))
+        .await
+        .unwrap();
+
+    // We create a transaction to copy the table data consistently.
+    let stream = transaction
+        .get_table_copy_stream(
+            &test_table_name("table_1"),
+            &[ColumnSchema {
+                name: "age".to_string(),
+                typ: Type::INT4,
+                modifier: -1,
+                nullable: true,
+                primary: false,
+            }],
+        )
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+
+    let rows_count = count_stream_rows(stream).await;
+    // We expect to have only one row since we just inserted one.
+    assert_eq!(rows_count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_publication_creation_and_check() {
+    let database = spawn_database().await;
+
+    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    // We create two tables and a publication on those tables.
+    database
+        .create_table(test_table_name("table_1"), &[("age", "integer")])
+        .await
+        .unwrap();
+    database
+        .create_table(test_table_name("table_2"), &[("age", "integer")])
+        .await
+        .unwrap();
+    database
+        .create_publication(
+            "my_publication",
+            &[test_table_name("table_1"), test_table_name("table_2")],
+        )
+        .await
+        .unwrap();
+
+    let publication_exists = parent_client
+        .publication_exists("my_publication")
+        .await
+        .unwrap();
+    assert!(publication_exists);
+
+    let table_names = parent_client
+        .get_publication_table_names("my_publication")
+        .await
+        .unwrap();
+    assert_eq!(
+        table_names,
+        vec![test_table_name("table_1"), test_table_name("table_2")]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_start_logical_replication() {
+    let database = spawn_database().await;
+
+    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    // We create a slot which is going to replicate data before we insert the data.
+    let slot_name = test_slot_name("my_slot");
+    let slot = parent_client.create_slot(&slot_name).await.unwrap();
+
+    // We create a table with a publication and 10 entries.
+    database
+        .create_table(test_table_name("table_1"), &[("age", "integer")])
+        .await
+        .unwrap();
+    database
+        .create_publication("my_publication", &[test_table_name("table_1")])
+        .await
+        .unwrap();
+    for i in 0..10 {
+        database
+            .insert_values(test_table_name("table_1"), &["age"], &[&i])
+            .await
+            .unwrap();
+    }
+
+    // We start the cdc of events from the consistent point.
+    let stream = parent_client
+        .start_logical_replication(
+            "my_publication",
+            &slot_name,
+            slot.consistent_point().clone(),
+        )
+        .await
+        .unwrap();
+    let counts = count_stream_components(stream, |counts| counts.insert_count == 10).await;
+    assert_eq!(counts.insert_count, 10);
+
+    // We create a new connection and start another replication instance from the same slot to check
+    // if the same data is received.
+    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    // We try to stream again from that consistent point and see if we get the same data.
+    let stream = parent_client
+        .start_logical_replication(
+            "my_publication",
+            &slot_name,
+            slot.consistent_point().clone(),
+        )
+        .await
+        .unwrap();
+    let counts = count_stream_components(stream, |counts| counts.insert_count == 10).await;
+    assert_eq!(counts.insert_count, 10);
+}

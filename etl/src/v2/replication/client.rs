@@ -1,1 +1,676 @@
-// TODO: implement client.
+use pg_escape::{quote_identifier, quote_literal};
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use postgres::tokio::options::PgDatabaseOptions;
+use postgres_replication::LogicalReplicationStream;
+use rustls::{pki_types::CertificateDer, ClientConfig};
+use std::collections::HashMap;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio_postgres::tls::MakeTlsConnect;
+use tokio_postgres::types::{Kind, Type};
+use tokio_postgres::{
+    config::ReplicationMode, types::PgLsn, Client, Config, Connection, CopyOutStream, NoTls,
+    SimpleQueryMessage, Socket,
+};
+use tokio_postgres_rustls::MakeRustlsConnect;
+use tracing::{info, warn};
+
+/// Spawns a background task to monitor a PostgreSQL connection until it terminates.
+///
+/// The task will log when the connection terminates, either successfully or with an error.
+fn spawn_postgres_connection<T>(connection: Connection<Socket, T::Stream>)
+where
+    T: MakeTlsConnect<Socket>,
+    T::Stream: Send + 'static,
+{
+    // TODO: maybe return a handle for this task to keep track of it.
+    tokio::spawn(async move {
+        info!("waiting for connection to terminate");
+        if let Err(e) = connection.await {
+            warn!("connection error: {}", e);
+            return;
+        }
+        info!("connection terminated successfully")
+    });
+}
+
+/// Errors that can occur when using the PostgreSQL replication client.
+#[derive(Debug, Error)]
+pub enum PgReplicationError {
+    /// Errors from the underlying PostgreSQL client
+    #[error("PostgreSQL client error: {0}")]
+    Client(#[from] tokio_postgres::Error),
+
+    /// Errors related to TLS/SSL configuration
+    #[error("TLS configuration error: {0}")]
+    Tls(#[from] rustls::Error),
+
+    /// Errors related to replication slot operations
+    #[error("Failed to create replication slot: {0}")]
+    SlotCreation(String),
+
+    #[error("Invalid replication slot response: missing required fields")]
+    SlotResponseInvalid,
+
+    #[error("Invalid LSN (Log Sequence Number)")]
+    InvalidLsn,
+
+    /// Errors related to database schema and objects
+    #[error("Table '{0}' not found in database")]
+    TableNotFound(TableName),
+
+    #[error("Column '{0}' not found in table '{1}'")]
+    ColumnNotFound(String, String),
+
+    #[error("Publication '{0}' not found in database")]
+    PublicationNotFound(String),
+
+    /// Errors related to data type handling
+    #[error("Invalid OID value in column: expected u32")]
+    InvalidOid,
+
+    #[error("Invalid type modifier value: expected i32")]
+    InvalidTypeModifier,
+
+    #[error("Unsupported column type '{0}' (OID: {1}) in table '{2}'")]
+    UnsupportedColumnType(String, u32, String),
+
+    #[error("Unsupported replica identity '{0}'. Only 'default' or 'full' are supported")]
+    UnsupportedReplicaIdentity(String),
+}
+
+/// A logical replication slot in PostgreSQL that maintains a consistent point and snapshot.
+///
+/// The slot ensures that changes can be replicated from a consistent point in time,
+/// represented by the `consistent_point` and `snapshot_name`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PgReplicationSlot {
+    consistent_point: PgLsn,
+}
+
+impl PgReplicationSlot {
+    /// Returns the LSN (Log Sequence Number) that represents the consistent point of this slot.
+    pub fn consistent_point(&self) -> &PgLsn {
+        &self.consistent_point
+    }
+}
+
+/// A transaction that operates within the context of a replication slot.
+///
+/// This type ensures that the parent connection remains active for the duration of any
+/// transaction spawned by that connection for a given slot.
+///
+/// The `parent_client` is the client that created the slot and must be active for the duration of
+/// the transaction for the snapshot of the slot to be consistent.
+#[derive(Debug)]
+pub struct PgReplicationSlotTransaction {
+    client: PgReplicationClient,
+}
+
+impl PgReplicationSlotTransaction {
+    /// Creates a new transaction within the context of a replication slot.
+    ///
+    /// The transaction is started with a repeatable read isolation level and uses the
+    /// snapshot associated with the provided slot.
+    async fn new(client: PgReplicationClient) -> PgReplicationResult<Self> {
+        client.begin_tx().await?;
+
+        Ok(Self { client })
+    }
+
+    /// Retrieves the schema information for the specified tables.
+    ///
+    /// If a publication name is provided, only tables included in that publication
+    /// will be considered.
+    pub async fn get_table_schemas(
+        &self,
+        table_names: &[TableName],
+        publication_name: Option<&str>,
+    ) -> PgReplicationResult<HashMap<TableId, TableSchema>> {
+        self.client
+            .get_table_schemas(table_names, publication_name)
+            .await
+    }
+
+    /// Creates a COPY stream for reading data from the specified table.
+    ///
+    /// The stream will include only the columns specified in `column_schemas`.
+    pub async fn get_table_copy_stream(
+        &self,
+        table_name: &TableName,
+        column_schemas: &[ColumnSchema],
+    ) -> PgReplicationResult<CopyOutStream> {
+        self.client
+            .get_table_copy_stream(table_name, column_schemas)
+            .await
+    }
+
+    /// Commits the current transaction.
+    pub async fn commit(self) -> PgReplicationResult<()> {
+        self.client.commit_tx().await
+    }
+
+    /// Rolls back the current transaction.
+    pub async fn rollback(self) -> PgReplicationResult<()> {
+        self.client.rollback_tx().await
+    }
+}
+
+/// Internal state for a PostgreSQL replication client.
+#[derive(Debug)]
+struct ClientInner {
+    client: Client,
+    options: PgDatabaseOptions,
+    trusted_root_certs: Vec<CertificateDer<'static>>,
+    with_tls: bool,
+}
+
+/// A client for interacting with PostgreSQL's logical replication features.
+///
+/// This client provides methods for creating replication slots, managing transactions,
+/// and streaming changes from the database.
+#[derive(Debug, Clone)]
+pub struct PgReplicationClient {
+    inner: Arc<ClientInner>,
+}
+
+/// Update the type alias to use the new error type
+pub type PgReplicationResult<T> = Result<T, PgReplicationError>;
+
+impl PgReplicationClient {
+    /// Establishes a connection to PostgreSQL without TLS encryption.
+    ///
+    /// The connection is configured for logical replication mode.
+    pub async fn connect_no_tls(options: PgDatabaseOptions) -> PgReplicationResult<Self> {
+        info!("connecting to postgres without TLS");
+
+        let mut config: Config = options.clone().into();
+        config.replication_mode(ReplicationMode::Logical);
+
+        let (client, connection) = config.connect(NoTls).await?;
+        spawn_postgres_connection::<NoTls>(connection);
+
+        info!("successfully connected to postgres without TLS");
+
+        let inner = ClientInner {
+            client,
+            options,
+            trusted_root_certs: vec![],
+            with_tls: false,
+        };
+        Ok(PgReplicationClient {
+            inner: Arc::new(inner),
+        })
+    }
+
+    /// Establishes a TLS-encrypted connection to PostgreSQL.
+    ///
+    /// The connection is configured for logical replication mode and uses the provided
+    /// trusted root certificates for TLS verification.
+    pub async fn connect_tls(
+        options: PgDatabaseOptions,
+        trusted_root_certs: Vec<CertificateDer<'static>>,
+    ) -> PgReplicationResult<Self> {
+        info!("connecting to postgres with TLS");
+
+        let mut config: Config = options.clone().into();
+        config.replication_mode(ReplicationMode::Logical);
+
+        let mut root_store = rustls::RootCertStore::empty();
+        for trusted_root_cert in trusted_root_certs.iter() {
+            root_store.add(trusted_root_cert.clone())?;
+        }
+        let tls_config = ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        let (client, connection) = config.connect(MakeRustlsConnect::new(tls_config)).await?;
+        spawn_postgres_connection::<MakeRustlsConnect>(connection);
+
+        info!("successfully connected to postgres with TLS");
+
+        let inner = ClientInner {
+            client,
+            options,
+            trusted_root_certs,
+            with_tls: true,
+        };
+        Ok(PgReplicationClient {
+            inner: Arc::new(inner),
+        })
+    }
+
+    /// Creates a new logical replication slot with the specified name and a transaction which is set
+    /// on the snapshot exported by the slot creation.
+    pub async fn create_slot_with_transaction(
+        &self,
+        slot_name: &str,
+    ) -> PgReplicationResult<(PgReplicationSlotTransaction, PgReplicationSlot)> {
+        let transaction = PgReplicationSlotTransaction::new(self.clone()).await?;
+
+        let query = format!(
+            r#"CREATE_REPLICATION_SLOT {} LOGICAL pgoutput USE_SNAPSHOT"#,
+            quote_identifier(slot_name)
+        );
+
+        let results = self.inner.client.simple_query(&query).await?;
+        for result in results {
+            if let SimpleQueryMessage::Row(row) = result {
+                let consistent_point: PgLsn = row
+                    .get("consistent_point")
+                    .ok_or(PgReplicationError::SlotResponseInvalid)?
+                    .parse()
+                    .map_err(|_| PgReplicationError::InvalidLsn)?;
+
+                let slot = PgReplicationSlot { consistent_point };
+
+                return Ok((transaction, slot));
+            }
+        }
+
+        Err(PgReplicationError::SlotCreation(
+            "No response received".to_string(),
+        ))
+    }
+
+    /// Creates a new logical replication slot with the specified name and no snapshot.
+    pub async fn create_slot(&self, slot_name: &str) -> PgReplicationResult<PgReplicationSlot> {
+        let query = format!(
+            r#"CREATE_REPLICATION_SLOT {} LOGICAL pgoutput NOEXPORT_SNAPSHOT"#,
+            quote_identifier(slot_name)
+        );
+
+        let results = self.inner.client.simple_query(&query).await?;
+        for result in results {
+            if let SimpleQueryMessage::Row(row) = result {
+                let consistent_point: PgLsn = row
+                    .get("consistent_point")
+                    .ok_or(PgReplicationError::SlotResponseInvalid)?
+                    .parse()
+                    .map_err(|_| PgReplicationError::InvalidLsn)?;
+
+                let slot = PgReplicationSlot { consistent_point };
+
+                return Ok(slot);
+            }
+        }
+
+        Err(PgReplicationError::SlotCreation(
+            "No response received".to_string(),
+        ))
+    }
+
+    /// Checks if a publication with the given name exists.
+    pub async fn publication_exists(&self, publication: &str) -> PgReplicationResult<bool> {
+        let publication_exists_query = format!(
+            "select 1 as exists from pg_publication where pubname = {};",
+            quote_literal(publication)
+        );
+        for msg in self
+            .inner
+            .client
+            .simple_query(&publication_exists_query)
+            .await?
+        {
+            if let SimpleQueryMessage::Row(_) = msg {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Retrieves the names of all tables included in a publication.
+    pub async fn get_publication_table_names(
+        &self,
+        publication_name: &str,
+    ) -> PgReplicationResult<Vec<TableName>> {
+        let publication_query = format!(
+            "select schemaname, tablename from pg_publication_tables where pubname = {};",
+            quote_literal(publication_name)
+        );
+
+        let mut table_names = vec![];
+        for msg in self.inner.client.simple_query(&publication_query).await? {
+            if let SimpleQueryMessage::Row(row) = msg {
+                let schema = row
+                    .get(0)
+                    .ok_or(PgReplicationError::ColumnNotFound(
+                        "schemaname".to_string(),
+                        "pg_publication_tables".to_string(),
+                    ))?
+                    .to_string();
+
+                let name = row
+                    .get(1)
+                    .ok_or(PgReplicationError::ColumnNotFound(
+                        "tablename".to_string(),
+                        "pg_publication_tables".to_string(),
+                    ))?
+                    .to_string();
+
+                table_names.push(TableName { schema, name })
+            }
+        }
+
+        Ok(table_names)
+    }
+
+    /// Starts a logical replication stream from the specified publication and slot.
+    ///
+    /// The stream will begin reading changes from the provided `start_lsn`.
+    pub async fn start_logical_replication(
+        &self,
+        publication_name: &str,
+        slot_name: &str,
+        start_lsn: PgLsn,
+    ) -> PgReplicationResult<LogicalReplicationStream> {
+        let options = format!(
+            r#"("proto_version" '1', "publication_names" {})"#,
+            quote_literal(quote_identifier(publication_name).as_ref()),
+        );
+
+        let query = format!(
+            r#"START_REPLICATION SLOT {} LOGICAL {} {}"#,
+            quote_identifier(slot_name),
+            start_lsn,
+            options
+        );
+
+        let copy_stream = self
+            .inner
+            .client
+            .copy_both_simple::<bytes::Bytes>(&query)
+            .await?;
+
+        let stream = LogicalReplicationStream::new(copy_stream);
+
+        Ok(stream)
+    }
+
+    /// Duplicates this [`PgReplicationClient`] with another instance that inherits all its
+    /// settings.
+    pub async fn duplicate(&self) -> PgReplicationResult<PgReplicationClient> {
+        let duplicated_client = if self.inner.with_tls {
+            PgReplicationClient::connect_tls(
+                self.inner.options.clone(),
+                self.inner.trusted_root_certs.clone(),
+            )
+            .await?
+        } else {
+            PgReplicationClient::connect_no_tls(self.inner.options.clone()).await?
+        };
+
+        Ok(duplicated_client)
+    }
+
+    /// Begins a new transaction with repeatable read isolation level.
+    ///
+    /// The transaction doesn't make any assumptions about the snapshot in use, since this is a
+    /// concern of the statements issued within the transaction.
+    async fn begin_tx(&self) -> PgReplicationResult<()> {
+        self.inner
+            .client
+            .simple_query("begin read only isolation level repeatable read;")
+            .await?;
+
+        Ok(())
+    }
+
+    /// Commits the current transaction.
+    async fn commit_tx(&self) -> PgReplicationResult<()> {
+        self.inner.client.simple_query("commit;").await?;
+        Ok(())
+    }
+
+    /// Rolls back the current transaction.
+    async fn rollback_tx(&self) -> PgReplicationResult<()> {
+        self.inner.client.simple_query("rollback;").await?;
+        Ok(())
+    }
+
+    /// Retrieves schema information for multiple tables.
+    ///
+    /// Tables without primary keys will be skipped and logged with a warning.
+    async fn get_table_schemas(
+        &self,
+        table_names: &[TableName],
+        publication_name: Option<&str>,
+    ) -> PgReplicationResult<HashMap<TableId, TableSchema>> {
+        let mut table_schemas = HashMap::new();
+
+        // TODO: consider if we want to fail when at least one table was missing or not.
+        for table_name in table_names {
+            let table_schema = self
+                .get_table_schema(table_name.clone(), publication_name)
+                .await?;
+
+            if !table_schema.has_primary_keys() {
+                warn!(
+                    "table {} with id {} will not be copied because it has no primary key",
+                    table_schema.table_name, table_schema.table_id
+                );
+                continue;
+            }
+
+            table_schemas.insert(table_schema.table_id, table_schema);
+        }
+
+        Ok(table_schemas)
+    }
+
+    /// Retrieves the schema for a single table.
+    ///
+    /// If a publication is specified, only columns included in that publication
+    /// will be returned.
+    async fn get_table_schema(
+        &self,
+        table_name: TableName,
+        publication: Option<&str>,
+    ) -> PgReplicationResult<TableSchema> {
+        let table_id = self
+            .get_table_id(&table_name)
+            .await?
+            .ok_or(PgReplicationError::TableNotFound(table_name.clone()))?;
+
+        let column_schemas = self.get_column_schemas(table_id, publication).await?;
+
+        Ok(TableSchema {
+            table_name,
+            table_id,
+            column_schemas,
+        })
+    }
+
+    /// Retrieves the OID of a table and verifies its replica identity.
+    ///
+    /// Returns `None` if the table doesn't exist. The replica identity must be
+    /// either 'd' (default) or 'f' (full).
+    async fn get_table_id(&self, table: &TableName) -> PgReplicationResult<Option<TableId>> {
+        let quoted_schema = quote_literal(&table.schema);
+        let quoted_name = quote_literal(&table.name);
+
+        let table_info_query = format!(
+            "select c.oid,
+                c.relreplident
+            from pg_class c
+            join pg_namespace n
+                on (c.relnamespace = n.oid)
+            where n.nspname = {}
+                and c.relname = {}
+            ",
+            quoted_schema, quoted_name
+        );
+
+        for message in self.inner.client.simple_query(&table_info_query).await? {
+            if let SimpleQueryMessage::Row(row) = message {
+                let replica_identity =
+                    row.try_get("relreplident")?
+                        .ok_or(PgReplicationError::ColumnNotFound(
+                            "relreplident".to_string(),
+                            "pg_class".to_string(),
+                        ))?;
+
+                if !(replica_identity == "d" || replica_identity == "f") {
+                    return Err(PgReplicationError::UnsupportedReplicaIdentity(
+                        replica_identity.to_string(),
+                    ));
+                }
+
+                let oid: u32 = row
+                    .try_get("oid")?
+                    .ok_or(PgReplicationError::ColumnNotFound(
+                        "oid".to_string(),
+                        "pg_class".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| PgReplicationError::InvalidOid)?;
+                return Ok(Some(oid));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Retrieves schema information for all columns in a table.
+    ///
+    /// If a publication is specified, only columns included in that publication
+    /// will be returned.
+    async fn get_column_schemas(
+        &self,
+        table_id: TableId,
+        publication: Option<&str>,
+    ) -> PgReplicationResult<Vec<ColumnSchema>> {
+        let (pub_cte, pub_pred) = if let Some(publication) = publication {
+            (
+                format!(
+                    "with pub_attrs as (
+                        select unnest(r.prattrs)
+                        from pg_publication_rel r
+                        left join pg_publication p on r.prpubid = p.oid
+                        where p.pubname = {publication}
+                        and r.prrelid = {table_id}
+                    )",
+                    publication = quote_literal(publication),
+                ),
+                "and (
+                    case (select count(*) from pub_attrs)
+                    when 0 then true
+                    else (a.attnum in (select * from pub_attrs))
+                    end
+                )",
+            )
+        } else {
+            ("".into(), "")
+        };
+
+        let column_info_query = format!(
+            "{pub_cte}
+            select a.attname,
+                a.atttypid,
+                a.atttypmod,
+                a.attnotnull,
+                coalesce(i.indisprimary, false) as primary
+            from pg_attribute a
+            left join pg_index i
+                on a.attrelid = i.indrelid
+                and a.attnum = any(i.indkey)
+                and i.indisprimary = true
+            where a.attnum > 0::int2
+            and not a.attisdropped
+            and a.attgenerated = ''
+            and a.attrelid = {table_id}
+            {pub_pred}
+            order by a.attnum
+            ",
+        );
+
+        let mut column_schemas = vec![];
+
+        for message in self.inner.client.simple_query(&column_info_query).await? {
+            if let SimpleQueryMessage::Row(row) = message {
+                let name = row
+                    .try_get("attname")?
+                    .ok_or(PgReplicationError::ColumnNotFound(
+                        "attname".to_string(),
+                        "pg_attribute".to_string(),
+                    ))?
+                    .to_string();
+
+                let type_oid = row
+                    .try_get("atttypid")?
+                    .ok_or(PgReplicationError::ColumnNotFound(
+                        "atttypid".to_string(),
+                        "pg_attribute".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| PgReplicationError::InvalidOid)?;
+
+                let typ = Type::from_oid(type_oid).unwrap_or(Type::new(
+                    format!("unnamed(oid: {type_oid})"),
+                    type_oid,
+                    Kind::Simple,
+                    "pg_catalog".to_string(),
+                ));
+
+                let modifier = row
+                    .try_get("atttypmod")?
+                    .ok_or(PgReplicationError::ColumnNotFound(
+                        "atttypmod".to_string(),
+                        "pg_attribute".to_string(),
+                    ))?
+                    .parse()
+                    .map_err(|_| PgReplicationError::InvalidTypeModifier)?;
+
+                let nullable =
+                    row.try_get("attnotnull")?
+                        .ok_or(PgReplicationError::ColumnNotFound(
+                            "attnotnull".to_string(),
+                            "pg_attribute".to_string(),
+                        ))?
+                        == "f";
+
+                let primary = row
+                    .try_get("primary")?
+                    .ok_or(PgReplicationError::ColumnNotFound(
+                        "indisprimary".to_string(),
+                        "pg_index".to_string(),
+                    ))?
+                    == "t";
+
+                column_schemas.push(ColumnSchema {
+                    name,
+                    typ,
+                    modifier,
+                    nullable,
+                    primary,
+                })
+            }
+        }
+
+        Ok(column_schemas)
+    }
+
+    /// Creates a COPY stream for reading data from a table.
+    ///
+    /// The stream will include only the specified columns and use text format.
+    async fn get_table_copy_stream(
+        &self,
+        table_name: &TableName,
+        column_schemas: &[ColumnSchema],
+    ) -> PgReplicationResult<CopyOutStream> {
+        let column_list = column_schemas
+            .iter()
+            .map(|col| quote_identifier(&col.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let copy_query = format!(
+            r#"COPY {} ({column_list}) TO STDOUT WITH (FORMAT text);"#,
+            table_name.as_quoted_identifier(),
+        );
+
+        let stream = self.inner.client.copy_out_simple(&copy_query).await?;
+
+        Ok(stream)
+    }
+}
