@@ -83,11 +83,59 @@ async fn test_replication_client_creates_slot() {
         .await
         .unwrap();
 
-    let slot = client
-        .create_slot(&test_slot_name("my_slot"))
+    let slot_name = test_slot_name("my_slot");
+    let create_slot = client
+        .create_slot(&slot_name)
         .await
         .unwrap();
-    assert!(!slot.consistent_point().to_string().is_empty());
+    assert!(!create_slot.consistent_point.to_string().is_empty());
+    
+    let get_slot = client.get_slot(&slot_name).await.unwrap();
+    assert!(!get_slot.confirmed_flush_lsn.to_string().is_empty());
+    
+    // Since we did not do anything with the slot, we expect the consistent point to be the same
+    // as the confirmed flush lsn.
+    assert_eq!(create_slot.consistent_point, get_slot.confirmed_flush_lsn);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_create_and_delete_slot() {
+    let database = spawn_database().await;
+
+    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    let slot_name = test_slot_name("my_slot");
+
+    // Create the slot and verify it exists
+    let create_slot = client.create_slot(&slot_name).await.unwrap();
+    assert!(!create_slot.consistent_point.to_string().is_empty());
+
+    let get_slot = client.get_slot(&slot_name).await.unwrap();
+    assert!(!get_slot.confirmed_flush_lsn.to_string().is_empty());
+
+    // Delete the slot
+    client.delete_slot(&slot_name).await.unwrap();
+
+    // Verify the slot no longer exists
+    assert!(client.get_slot(&slot_name).await.is_err());
+}
+
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_delete_nonexistent_slot() {
+    let database = spawn_database().await;
+
+    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+        .await
+        .unwrap();
+
+    let slot_name = test_slot_name("nonexistent_slot");
+
+    // Attempt to delete a slot that doesn't exist
+    let result = client.delete_slot(&slot_name).await;
+    assert!(result.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -361,7 +409,7 @@ async fn test_start_logical_replication() {
         .start_logical_replication(
             "my_publication",
             &slot_name,
-            slot.consistent_point().clone(),
+            slot.consistent_point.clone(),
         )
         .await
         .unwrap();
@@ -379,7 +427,7 @@ async fn test_start_logical_replication() {
         .start_logical_replication(
             "my_publication",
             &slot_name,
-            slot.consistent_point().clone(),
+            slot.consistent_point.clone(),
         )
         .await
         .unwrap();

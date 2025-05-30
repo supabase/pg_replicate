@@ -4,13 +4,14 @@ use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio_postgres::tls::MakeTlsConnect;
 use tokio_postgres::types::{Kind, Type};
 use tokio_postgres::{
     config::ReplicationMode, types::PgLsn, Client, Config, Connection, CopyOutStream, NoTls,
-    SimpleQueryMessage, Socket,
+    SimpleQueryMessage, SimpleQueryRow, Socket,
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{info, warn};
@@ -49,11 +50,11 @@ pub enum PgReplicationError {
     #[error("Failed to create replication slot: {0}")]
     SlotCreation(String),
 
+    #[error("The slot {0} was not found")]
+    SlotNotFound(String),
+
     #[error("Invalid replication slot response: missing required fields")]
     SlotResponseInvalid,
-
-    #[error("Invalid LSN (Log Sequence Number)")]
-    InvalidLsn,
 
     /// Errors related to database schema and objects
     #[error("Table '{0}' not found in database")]
@@ -61,6 +62,9 @@ pub enum PgReplicationError {
 
     #[error("Column '{0}' not found in table '{1}'")]
     ColumnNotFound(String, String),
+
+    #[error("Failed to parse value from column '{0}' in table '{1}': {2}")]
+    ColumnParsingFailed(String, String, String),
 
     #[error("Publication '{0}' not found in database")]
     PublicationNotFound(String),
@@ -79,20 +83,14 @@ pub enum PgReplicationError {
     UnsupportedReplicaIdentity(String),
 }
 
-/// A logical replication slot in PostgreSQL that maintains a consistent point and snapshot.
-///
-/// The slot ensures that changes can be replicated from a consistent point in time,
-/// represented by the `consistent_point` and `snapshot_name`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PgReplicationSlot {
-    consistent_point: PgLsn,
+#[derive(Debug, Clone)]
+pub struct CreateSlotResult {
+    pub consistent_point: PgLsn,
 }
 
-impl PgReplicationSlot {
-    /// Returns the LSN (Log Sequence Number) that represents the consistent point of this slot.
-    pub fn consistent_point(&self) -> &PgLsn {
-        &self.consistent_point
-    }
+#[derive(Debug, Clone)]
+pub struct GetSlotResult {
+    pub confirmed_flush_lsn: PgLsn,
 }
 
 /// A transaction that operates within the context of a replication slot.
@@ -245,15 +243,61 @@ impl PgReplicationClient {
     pub async fn create_slot_with_transaction(
         &self,
         slot_name: &str,
-    ) -> PgReplicationResult<(PgReplicationSlotTransaction, PgReplicationSlot)> {
+    ) -> PgReplicationResult<(PgReplicationSlotTransaction, CreateSlotResult)> {
+        // TODO: check if we want to consume the client and return it on commit to avoid any other
+        //  operations on a connection that has started a transaction.
         let transaction = PgReplicationSlotTransaction::new(self.clone()).await?;
         let slot = self.create_slot_internal(slot_name, true).await?;
+
         Ok((transaction, slot))
     }
 
     /// Creates a new logical replication slot with the specified name and no snapshot.
-    pub async fn create_slot(&self, slot_name: &str) -> PgReplicationResult<PgReplicationSlot> {
+    pub async fn create_slot(&self, slot_name: &str) -> PgReplicationResult<CreateSlotResult> {
         self.create_slot_internal(slot_name, false).await
+    }
+
+    /// Gets the slot by `slot_name`.
+    ///
+    /// Returns an error in case of failure or missing slot.
+    pub async fn get_slot(&self, slot_name: &str) -> PgReplicationResult<GetSlotResult> {
+        let query = format!(
+            r#"select confirmed_flush_lsn from pg_replication_slots where slot_name = {};"#,
+            quote_literal(slot_name)
+        );
+
+        let results = self.inner.client.simple_query(&query).await?;
+        for result in results {
+            if let SimpleQueryMessage::Row(row) = result {
+                let confirmed_flush_lsn = Self::get_row_value::<PgLsn>(
+                    &row,
+                    "confirmed_flush_lsn",
+                    "pg_replication_slots",
+                )
+                .await?;
+                let slot = GetSlotResult {
+                    confirmed_flush_lsn,
+                };
+
+                return Ok(slot);
+            }
+        }
+
+        Err(PgReplicationError::SlotNotFound(slot_name.to_string()))
+    }
+
+    /// Deletes a replication slot with the specified name.
+    ///
+    /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.
+    pub async fn delete_slot(&self, slot_name: &str) -> PgReplicationResult<()> {
+        let query = format!(
+            r#"DROP_REPLICATION_SLOT {};"#,
+            quote_identifier(slot_name)
+        );
+
+        self.inner.client.simple_query(&query).await?;
+        
+        Ok(())
     }
 
     /// Checks if a publication with the given name exists.
@@ -288,21 +332,12 @@ impl PgReplicationClient {
         let mut table_names = vec![];
         for msg in self.inner.client.simple_query(&publication_query).await? {
             if let SimpleQueryMessage::Row(row) = msg {
-                let schema = row
-                    .get(0)
-                    .ok_or(PgReplicationError::ColumnNotFound(
-                        "schemaname".to_string(),
-                        "pg_publication_tables".to_string(),
-                    ))?
-                    .to_string();
-
-                let name = row
-                    .get(1)
-                    .ok_or(PgReplicationError::ColumnNotFound(
-                        "tablename".to_string(),
-                        "pg_publication_tables".to_string(),
-                    ))?
-                    .to_string();
+                let schema =
+                    Self::get_row_value::<String>(&row, "schemaname", "pg_publication_tables")
+                        .await?;
+                let name =
+                    Self::get_row_value::<String>(&row, "tablename", "pg_publication_tables")
+                        .await?;
 
                 table_names.push(TableName { schema, name })
             }
@@ -391,7 +426,7 @@ impl PgReplicationClient {
         &self,
         slot_name: &str,
         use_snapshot: bool,
-    ) -> PgReplicationResult<PgReplicationSlot> {
+    ) -> PgReplicationResult<CreateSlotResult> {
         let snapshot_option = if use_snapshot {
             "USE_SNAPSHOT"
         } else {
@@ -406,13 +441,12 @@ impl PgReplicationClient {
         let results = self.inner.client.simple_query(&query).await?;
         for result in results {
             if let SimpleQueryMessage::Row(row) = result {
-                let consistent_point: PgLsn = row
-                    .get("consistent_point")
-                    .ok_or(PgReplicationError::SlotResponseInvalid)?
-                    .parse()
-                    .map_err(|_| PgReplicationError::InvalidLsn)?;
+                let consistent_point =
+                    Self::get_row_value::<PgLsn>(&row, "consistent_point", "pg_replication_slots")
+                        .await?;
+                let slot = CreateSlotResult { consistent_point };
 
-                return Ok(PgReplicationSlot { consistent_point });
+                return Ok(slot);
             }
         }
 
@@ -497,25 +531,23 @@ impl PgReplicationClient {
         for message in self.inner.client.simple_query(&table_info_query).await? {
             if let SimpleQueryMessage::Row(row) = message {
                 let replica_identity =
-                    row.try_get("relreplident")?
-                        .ok_or(PgReplicationError::ColumnNotFound(
-                            "relreplident".to_string(),
-                            "pg_class".to_string(),
-                        ))?;
+                    Self::get_row_value::<String>(&row, "relreplident", "pg_class")
+                        .await
+                        .map_err(|_| {
+                            PgReplicationError::ColumnNotFound(
+                                "relreplident".to_string(),
+                                "pg_class".to_string(),
+                            )
+                        })?;
 
                 if !(replica_identity == "d" || replica_identity == "f") {
                     return Err(PgReplicationError::UnsupportedReplicaIdentity(
-                        replica_identity.to_string(),
+                        replica_identity,
                     ));
                 }
 
-                let oid: u32 = row
-                    .try_get("oid")?
-                    .ok_or(PgReplicationError::ColumnNotFound(
-                        "oid".to_string(),
-                        "pg_class".to_string(),
-                    ))?
-                    .parse()
+                let oid = Self::get_row_value::<u32>(&row, "oid", "pg_class")
+                    .await
                     .map_err(|_| PgReplicationError::InvalidOid)?;
                 return Ok(Some(oid));
             }
@@ -581,22 +613,42 @@ impl PgReplicationClient {
 
         for message in self.inner.client.simple_query(&column_info_query).await? {
             if let SimpleQueryMessage::Row(row) = message {
-                let name = row
-                    .try_get("attname")?
-                    .ok_or(PgReplicationError::ColumnNotFound(
-                        "attname".to_string(),
-                        "pg_attribute".to_string(),
-                    ))?
-                    .to_string();
+                let name = Self::get_row_value::<String>(&row, "attname", "pg_attribute")
+                    .await
+                    .map_err(|_| {
+                        PgReplicationError::ColumnNotFound(
+                            "attname".to_string(),
+                            "pg_attribute".to_string(),
+                        )
+                    })?;
 
-                let type_oid = row
-                    .try_get("atttypid")?
-                    .ok_or(PgReplicationError::ColumnNotFound(
-                        "atttypid".to_string(),
-                        "pg_attribute".to_string(),
-                    ))?
-                    .parse()
+                let type_oid = Self::get_row_value::<u32>(&row, "atttypid", "pg_attribute")
+                    .await
                     .map_err(|_| PgReplicationError::InvalidOid)?;
+
+                let modifier = Self::get_row_value::<i32>(&row, "atttypmod", "pg_attribute")
+                    .await
+                    .map_err(|_| PgReplicationError::InvalidTypeModifier)?;
+
+                let nullable = Self::get_row_value::<String>(&row, "attnotnull", "pg_attribute")
+                    .await
+                    .map_err(|_| {
+                        PgReplicationError::ColumnNotFound(
+                            "attnotnull".to_string(),
+                            "pg_attribute".to_string(),
+                        )
+                    })?
+                    == "f";
+
+                let primary = Self::get_row_value::<String>(&row, "primary", "pg_index")
+                    .await
+                    .map_err(|_| {
+                        PgReplicationError::ColumnNotFound(
+                            "primary".to_string(),
+                            "pg_index".to_string(),
+                        )
+                    })?
+                    == "t";
 
                 let typ = Type::from_oid(type_oid).unwrap_or(Type::new(
                     format!("unnamed(oid: {type_oid})"),
@@ -604,31 +656,6 @@ impl PgReplicationClient {
                     Kind::Simple,
                     "pg_catalog".to_string(),
                 ));
-
-                let modifier = row
-                    .try_get("atttypmod")?
-                    .ok_or(PgReplicationError::ColumnNotFound(
-                        "atttypmod".to_string(),
-                        "pg_attribute".to_string(),
-                    ))?
-                    .parse()
-                    .map_err(|_| PgReplicationError::InvalidTypeModifier)?;
-
-                let nullable =
-                    row.try_get("attnotnull")?
-                        .ok_or(PgReplicationError::ColumnNotFound(
-                            "attnotnull".to_string(),
-                            "pg_attribute".to_string(),
-                        ))?
-                        == "f";
-
-                let primary = row
-                    .try_get("primary")?
-                    .ok_or(PgReplicationError::ColumnNotFound(
-                        "indisprimary".to_string(),
-                        "pg_index".to_string(),
-                    ))?
-                    == "t";
 
                 column_schemas.push(ColumnSchema {
                     name,
@@ -665,5 +692,32 @@ impl PgReplicationClient {
         let stream = self.inner.client.copy_out_simple(&copy_query).await?;
 
         Ok(stream)
+    }
+
+    /// Helper function to extract a value from a SimpleQueryMessage::Row
+    ///
+    /// Returns an error if the column is not found or if the value cannot be parsed to the target type.
+    async fn get_row_value<T: std::str::FromStr>(
+        row: &SimpleQueryRow,
+        column_name: &str,
+        table_name: &str,
+    ) -> PgReplicationResult<T>
+    where
+        T::Err: fmt::Debug,
+    {
+        let value = row
+            .try_get(column_name)?
+            .ok_or(PgReplicationError::ColumnNotFound(
+                column_name.to_string(),
+                table_name.to_string(),
+            ))?;
+
+        value.parse().map_err(|e: T::Err| {
+            PgReplicationError::ColumnParsingFailed(
+                column_name.to_string(),
+                table_name.to_string(),
+                format!("{:?}", e),
+            )
+        })
     }
 }

@@ -9,6 +9,7 @@ use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
 use crate::v2::concurrency::future::ReactiveFuture;
+use crate::v2::replication::client::PgReplicationClient;
 use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;
@@ -149,19 +150,27 @@ impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
 
 #[derive(Debug)]
 pub struct TableSyncWorker<S, D> {
+    replication_client: PgReplicationClient,
+    pool: TableSyncWorkerPool,
+    table_id: Oid,
     state_store: S,
     destination: D,
-    table_id: Oid,
-    pool: TableSyncWorkerPool,
 }
 
 impl<S, D> TableSyncWorker<S, D> {
-    pub fn new(state_store: S, destination: D, table_id: Oid, pool: TableSyncWorkerPool) -> Self {
+    pub fn new(
+        replication_client: PgReplicationClient,
+        pool: TableSyncWorkerPool,
+        table_id: Oid,
+        state_store: S,
+        destination: D,
+    ) -> Self {
         Self {
+            replication_client,
+            pool,
+            table_id,
             state_store,
             destination,
-            table_id,
-            pool,
         }
     }
 
@@ -207,11 +216,13 @@ where
             // from its consistent snapshot.
             // TODO: check if this is the right LSN to start with, maybe we want the consistent
             //  point of the slot.
+            let hook = Hook::new(self.table_id);
             start_apply_loop(
+                hook,
+                self.replication_client,
+                PgLsn::from(0),
                 self.state_store,
                 self.destination,
-                Hook::new(self.table_id),
-                PgLsn::from(0),
             )
             .await;
         };
@@ -242,12 +253,8 @@ impl Hook {
     }
 }
 
-impl<S, D> ApplyLoopHook<S, D> for Hook
-where
-    S: PipelineStateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
-{
-    async fn process_syncing_tables(&self, _state_store: S, _destination: D, current_lsn: PgLsn) {
+impl ApplyLoopHook for Hook {
+    async fn process_syncing_tables(&self, current_lsn: PgLsn) {
         info!(
             "Processing syncing tables for table sync worker with LSN {}",
             current_lsn

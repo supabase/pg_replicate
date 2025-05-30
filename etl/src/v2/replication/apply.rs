@@ -3,19 +3,11 @@ use std::future::Future;
 use tokio_postgres::types::PgLsn;
 
 use crate::v2::destination::base::Destination;
+use crate::v2::replication::client::PgReplicationClient;
 use crate::v2::state::store::base::PipelineStateStore;
 
-pub trait ApplyLoopHook<S, D>
-where
-    S: PipelineStateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
-{
-    fn process_syncing_tables(
-        &self,
-        state_store: S,
-        destination: D,
-        current_lsn: PgLsn,
-    ) -> impl Future<Output = ()> + Send;
+pub trait ApplyLoopHook {
+    fn process_syncing_tables(&self, current_lsn: PgLsn) -> impl Future<Output = ()> + Send;
 
     fn should_apply_changes(
         &self,
@@ -24,11 +16,16 @@ where
     ) -> impl Future<Output = bool> + Send;
 }
 
-pub async fn start_apply_loop<S, D, T>(_state_store: S, _destination: D, _hook: T, _last_lsn: PgLsn)
-where
+pub async fn start_apply_loop<S, D, T>(
+    _hook: T,
+    _replication_client: PgReplicationClient,
+    _last_lsn: PgLsn,
+    _state_store: S,
+    _destination: D,
+) where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
-    T: ApplyLoopHook<S, D>,
+    T: ApplyLoopHook,
 {
     // Create a select between:
     //  - Shutdown signal -> when called we stop the apply operation.

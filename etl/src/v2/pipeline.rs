@@ -1,16 +1,22 @@
-use thiserror::Error;
-use tracing::{error, info};
-
 use crate::v2::destination::base::Destination;
+use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
+use postgres::tokio::options::PgDatabaseOptions;
+use rustls::pki_types::CertificateDer;
+use thiserror::Error;
+use tokio_postgres::config::SslMode;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
     #[error("An error occurred in a worker")]
     WorkerError,
+
+    #[error("An error occurred in the replication client: {0}")]
+    PgReplicationClient(#[from] PgReplicationError),
 }
 
 #[derive(Debug)]
@@ -28,6 +34,8 @@ enum PipelineWorkers {
 pub struct Pipeline<S, D> {
     _id: u64,
     publication_name: String,
+    options: PgDatabaseOptions,
+    trusted_root_certs: Vec<CertificateDer<'static>>,
     state_store: S,
     destination: D,
     workers: PipelineWorkers,
@@ -35,13 +43,22 @@ pub struct Pipeline<S, D> {
 
 impl<S, D> Pipeline<S, D>
 where
-    S: PipelineStateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
+    S: PipelineStateStore + Clone + Send + Sync + 'static,
+    D: Destination + Clone + Send + Sync + 'static,
 {
-    pub async fn new(_id: u64, publication_name: String, state_store: S, destination: D) -> Self {
+    pub async fn new(
+        _id: u64,
+        publication_name: String,
+        options: PgDatabaseOptions,
+        trusted_root_certs: Vec<CertificateDer<'static>>,
+        state_store: S,
+        destination: D,
+    ) -> Self {
         Self {
             _id,
             publication_name,
+            options,
+            trusted_root_certs,
             state_store,
             destination,
             workers: PipelineWorkers::NotStarted,
@@ -59,14 +76,27 @@ where
         // time to new relation ids being sent over by the cdc event stream.
         self.sync_relation_subscription_states().await;
 
-        // We create the table sync workers shared memory area.
-        let table_sync_workers = TableSyncWorkerPool::new();
+        // We create the table sync workers pool to manage all table sync workers in a central place.
+        let pool = TableSyncWorkerPool::new();
+
+        // We create the main replication client that will be used by the apply worker.
+        let replication_client = match self.options.ssl_mode {
+            SslMode::Disable => PgReplicationClient::connect_no_tls(self.options.clone()).await?,
+            _ => {
+                PgReplicationClient::connect_tls(
+                    self.options.clone(),
+                    self.trusted_root_certs.clone(),
+                )
+                .await?
+            }
+        };
 
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
+            replication_client,
+            pool.clone(),
             self.state_store.clone(),
             self.destination.clone(),
-            table_sync_workers.clone(),
         )
         .start()
         .await
@@ -77,7 +107,7 @@ where
 
         self.workers = PipelineWorkers::Started {
             apply_worker,
-            table_sync_workers,
+            table_sync_workers: pool,
         };
 
         Ok(())
