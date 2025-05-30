@@ -6,10 +6,11 @@ use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use thiserror::Error;
+use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use tokio_postgres::{
     config::ReplicationMode,
     types::{Kind, PgLsn, Type},
-    Client as PostgresClient, Config, CopyOutStream, NoTls, SimpleQueryMessage,
+    Client as PostgresClient, Config, NoTls, SimpleQueryMessage,
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{info, warn};
@@ -158,22 +159,26 @@ impl ReplicationClient {
     pub async fn get_table_copy_stream(
         &self,
         table_name: &TableName,
-        column_schemas: &[ColumnSchema],
-    ) -> Result<CopyOutStream, ReplicationClientError> {
-        let column_list = column_schemas
-            .iter()
-            .map(|col| quote_identifier(&col.name))
-            .collect::<Vec<_>>()
-            .join(", ");
+        column_types: &[Type],
+    ) -> Result<BinaryCopyOutStream, ReplicationClientError> {
+        // let column_list = column_schemas
+        //     .iter()
+        //     .map(|col| quote_identifier(&col.name))
+        //     .collect::<Vec<_>>()
+        //     .join(", ");
 
         let copy_query = format!(
-            r#"COPY {} ({column_list}) TO STDOUT WITH (FORMAT text);"#,
+            r#"COPY {} TO STDOUT WITH (FORMAT binary);"#,
             table_name.as_quoted_identifier(),
         );
 
-        let stream = self.postgres_client.copy_out_simple(&copy_query).await?;
+        // let stream = self.postgres_client.copy_out_simple(&copy_query).await?;
 
-        Ok(stream)
+        // Ok(stream)
+
+        let stream = self.postgres_client.copy_out_simple(&copy_query).await?;
+        let row_stream = BinaryCopyOutStream::new(stream, column_types);
+        Ok(row_stream)
     }
 
     /// Returns a vector of columns of a table, optionally filtered by a publication's column list

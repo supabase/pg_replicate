@@ -60,6 +60,9 @@ enum Command {
     },
 }
 
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     if let Err(e) = main_impl().await {
@@ -127,7 +130,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
 
     let stdout_destination = StdoutDestination;
 
-    let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
+    let batch_config = BatchConfig::new(10_000_000, Duration::from_secs(1));
     let mut pipeline =
         BatchDataPipeline::new(postgres_source, stdout_destination, action, batch_config);
 

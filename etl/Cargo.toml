@@ -61,6 +61,7 @@ clap = { workspace = true, default-features = true, features = [
     "std",
     "derive",
 ] }
+tikv-jemallocator = { workspace = true }
 
 
 [features]

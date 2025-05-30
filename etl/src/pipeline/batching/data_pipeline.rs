@@ -8,11 +8,11 @@ use tokio_postgres::types::PgLsn;
 use tracing::{debug, info};
 
 use crate::{
-    conversions::cdc_event::{CdcEvent, CdcEventConversionError},
+    // conversions::cdc_event::{CdcEvent, CdcEventConversionError},
     pipeline::{
         batching::stream::BatchTimeoutStream,
         destinations::BatchDestination,
-        sources::{postgres::CdcStreamError, CommonSourceError, Source},
+        sources::{CommonSourceError, Source},
         PipelineAction, PipelineError,
     },
 };
@@ -76,6 +76,7 @@ impl<Src: Source, Dst: BatchDestination> BatchDataPipeline<Src, Dst> {
         &mut self,
         copied_tables: &HashSet<TableId>,
     ) -> Result<(), PipelineError<Src::Error, Dst::Error>> {
+        let mut total_records = 0;
         let start = Instant::now();
         let table_schemas = self.source.get_table_schemas();
 
@@ -109,6 +110,7 @@ impl<Src: Source, Dst: BatchDestination> BatchDataPipeline<Src, Dst> {
             pin!(batch_timeout_stream);
 
             while let Some(batch) = batch_timeout_stream.next().await {
+                total_records += batch.len();
                 info!("got {} table copy events in a batch", batch.len());
                 //TODO: Avoid a vec copy
                 let mut rows = Vec::with_capacity(batch.len());
@@ -134,73 +136,74 @@ impl<Src: Source, Dst: BatchDestination> BatchDataPipeline<Src, Dst> {
         let end = Instant::now();
         let seconds = (end - start).as_secs();
         debug!("took {seconds} seconds to copy tables");
+        info!("copied {total_records} total records");
 
         Ok(())
     }
 
     async fn copy_cdc_events(
         &mut self,
-        last_lsn: PgLsn,
+        _last_lsn: PgLsn,
     ) -> Result<(), PipelineError<Src::Error, Dst::Error>> {
         self.source
             .commit_transaction()
             .await
             .map_err(PipelineError::Source)?;
 
-        let mut last_lsn: u64 = last_lsn.into();
-        last_lsn += 1;
+        // let mut last_lsn: u64 = last_lsn.into();
+        // last_lsn += 1;
 
-        let cdc_events = self
-            .source
-            .get_cdc_stream(last_lsn.into())
-            .await
-            .map_err(PipelineError::Source)?;
-        pin!(cdc_events);
+        // let cdc_events = self
+        //     .source
+        //     .get_cdc_stream(last_lsn.into())
+        //     .await
+        //     .map_err(PipelineError::Source)?;
+        // pin!(cdc_events);
 
-        let batch_timeout_stream = BatchTimeoutStream::new(
-            cdc_events,
-            self.batch_config.clone(),
-            self.cdc_stream_stop.notified(),
-        );
-        pin!(batch_timeout_stream);
+        // let batch_timeout_stream = BatchTimeoutStream::new(
+        //     cdc_events,
+        //     self.batch_config.clone(),
+        //     self.cdc_stream_stop.notified(),
+        // );
+        // pin!(batch_timeout_stream);
 
-        while let Some(batch) = batch_timeout_stream.next().await {
-            info!("got {} cdc events in a batch", batch.len());
-            let mut send_status_update = false;
-            let mut events = Vec::with_capacity(batch.len());
-            for event in batch {
-                if let Err(CdcStreamError::CdcEventConversion(
-                    CdcEventConversionError::MissingSchema(_),
-                )) = event
-                {
-                    continue;
-                }
-                let event = event.map_err(CommonSourceError::CdcStream)?;
-                if let CdcEvent::KeepAliveRequested { reply } = event {
-                    send_status_update = reply;
-                };
-                events.push(event);
-            }
-            let last_lsn = self
-                .destination
-                .write_cdc_events(events)
-                .await
-                .map_err(PipelineError::Destination)?;
-            if send_status_update {
-                info!("sending status update with lsn: {last_lsn}");
-                let inner = unsafe {
-                    batch_timeout_stream
-                        .as_mut()
-                        .get_unchecked_mut()
-                        .get_inner_mut()
-                };
-                inner
-                    .as_mut()
-                    .send_status_update(last_lsn)
-                    .await
-                    .map_err(CommonSourceError::StatusUpdate)?;
-            }
-        }
+        // while let Some(batch) = batch_timeout_stream.next().await {
+        //     info!("got {} cdc events in a batch", batch.len());
+        //     let mut send_status_update = false;
+        //     let mut events = Vec::with_capacity(batch.len());
+        //     for event in batch {
+        //         if let Err(CdcStreamError::CdcEventConversion(
+        //             CdcEventConversionError::MissingSchema(_),
+        //         )) = event
+        //         {
+        //             continue;
+        //         }
+        //         let event = event.map_err(CommonSourceError::CdcStream)?;
+        //         if let CdcEvent::KeepAliveRequested { reply } = event {
+        //             send_status_update = reply;
+        //         };
+        //         events.push(event);
+        //     }
+        //     let last_lsn = self
+        //         .destination
+        //         .write_cdc_events(events)
+        //         .await
+        //         .map_err(PipelineError::Destination)?;
+        //     if send_status_update {
+        //         info!("sending status update with lsn: {last_lsn}");
+        //         let inner = unsafe {
+        //             batch_timeout_stream
+        //                 .as_mut()
+        //                 .get_unchecked_mut()
+        //                 .get_inner_mut()
+        //         };
+        //         inner
+        //             .as_mut()
+        //             .send_status_update(last_lsn)
+        //             .await
+        //             .map_err(CommonSourceError::StatusUpdate)?;
+        //     }
+        // }
 
         Ok(())
     }

@@ -13,7 +13,11 @@ use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::pki_types::CertificateDer;
 use thiserror::Error;
-use tokio_postgres::{config::SslMode, types::PgLsn, CopyOutStream};
+use tokio_postgres::{
+    binary_copy::BinaryCopyOutStream,
+    config::SslMode,
+    types::{PgLsn, Type},
+};
 use tracing::info;
 
 use crate::{
@@ -131,10 +135,11 @@ impl Source for PostgresSource {
         column_schemas: &[ColumnSchema],
     ) -> Result<TableCopyStream, Self::Error> {
         info!("starting table copy stream for table {table_name}");
+        let column_types: Vec<Type> = column_schemas.iter().map(|c| c.typ.clone()).collect();
 
         let stream = self
             .replication_client
-            .get_table_copy_stream(table_name, column_schemas)
+            .get_table_copy_stream(table_name, &column_types)
             .await
             .map_err(PostgresSourceError::ReplicationClient)?;
 
@@ -153,7 +158,7 @@ impl Source for PostgresSource {
     }
 
     async fn get_cdc_stream(&self, start_lsn: PgLsn) -> Result<CdcStream, Self::Error> {
-        info!("starting cdc stream at lsn {start_lsn}");
+        // panic!("starting cdc stream at lsn {start_lsn}");
 
         let publication = self
             .publication()
@@ -192,7 +197,7 @@ pin_project! {
     #[must_use = "streams do nothing unless polled"]
     pub struct TableCopyStream {
         #[pin]
-        stream: CopyOutStream,
+        stream: BinaryCopyOutStream,
         column_schemas: Vec<ColumnSchema>,
     }
 }

@@ -37,16 +37,18 @@ impl BatchDestination for StdoutDestination {
         rows: Vec<TableRow>,
         _table_id: TableId,
     ) -> Result<(), Self::Error> {
-        for row in rows {
-            info!("{row:?}");
-        }
+        // for row in rows {
+        //     info!("{row:?}");
+        // }
+        info!("Got a batch of {} table rows", rows.len());
         Ok(())
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
-        for event in events {
-            info!("{event:?}");
-        }
+        // for event in events {
+        //     info!("{event:?}");
+        // }
+        info!("Got a batch of {} CDC events", events.len());
         Ok(PgLsn::from(0))
     }
 
