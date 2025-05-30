@@ -1,7 +1,7 @@
-use std::any::Any;
 use futures::future::{BoxFuture, CatchUnwind};
 use futures::FutureExt;
 use pin_project_lite::pin_project;
+use std::any::Any;
 use std::future::Future;
 use std::panic;
 use std::panic::AssertUnwindSafe;
@@ -65,7 +65,7 @@ where
             state: ReactiveFutureState::PollInnerFuture,
             id,
             callback,
-            original_panic: None
+            original_panic: None,
         }
     }
 }
@@ -101,7 +101,7 @@ where
                         } else {
                             "Unknown panic error".to_string()
                         };
-                        
+
                         *this.original_panic = Some(Box::new(err));
                         *this.state = ReactiveFutureState::InvokeCallback(Some(casted_err));
                     }
@@ -143,7 +143,7 @@ where
                     if let Some(original_panic) = this.original_panic.take() {
                         panic::resume_unwind(original_panic);
                     }
-                    
+
                     return Poll::Ready(());
                 }
             }
@@ -154,13 +154,13 @@ where
 #[cfg(test)]
 mod tests {
     use crate::v2::concurrency::future::{ReactiveFuture, ReactiveFutureCallback};
+    use futures::FutureExt;
     use std::future::Future;
     use std::panic;
     use std::panic::AssertUnwindSafe;
     use std::pin::Pin;
     use std::sync::Arc;
     use std::task::{Context, Poll};
-    use futures::FutureExt;
     use tokio::sync::RwLock;
 
     struct ImmediateFuture;
@@ -249,7 +249,12 @@ mod tests {
         let table_id = 1;
 
         // Test string panic
-        let future = AssertUnwindSafe(ReactiveFuture::new(PanicFuture { panic_any: false }, table_id, callback.clone())).catch_unwind();
+        let future = AssertUnwindSafe(ReactiveFuture::new(
+            PanicFuture { panic_any: false },
+            table_id,
+            callback.clone(),
+        ))
+        .catch_unwind();
         let result = future.await;
         assert!(result.is_err());
 
@@ -271,7 +276,12 @@ mod tests {
         drop(guard);
 
         // Test any panic
-        let future = AssertUnwindSafe(ReactiveFuture::new(PanicFuture { panic_any: true }, table_id, callback.clone())).catch_unwind();
+        let future = AssertUnwindSafe(ReactiveFuture::new(
+            PanicFuture { panic_any: true },
+            table_id,
+            callback.clone(),
+        ))
+        .catch_unwind();
         let result = future.await;
         assert!(result.is_err());
 
