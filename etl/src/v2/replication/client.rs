@@ -7,13 +7,13 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio_postgres::error::SqlState;
 use tokio_postgres::tls::MakeTlsConnect;
 use tokio_postgres::types::{Kind, Type};
 use tokio_postgres::{
     config::ReplicationMode, types::PgLsn, Client, Config, Connection, CopyOutStream, NoTls,
     SimpleQueryMessage, SimpleQueryRow, Socket,
 };
-use tokio_postgres::error::SqlState;
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{info, warn};
 
@@ -292,16 +292,16 @@ impl PgReplicationClient {
     /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.
     pub async fn delete_slot(&self, slot_name: &str) -> PgReplicationResult<()> {
         let query = format!(r#"DROP_REPLICATION_SLOT {};"#, quote_identifier(slot_name));
-        
+
         match self.inner.client.simple_query(&query).await {
             Ok(_) => Ok(()),
             Err(err) => {
                 if let Some(code) = err.code() {
                     if *code == SqlState::UNDEFINED_OBJECT {
-                        return Err(PgReplicationError::SlotNotFound(slot_name.to_string()))
+                        return Err(PgReplicationError::SlotNotFound(slot_name.to_string()));
                     }
                 }
-                
+
                 Err(err.into())
             }
         }

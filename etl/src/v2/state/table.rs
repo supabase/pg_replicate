@@ -27,13 +27,13 @@ impl PartialEq for TableReplicationState {
     }
 }
 
+impl Eq for TableReplicationState {}
+
 impl Borrow<Oid> for TableReplicationState {
     fn borrow(&self) -> &Oid {
         &self.id
     }
 }
-
-impl Eq for TableReplicationState {}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TableReplicationPhase {

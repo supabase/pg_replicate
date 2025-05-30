@@ -1,13 +1,35 @@
 use postgres::schema::Oid;
 use std::future::Future;
+use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::PgReplicationClient;
 use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::workers::apply::ApplyWorkerHookError;
+use crate::v2::workers::table_sync::TableSyncWorkerHookError;
+
+#[derive(Debug, Error)]
+pub enum ApplyLoopError {
+    #[error("An error occurred in the apply worker hook: {0}")]
+    ApplyWorkerHook(#[from] ApplyWorkerHookError),
+
+    #[error("An error occurred in the table sync hook: {0}")]
+    TableSyncWorkerHook(#[from] TableSyncWorkerHookError),
+}
+
+#[derive(Debug)]
+pub enum ApplyLoopResult {
+    ApplyCompleted,
+}
 
 pub trait ApplyLoopHook {
-    fn process_syncing_tables(&self, current_lsn: PgLsn) -> impl Future<Output = ()> + Send;
+    type Error: Into<ApplyLoopError>;
+
+    fn process_syncing_tables(
+        &self,
+        current_lsn: PgLsn,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn should_apply_changes(
         &self,
@@ -17,15 +39,17 @@ pub trait ApplyLoopHook {
 }
 
 pub async fn start_apply_loop<S, D, T>(
-    _hook: T,
+    hook: T,
     _replication_client: PgReplicationClient,
-    _last_lsn: PgLsn,
+    _last_received: PgLsn,
     _state_store: S,
     _destination: D,
-) where
+) -> Result<ApplyLoopResult, ApplyLoopError>
+where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
     // Create a select between:
     //  - Shutdown signal -> when called we stop the apply operation.
@@ -34,5 +58,8 @@ pub async fn start_apply_loop<S, D, T>(
     //  - Else we do the table syncing if we are not at a boundary -> we perform table syncing to make
     //     sure progress is happening in table sync workers.
 
-    // TODO: implement.
+    // TODO: for now we are looping indefinitely, implement the actual apply logic.
+    loop {
+        hook.process_syncing_tables(PgLsn::from(0)).await?;
+    }
 }

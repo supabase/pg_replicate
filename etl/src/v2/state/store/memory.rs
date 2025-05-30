@@ -1,15 +1,16 @@
 use postgres::schema::Oid;
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::v2::state::pipeline::PipelineState;
-use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::store::base::{PipelineStateStore, PipelineStateStoreError};
 use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug)]
 struct Inner {
-    pipeline_state: PipelineState,
+    pipeline_state: Option<PipelineState>,
     table_replication_states: HashMap<Oid, TableReplicationState>,
 }
 
@@ -21,7 +22,7 @@ pub struct MemoryPipelineStateStore {
 impl MemoryPipelineStateStore {
     pub fn new() -> Self {
         let inner = Inner {
-            pipeline_state: PipelineState::default(),
+            pipeline_state: None,
             table_replication_states: HashMap::new(),
         };
 
@@ -38,38 +39,71 @@ impl Default for MemoryPipelineStateStore {
 }
 
 impl PipelineStateStore for MemoryPipelineStateStore {
-    async fn load_pipeline_state(&self) -> PipelineState {
-        self.inner.read().await.pipeline_state.clone()
+    async fn load_pipeline_state<I>(
+        &self,
+        pipeline_id: &I,
+    ) -> Result<PipelineState, PipelineStateStoreError>
+    where
+        I: PartialEq + Send + Sync + 'static,
+        PipelineState: Borrow<I>,
+    {
+        let inner = self.inner.read().await;
+        match &inner.pipeline_state {
+            Some(state) if state.borrow() == pipeline_id => Ok(state.clone()),
+            _ => Err(PipelineStateStoreError::PipelineStateNotFound),
+        }
     }
 
-    async fn store_pipeline_state(&self, state: PipelineState) {
-        self.inner.write().await.pipeline_state = state;
+    async fn store_pipeline_state(
+        &self,
+        state: PipelineState,
+        overwrite: bool,
+    ) -> Result<bool, PipelineStateStoreError> {
+        let mut inner = self.inner.write().await;
+
+        if !overwrite && inner.pipeline_state.is_some() {
+            return Ok(false);
+        }
+
+        inner.pipeline_state = Some(state);
+        Ok(true)
     }
 
-    async fn load_table_replication_states(&self) -> Vec<TableReplicationState> {
-        self.inner
-            .read()
-            .await
+    async fn load_table_replication_state<I>(
+        &self,
+        table_id: &I,
+    ) -> Result<Option<TableReplicationState>, PipelineStateStoreError>
+    where
+        I: PartialEq + Send + Sync + 'static,
+        TableReplicationState: Borrow<I>,
+    {
+        let inner = self.inner.read().await;
+        Ok(inner
             .table_replication_states
             .values()
-            .cloned()
-            .collect()
+            .find(|state| state.borrow() == table_id)
+            .cloned())
     }
 
-    async fn load_table_replication_state(&self, table_id: &Oid) -> Option<TableReplicationState> {
-        self.inner
-            .read()
-            .await
-            .table_replication_states
-            .get(table_id)
-            .cloned()
+    async fn load_table_replication_states(
+        &self,
+    ) -> Result<Vec<TableReplicationState>, PipelineStateStoreError> {
+        let inner = self.inner.read().await;
+        Ok(inner.table_replication_states.values().cloned().collect())
     }
 
-    async fn store_table_replication_state(&self, state: TableReplicationState) {
-        self.inner
-            .write()
-            .await
-            .table_replication_states
-            .insert(state.id, state);
+    async fn store_table_replication_state(
+        &self,
+        state: TableReplicationState,
+        overwrite: bool,
+    ) -> Result<bool, PipelineStateStoreError> {
+        let mut inner = self.inner.write().await;
+
+        if !overwrite && inner.table_replication_states.contains_key(&state.id) {
+            return Ok(false);
+        }
+
+        inner.table_replication_states.insert(state.id, state);
+        Ok(true)
     }
 }

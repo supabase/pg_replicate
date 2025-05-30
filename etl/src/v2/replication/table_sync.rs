@@ -1,5 +1,7 @@
 use crate::v2::destination::base::Destination;
+use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
+use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::TableSyncWorkerState;
@@ -10,6 +12,9 @@ use tokio_postgres::types::PgLsn;
 pub enum TableSyncError {
     #[error("The phase {0} is not expected")]
     InvalidPhase(TableReplicationPhaseType),
+
+    #[error("The slot name {0} is not valid")]
+    InvalidSlotName(#[from] SlotError),
 
     #[error("An error occurred when dealing with Postgres replication: {0}")]
     PgReplication(#[from] PgReplicationError),
@@ -22,6 +27,7 @@ pub enum TableSyncResult {
 }
 
 pub async fn start_table_sync<S, D>(
+    identity: PipelineIdentity,
     replication_client: PgReplicationClient,
     table_sync_worker_state: TableSyncWorkerState,
     state_store: S,
@@ -42,7 +48,8 @@ where
     // 7. Mark the table as FinishedCopy
     let inner = table_sync_worker_state.inner().read().await;
 
-    let phase_type = inner.phase().as_type();
+    let table_id = inner.table_id();
+    let phase_type = inner.replication_phase().as_type();
 
     // In case the work for this table has been already done, we don't want to continue and we
     // successfully return.
@@ -55,8 +62,10 @@ where
 
     // In case the phase is different from the standard phases in which a table sync worker can perform
     // table syncing, we want to return an error.
-    if !(phase_type == TableReplicationPhaseType::Init || phase_type == TableReplicationPhaseType::DataSync
-        || phase_type == TableReplicationPhaseType::FinishedCopy) {
+    if !(phase_type == TableReplicationPhaseType::Init
+        || phase_type == TableReplicationPhaseType::DataSync
+        || phase_type == TableReplicationPhaseType::FinishedCopy)
+    {
         return Err(TableSyncError::InvalidPhase(phase_type));
     }
 
@@ -65,8 +74,7 @@ where
     // good to reduce the length of the critical section.
     drop(inner);
 
-    // TODO: implement the concept of origin which can be used to compute slot names.
-    let slot_name = "";
+    let slot_name = get_slot_name(identity, SlotUsage::TableSyncWorker { table_id })?;
 
     // If we hit this condition, it means that we crashed either before or after finishing the table
     // copying or even during catchup. Since we don't make any time assumptions about when this worker
@@ -75,19 +83,21 @@ where
     if phase_type == TableReplicationPhaseType::DataSync
         || phase_type == TableReplicationPhaseType::FinishedCopy
     {
-        if let Err(err) = replication_client.delete_slot(slot_name).await {
+        if let Err(err) = replication_client.delete_slot(&slot_name).await {
             // If the slot is not found, we are safe to continue, for any other error, we bail.
             let PgReplicationError::SlotNotFound(_) = err else {
                 return Err(err.into());
             };
         }
     }
-    
+
     // We are ready to start copying table data and we update the state accordingly.
     let mut inner = table_sync_worker_state.inner().write().await;
-    inner.set_phase_with(TableReplicationPhase::DataSync, state_store.clone()).await;
+    inner
+        .set_phase_with(TableReplicationPhase::DataSync, state_store.clone())
+        .await;
     drop(inner);
-    
+
     // TODO: implement table copying.
 
     Ok(TableSyncResult::SyncCompleted {

@@ -32,7 +32,7 @@ where
     /// Starts the worker and returns a future that resolves to an optional handle.
     ///
     /// The handle can be used to monitor and control the worker's execution.
-    fn start(self) -> impl Future<Output = Option<H>> + Send;
+    fn start(self) -> impl Future<Output = Result<H, WorkerError>> + Send;
 }
 
 /// A handle to a running worker that provides access to its state and completion status.

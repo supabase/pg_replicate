@@ -1,10 +1,3 @@
-use crate::v2::concurrency::future::ReactiveFutureCallback;
-use crate::v2::destination::base::Destination;
-use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
-use crate::v2::workers::table_sync::{
-    TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
-};
 use postgres::schema::Oid;
 use std::collections::HashMap;
 use std::mem;
@@ -12,6 +5,14 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+
+use crate::v2::concurrency::future::ReactiveFutureCallback;
+use crate::v2::destination::base::Destination;
+use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::table_sync::{
+    TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
+};
 
 #[derive(Debug)]
 pub enum TableSyncWorkerInactiveReason {
@@ -39,7 +40,10 @@ impl TableSyncWorkerPoolInner {
         }
     }
 
-    pub async fn start_worker<S, D>(&mut self, worker: TableSyncWorker<S, D>) -> bool
+    pub async fn start_worker<S, D>(
+        &mut self,
+        worker: TableSyncWorker<S, D>,
+    ) -> Result<bool, WorkerError>
     where
         S: PipelineStateStore + Clone + Send + 'static,
         D: Destination + Clone + Send + 'static,
@@ -47,18 +51,14 @@ impl TableSyncWorkerPoolInner {
         let table_id = worker.table_id();
         if self.active.contains_key(&table_id) {
             warn!("Worker for table {} already exists in pool", table_id);
-            return false;
+            return Ok(false);
         }
 
-        let Some(handle) = worker.start().await else {
-            warn!("Failed to start worker for table {}", table_id);
-            return false;
-        };
-
+        let handle = worker.start().await?;
         self.active.insert(table_id, handle);
         info!("Successfully added worker for table {} to pool", table_id);
 
-        true
+        Ok(true)
     }
 
     pub fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
