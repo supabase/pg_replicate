@@ -7,17 +7,17 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum WorkerError {
     /// The worker task failed to join, typically due to a panic or cancellation.
-    #[error("The worker experienced an uncaught error: {0}")]
+    #[error("Worker task failed to join: {0}")]
     Join(#[from] tokio::task::JoinError),
 
     /// The worker encountered a caught error during execution.
-    #[error("The worker experienced a caught error: {0}")]
+    #[error("Worker execution failed: {0}")]
     Caught(String),
 
-    #[error("The apply worker has experienced an error: {0}")]
+    #[error("Apply worker operation failed: {0}")]
     ApplyWorker(#[from] ApplyWorkerError),
 
-    #[error("The table sync worker has experienced an error: {0}")]
+    #[error("Table sync worker operation failed: {0}")]
     TableSyncWorker(#[from] TableSyncWorkerError),
 }
 

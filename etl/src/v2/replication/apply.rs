@@ -11,10 +11,10 @@ use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 
 #[derive(Debug, Error)]
 pub enum ApplyLoopError {
-    #[error("An error occurred in the apply worker hook: {0}")]
+    #[error("Apply worker hook operation failed: {0}")]
     ApplyWorkerHook(#[from] ApplyWorkerHookError),
 
-    #[error("An error occurred in the table sync hook: {0}")]
+    #[error("Table sync worker hook operation failed: {0}")]
     TableSyncWorkerHook(#[from] TableSyncWorkerHookError),
 }
 

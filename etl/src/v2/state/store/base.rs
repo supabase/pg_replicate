@@ -6,10 +6,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum PipelineStateStoreError {
-    #[error("The pipeline state was not found")]
+    #[error("Pipeline state not found in store: state does not exist")]
     PipelineStateNotFound,
 
-    #[error("The table replication state was not found")]
+    #[error("Table replication state not found in store: state does not exist")]
     TableReplicationStateNotFound,
 }
 

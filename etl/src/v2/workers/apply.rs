@@ -6,9 +6,7 @@ use crate::v2::state::store::base::{PipelineStateStore, PipelineStateStoreError}
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
-use crate::v2::workers::table_sync::{
-    TableSyncWorker, TableSyncWorkerStateError,
-};
+use crate::v2::workers::table_sync::{TableSyncWorker, TableSyncWorkerStateError};
 use postgres::schema::Oid;
 use thiserror::Error;
 use tokio::task::JoinHandle;

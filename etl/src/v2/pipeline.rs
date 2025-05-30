@@ -12,10 +12,10 @@ use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
-    #[error("An error occurred in a worker: {0}")]
+    #[error("Worker operation failed: {0}")]
     WorkerError(#[from] WorkerError),
 
-    #[error("An error occurred when dealing with Postgres replication: {0}")]
+    #[error("PostgreSQL replication operation failed: {0}")]
     PgReplicationClient(#[from] PgReplicationError),
 }
 

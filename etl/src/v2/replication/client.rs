@@ -40,21 +40,21 @@ where
 #[derive(Debug, Error)]
 pub enum PgReplicationError {
     /// Errors from the underlying PostgreSQL client
-    #[error("PostgreSQL client error: {0}")]
+    #[error("PostgreSQL client operation failed: {0}")]
     Client(#[from] tokio_postgres::Error),
 
     /// Errors related to TLS/SSL configuration
-    #[error("TLS configuration error: {0}")]
+    #[error("TLS configuration failed: {0}")]
     Tls(#[from] rustls::Error),
 
     /// Errors related to replication slot operations
-    #[error("Failed to create replication slot: {0}")]
-    SlotCreation(String),
+    #[error("Failed to create replication slot")]
+    SlotCreationFailed,
 
-    #[error("The slot {0} was not found")]
+    #[error("Replication slot '{0}' not found in database")]
     SlotNotFound(String),
 
-    #[error("Invalid replication slot response: missing required fields")]
+    #[error("Invalid replication slot response: missing required fields in server response")]
     SlotResponseInvalid,
 
     /// Errors related to database schema and objects
@@ -71,16 +71,16 @@ pub enum PgReplicationError {
     PublicationNotFound(String),
 
     /// Errors related to data type handling
-    #[error("Invalid OID value in column: expected u32")]
+    #[error("Invalid OID value in column: expected u32 but got invalid value")]
     InvalidOid,
 
-    #[error("Invalid type modifier value: expected i32")]
+    #[error("Invalid type modifier value: expected i32 but got invalid value")]
     InvalidTypeModifier,
 
-    #[error("Unsupported column type '{0}' (OID: {1}) in table '{2}'")]
+    #[error("Unsupported column type '{0}' (OID: {1}) in table '{2}': type is not supported for replication")]
     UnsupportedColumnType(String, u32, String),
 
-    #[error("Unsupported replica identity '{0}'. Only 'default' or 'full' are supported")]
+    #[error("Unsupported replica identity '{0}' in table: only 'default' or 'full' replica identities are supported")]
     UnsupportedReplicaIdentity(String),
 }
 
@@ -457,9 +457,7 @@ impl PgReplicationClient {
             }
         }
 
-        Err(PgReplicationError::SlotCreation(
-            "No response received".to_string(),
-        ))
+        Err(PgReplicationError::SlotCreationFailed)
     }
 
     /// Retrieves schema information for multiple tables.

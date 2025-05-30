@@ -10,13 +10,13 @@ use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Error)]
 pub enum TableSyncError {
-    #[error("The phase {0} is not expected")]
+    #[error("Invalid replication phase '{0}': expected Init, DataSync, or FinishedCopy")]
     InvalidPhase(TableReplicationPhaseType),
 
-    #[error("The slot name {0} is not valid")]
+    #[error("Invalid replication slot name: {0}")]
     InvalidSlotName(#[from] SlotError),
 
-    #[error("An error occurred when dealing with Postgres replication: {0}")]
+    #[error("PostgreSQL replication operation failed: {0}")]
     PgReplication(#[from] PgReplicationError),
 }
 
