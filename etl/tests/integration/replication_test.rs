@@ -1,4 +1,4 @@
-use etl::v2::replication::client::PgReplicationClient;
+use etl::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use futures::StreamExt;
 use postgres::schema::ColumnSchema;
 use postgres::tokio::test_utils::{PgDatabase, TableModification};
@@ -116,7 +116,8 @@ async fn test_create_and_delete_slot() {
     client.delete_slot(&slot_name).await.unwrap();
 
     // Verify the slot no longer exists
-    assert!(client.get_slot(&slot_name).await.is_err());
+    let result = client.get_slot(&slot_name).await;
+    assert!(matches!(result, Err(PgReplicationError::SlotNotFound(_))));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -131,7 +132,7 @@ async fn test_delete_nonexistent_slot() {
 
     // Attempt to delete a slot that doesn't exist
     let result = client.delete_slot(&slot_name).await;
-    assert!(result.is_err());
+    assert!(matches!(result, Err(PgReplicationError::SlotNotFound(_))));
 }
 
 #[tokio::test(flavor = "multi_thread")]

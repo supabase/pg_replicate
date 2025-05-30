@@ -220,20 +220,20 @@ where
             .await;
 
             // We handle the result of the table sync operation gracefully.
-            match result {
+            let consistent_point = match result {
                 Ok(result) => {
                     match result {
                         TableSyncResult::SyncNotRequired => {
                             // In this case, we early return and exit the worker.
                             return Ok(());
                         }
-                        TableSyncResult::SyncCompleted => {}
+                        TableSyncResult::SyncCompleted { consistent_point } => consistent_point,
                     }
                 }
                 Err(err) => {
                     return Err(err.into());
                 }
-            }
+            };
 
             // If we succeed syncing the table, we want to start the same apply loop as in the apply
             // worker but starting from the `0/0` LSN which means that the slot is starting streaming
