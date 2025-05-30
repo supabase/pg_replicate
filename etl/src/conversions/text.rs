@@ -284,6 +284,7 @@ impl TextFormatConverter {
         let mut val_str = String::with_capacity(10);
         let mut in_quotes = false;
         let mut in_escape = false;
+        let mut val_quoted = false;
         let mut chars = str.chars();
         let mut done = str.is_empty();
 
@@ -295,7 +296,12 @@ impl TextFormatConverter {
                             val_str.push(c);
                             in_escape = false;
                         }
-                        '"' => in_quotes = !in_quotes,
+                        '"' => {
+                            if !in_quotes {
+                                val_quoted = true;
+                            }
+                            in_quotes = !in_quotes;
+                        }
                         '\\' => in_escape = true,
                         ',' if !in_quotes => {
                             break;
@@ -310,15 +316,44 @@ impl TextFormatConverter {
                     }
                 }
             }
-            let val = if val_str.to_lowercase() == "null" {
+            let val = if !val_quoted && val_str.to_lowercase() == "null" {
                 None
             } else {
                 parse(&val_str)?
             };
             res.push(val);
             val_str.clear();
+            val_quoted = false;
         }
 
         Ok(Cell::Array(m(res)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_text_array_quoted_null_as_string() {
+        let cell =
+            TextFormatConverter::try_from_str(&Type::TEXT_ARRAY, "{\"a\",\"null\"}").unwrap();
+        match cell {
+            Cell::Array(ArrayCell::String(v)) => {
+                assert_eq!(v, vec![Some("a".to_string()), Some("null".to_string())]);
+            }
+            _ => panic!("unexpected cell"),
+        }
+    }
+
+    #[test]
+    fn parse_text_array_unquoted_null_is_none() {
+        let cell = TextFormatConverter::try_from_str(&Type::TEXT_ARRAY, "{a,NULL}").unwrap();
+        match cell {
+            Cell::Array(ArrayCell::String(v)) => {
+                assert_eq!(v, vec![Some("a".to_string()), None]);
+            }
+            _ => panic!("unexpected cell"),
+        }
     }
 }
