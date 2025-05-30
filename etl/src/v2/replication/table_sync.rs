@@ -3,9 +3,9 @@ use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::table_sync::TableSyncWorkerState;
 
 pub async fn start_table_sync<S, D>(
-    state_store: S,
-    destination: D,
-    table_sync_worker_state: TableSyncWorkerState,
+    _state_store: S,
+    _destination: D,
+    _table_sync_worker_state: TableSyncWorkerState,
 ) where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,

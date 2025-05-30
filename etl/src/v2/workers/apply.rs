@@ -17,7 +17,7 @@ pub struct ApplyWorkerHandle {
 }
 
 impl WorkerHandle<()> for ApplyWorkerHandle {
-    fn state(&self) -> () {}
+    fn state(&self) {}
 
     async fn wait(mut self) -> Result<(), WorkerError> {
         let Some(handle) = self.handle.take() else {
@@ -98,12 +98,7 @@ where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    async fn process_syncing_tables(
-        &self,
-        state_store: S,
-        destination: D,
-        current_lsn: PgLsn,
-    ) -> () {
+    async fn process_syncing_tables(&self, state_store: S, destination: D, current_lsn: PgLsn) {
         let table_replication_states = state_store.load_table_replication_states().await;
         info!(
             "Processing syncing tables for apply worker with LSN {}",

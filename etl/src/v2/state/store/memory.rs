@@ -31,12 +31,18 @@ impl MemoryPipelineStateStore {
     }
 }
 
+impl Default for MemoryPipelineStateStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PipelineStateStore for MemoryPipelineStateStore {
     async fn load_pipeline_state(&self) -> PipelineState {
         self.inner.read().await.pipeline_state.clone()
     }
 
-    async fn store_pipeline_state(&self, state: PipelineState) -> () {
+    async fn store_pipeline_state(&self, state: PipelineState) {
         self.inner.write().await.pipeline_state = state;
     }
 
@@ -59,7 +65,7 @@ impl PipelineStateStore for MemoryPipelineStateStore {
             .cloned()
     }
 
-    async fn store_table_replication_state(&self, state: TableReplicationState) -> () {
+    async fn store_table_replication_state(&self, state: TableReplicationState) {
         self.inner
             .write()
             .await

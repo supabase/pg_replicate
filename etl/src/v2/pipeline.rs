@@ -26,7 +26,7 @@ enum PipelineWorkers {
 
 #[derive(Debug)]
 pub struct Pipeline<S, D> {
-    id: u64,
+    _id: u64,
     publication_name: String,
     state_store: S,
     destination: D,
@@ -38,9 +38,9 @@ where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    pub async fn new(id: u64, publication_name: String, state_store: S, destination: D) -> Self {
+    pub async fn new(_id: u64, publication_name: String, state_store: S, destination: D) -> Self {
         Self {
-            id,
+            _id,
             publication_name,
             state_store,
             destination,
@@ -108,7 +108,10 @@ where
         // the table sync workers to finish, otherwise if we wait for sync workers first, we might
         // be having the apply worker that spawns new sync workers after we waited for the current
         // ones to finish.
-        apply_worker.wait().await;
+        apply_worker
+            .wait()
+            .await
+            .expect("Failed to wait for apply worker");
         info!("Apply worker completed");
 
         let mut table_sync_workers = table_sync_workers.write().await;

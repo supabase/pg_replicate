@@ -5,24 +5,32 @@ use tokio::sync::RwLock;
 
 #[derive(Debug)]
 struct Inner {
-    events: Vec<CdcEvent>,
+    _events: Vec<CdcEvent>,
 }
 
 #[derive(Debug, Clone)]
 pub struct MemoryDestination {
-    inner: Arc<RwLock<Inner>>,
+    _inner: Arc<RwLock<Inner>>,
 }
 
 impl MemoryDestination {
     pub fn new() -> Self {
-        let inner = Inner { events: Vec::new() };
+        let inner = Inner {
+            _events: Vec::new(),
+        };
 
         Self {
-            inner: Arc::new(RwLock::new(inner)),
+            _inner: Arc::new(RwLock::new(inner)),
         }
     }
 }
 
+impl Default for MemoryDestination {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Destination for MemoryDestination {
-    async fn apply_events(&self, events: Vec<CdcEvent>) -> () {}
+    async fn apply_events(&self, _events: Vec<CdcEvent>) {}
 }
