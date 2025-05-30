@@ -4,7 +4,7 @@ use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
-use crate::v2::workers::table_sync::TableSyncWorkerState;
+use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
@@ -18,6 +18,9 @@ pub enum TableSyncError {
 
     #[error("PostgreSQL replication operation failed: {0}")]
     PgReplication(#[from] PgReplicationError),
+
+    #[error("An error occurred while interacting with the table sync worker state: {0}")]
+    TableSyncWorkerState(#[from] TableSyncWorkerStateError),
 }
 
 #[derive(Debug)]
@@ -95,7 +98,7 @@ where
     let mut inner = table_sync_worker_state.inner().write().await;
     inner
         .set_phase_with(TableReplicationPhase::DataSync, state_store.clone())
-        .await;
+        .await?;
     drop(inner);
 
     // TODO: implement table copying.
