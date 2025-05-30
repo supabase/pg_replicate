@@ -49,6 +49,9 @@ tokio-postgres = { workspace = true, features = [
 ] }
 tokio-postgres-rustls = { workspace = true }
 tracing = { workspace = true, default-features = true }
+tracing-subscriber = { workspace = true, default-features = true, features = [
+    "env-filter",
+] }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
@@ -57,9 +60,6 @@ postgres = { workspace = true, features = ["test-utils", "tokio"] }
 clap = { workspace = true, default-features = true, features = [
     "std",
     "derive",
-] }
-tracing-subscriber = { workspace = true, default-features = true, features = [
-    "env-filter",
 ] }
 
 
