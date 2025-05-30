@@ -7,13 +7,17 @@ use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::TableSyncWorker;
 use postgres::schema::Oid;
+use thiserror::Error;
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 use tracing::{error, info};
 
+#[derive(Debug, Error)]
+pub enum ApplyWorkerError {}
+
 #[derive(Debug)]
 pub struct ApplyWorkerHandle {
-    handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<Result<(), ApplyWorkerError>>>,
 }
 
 impl WorkerHandle<()> for ApplyWorkerHandle {
@@ -24,7 +28,7 @@ impl WorkerHandle<()> for ApplyWorkerHandle {
             return Ok(());
         };
 
-        handle.await?;
+        handle.await??;
 
         Ok(())
     }
@@ -82,6 +86,8 @@ where
                 self.destination,
             )
             .await;
+
+            Ok(())
         };
 
         let handle = tokio::spawn(apply_worker);

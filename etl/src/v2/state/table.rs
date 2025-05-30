@@ -1,5 +1,6 @@
 use postgres::schema::Oid;
 use std::borrow::Borrow;
+use std::fmt;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Clone)]
@@ -75,6 +76,7 @@ pub enum TableReplicationPhaseType {
 
 impl TableReplicationPhaseType {
     pub fn should_store(&self) -> bool {
+        // TODO: we might want to statically enforce the two different phase type groups.
         match self {
             Self::Init => true,
             Self::DataSync => true,
@@ -101,6 +103,21 @@ impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
             TableReplicationPhase::SyncDone { .. } => Self::SyncDone,
             TableReplicationPhase::Ready { .. } => Self::Ready,
             TableReplicationPhase::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl fmt::Display for TableReplicationPhaseType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Init => write!(f, "init"),
+            Self::DataSync => write!(f, "data_sync"),
+            Self::FinishedCopy => write!(f, "finished_copy"),
+            Self::SyncWait => write!(f, "sync_wait"),
+            Self::Catchup => write!(f, "catchup"),
+            Self::SyncDone => write!(f, "sync_done"),
+            Self::Ready => write!(f, "ready"),
+            Self::Unknown => write!(f, "unknown"),
         }
     }
 }

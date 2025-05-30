@@ -290,13 +290,10 @@ impl PgReplicationClient {
     ///
     /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.
     pub async fn delete_slot(&self, slot_name: &str) -> PgReplicationResult<()> {
-        let query = format!(
-            r#"DROP_REPLICATION_SLOT {};"#,
-            quote_identifier(slot_name)
-        );
+        let query = format!(r#"DROP_REPLICATION_SLOT {};"#, quote_identifier(slot_name));
 
         self.inner.client.simple_query(&query).await?;
-        
+
         Ok(())
     }
 

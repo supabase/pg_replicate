@@ -1,3 +1,5 @@
+use crate::v2::workers::apply::ApplyWorkerError;
+use crate::v2::workers::table_sync::TableSyncWorkerError;
 use std::future::Future;
 use thiserror::Error;
 
@@ -11,6 +13,12 @@ pub enum WorkerError {
     /// The worker encountered a caught error during execution.
     #[error("The worker experienced a caught error: {0}")]
     Caught(String),
+
+    #[error("The apply worker has experienced an error: {0}")]
+    ApplyWorker(#[from] ApplyWorkerError),
+
+    #[error("The table sync worker has experienced an error: {0}")]
+    TableSyncWorker(#[from] TableSyncWorkerError),
 }
 
 /// A trait for types that can be started as workers.

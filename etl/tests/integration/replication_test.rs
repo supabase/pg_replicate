@@ -84,15 +84,12 @@ async fn test_replication_client_creates_slot() {
         .unwrap();
 
     let slot_name = test_slot_name("my_slot");
-    let create_slot = client
-        .create_slot(&slot_name)
-        .await
-        .unwrap();
+    let create_slot = client.create_slot(&slot_name).await.unwrap();
     assert!(!create_slot.consistent_point.to_string().is_empty());
-    
+
     let get_slot = client.get_slot(&slot_name).await.unwrap();
     assert!(!get_slot.confirmed_flush_lsn.to_string().is_empty());
-    
+
     // Since we did not do anything with the slot, we expect the consistent point to be the same
     // as the confirmed flush lsn.
     assert_eq!(create_slot.consistent_point, get_slot.confirmed_flush_lsn);
@@ -121,7 +118,6 @@ async fn test_create_and_delete_slot() {
     // Verify the slot no longer exists
     assert!(client.get_slot(&slot_name).await.is_err());
 }
-
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_nonexistent_slot() {
@@ -406,11 +402,7 @@ async fn test_start_logical_replication() {
 
     // We start the cdc of events from the consistent point.
     let stream = parent_client
-        .start_logical_replication(
-            "my_publication",
-            &slot_name,
-            slot.consistent_point.clone(),
-        )
+        .start_logical_replication("my_publication", &slot_name, slot.consistent_point.clone())
         .await
         .unwrap();
     let counts = count_stream_components(stream, |counts| counts.insert_count == 10).await;
@@ -424,11 +416,7 @@ async fn test_start_logical_replication() {
 
     // We try to stream again from that consistent point and see if we get the same data.
     let stream = parent_client
-        .start_logical_replication(
-            "my_publication",
-            &slot_name,
-            slot.consistent_point.clone(),
-        )
+        .start_logical_replication("my_publication", &slot_name, slot.consistent_point.clone())
         .await
         .unwrap();
     let counts = count_stream_components(stream, |counts| counts.insert_count == 10).await;

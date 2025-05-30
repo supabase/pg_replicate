@@ -1,6 +1,6 @@
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
-use crate::v2::replication::table_sync::start_table_sync;
+use crate::v2::replication::table_sync::{start_table_sync, TableSyncError, TableSyncResult};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
@@ -13,12 +13,19 @@ use crate::v2::replication::client::PgReplicationClient;
 use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;
+use thiserror::Error;
 use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 use tracing::{info, warn};
 
 const PHASE_CHANGE_REFRESH_FREQUENCY: Duration = Duration::from_millis(100);
+
+#[derive(Debug, Error)]
+pub enum TableSyncWorkerError {
+    #[error("An error occurred while syncing a table: {0}")]
+    TableSync(#[from] TableSyncError),
+}
 
 #[derive(Debug)]
 pub struct TableSyncWorkerStateInner {
@@ -129,7 +136,7 @@ impl TableSyncWorkerState {
 #[derive(Debug)]
 pub struct TableSyncWorkerHandle {
     state: TableSyncWorkerState,
-    handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<Result<(), TableSyncWorkerError>>>,
 }
 
 impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
@@ -142,7 +149,7 @@ impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
             return Ok(());
         };
 
-        handle.await?;
+        handle.await??;
 
         Ok(())
     }
@@ -204,12 +211,29 @@ where
         let state_clone = state.clone();
         let table_sync_worker = async move {
             // We first start syncing the table.
-            start_table_sync(
+            let result = start_table_sync(
+                self.replication_client.clone(),
+                state_clone,
                 self.state_store.clone(),
                 self.destination.clone(),
-                state_clone,
             )
             .await;
+
+            // We handle the result of the table sync operation gracefully.
+            match result {
+                Ok(result) => {
+                    match result {
+                        TableSyncResult::SyncNotRequired => {
+                            // In this case, we early return and exit the worker.
+                            return Ok(());
+                        }
+                        TableSyncResult::SyncCompleted => {}
+                    }
+                }
+                Err(err) => {
+                    return Err(err.into());
+                }
+            }
 
             // If we succeed syncing the table, we want to start the same apply loop as in the apply
             // worker but starting from the `0/0` LSN which means that the slot is starting streaming
@@ -225,6 +249,8 @@ where
                 self.destination,
             )
             .await;
+
+            Ok(())
         };
 
         // We spawn the table sync worker with a safe future, so that we can have controlled teardown
