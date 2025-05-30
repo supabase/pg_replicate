@@ -1,4 +1,5 @@
-use std::{collections::HashMap, path::Path};
+use rustc_hash::FxHashMap as HashMap;
+use std::path::Path;
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 

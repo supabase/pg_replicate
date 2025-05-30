@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use async_trait::async_trait;
 use gcp_bigquery_client::error::BQError;
@@ -200,7 +200,7 @@ impl BatchDestination for BigQueryBatchDestination {
     }
 
     async fn write_cdc_events(&mut self, events: Vec<CdcEvent>) -> Result<PgLsn, Self::Error> {
-        let mut table_name_to_table_rows = HashMap::new();
+        let mut table_name_to_table_rows = HashMap::default();
         let mut new_last_lsn = PgLsn::from(0);
         for event in events {
             match event {

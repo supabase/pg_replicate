@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use pg_escape::{quote_identifier, quote_literal};
 use serde::Serialize;
@@ -152,7 +152,7 @@ pub async fn read_all_publications(
 
     let mut connection = PgConnection::connect_with(options).await?;
 
-    let mut pub_name_to_tables: HashMap<String, Vec<Table>> = HashMap::new();
+    let mut pub_name_to_tables: HashMap<String, Vec<Table>> = HashMap::default();
 
     for row in connection.fetch_all(query).await? {
         let pub_name: String = row.get("pubname");

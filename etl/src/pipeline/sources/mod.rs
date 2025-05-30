@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use ::postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use async_trait::async_trait;

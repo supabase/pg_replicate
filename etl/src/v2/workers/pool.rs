@@ -6,7 +6,7 @@ use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
 };
 use postgres::schema::Oid;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::mem;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -34,8 +34,8 @@ pub struct TableSyncWorkerPoolInner {
 impl TableSyncWorkerPoolInner {
     fn new() -> Self {
         Self {
-            active: HashMap::new(),
-            inactive: HashMap::new(),
+            active: HashMap::default(),
+            inactive: HashMap::default(),
         }
     }
 

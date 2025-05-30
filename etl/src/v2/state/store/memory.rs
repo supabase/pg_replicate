@@ -1,5 +1,5 @@
 use postgres::schema::Oid;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -22,7 +22,7 @@ impl MemoryPipelineStateStore {
     pub fn new() -> Self {
         let inner = Inner {
             pipeline_state: PipelineState::default(),
-            table_replication_states: HashMap::new(),
+            table_replication_states: HashMap::default(),
         };
 
         Self {

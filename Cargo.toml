@@ -55,6 +55,7 @@ utoipa = { version = "4.2.3", default-features = false }
 utoipa-swagger-ui = { version = "7.1.0", default-features = false }
 uuid = { version = "1.10.0", default-features = false }
 tikv-jemallocator = "0.6.0"
+rustc-hash = "2.1.1"
 
 # [patch."https://github.com/imor/gcp-bigquery-client"]
 # gcp-bigquery-client = { path = "../gcp-bigquery-client" }

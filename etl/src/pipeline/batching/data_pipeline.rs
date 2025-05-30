@@ -1,7 +1,8 @@
 use futures::StreamExt;
 use postgres::schema::TableId;
+use rustc_hash::FxHashSet as HashSet;
 use std::sync::Arc;
-use std::{collections::HashSet, time::Instant};
+use std::time::Instant;
 use tokio::pin;
 use tokio::sync::Notify;
 use tokio_postgres::types::PgLsn;

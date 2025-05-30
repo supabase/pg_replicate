@@ -1,5 +1,5 @@
+use rustc_hash::FxHashMap as HashMap;
 use std::{
-    collections::HashMap,
     pin::Pin,
     task::{Context, Poll},
     time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH},

@@ -1,4 +1,5 @@
-use std::{collections::HashSet, fs};
+use rustc_hash::FxHashSet as HashSet;
+use std::fs;
 
 use bytes::{Buf, BufMut};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -288,7 +289,7 @@ impl BigQueryClient {
         let query = format!("select table_id from `{project_id}.{dataset_id}.copied_tables`",);
 
         let mut rs = self.query(query).await?;
-        let mut table_ids = HashSet::new();
+        let mut table_ids = HashSet::default();
         while rs.next_row() {
             let table_id = rs
                 .get_i64_by_name("table_id")?

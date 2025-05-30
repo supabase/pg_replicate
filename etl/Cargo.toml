@@ -53,6 +53,8 @@ tracing-subscriber = { workspace = true, default-features = true, features = [
     "env-filter",
 ] }
 uuid = { workspace = true, features = ["v4"] }
+rustc-hash = { workspace = true }
+tikv-jemallocator = { workspace = true }
 
 [dev-dependencies]
 postgres = { workspace = true, features = ["test-utils", "tokio"] }
@@ -61,7 +63,6 @@ clap = { workspace = true, default-features = true, features = [
     "std",
     "derive",
 ] }
-tikv-jemallocator = { workspace = true }
 
 
 [features]

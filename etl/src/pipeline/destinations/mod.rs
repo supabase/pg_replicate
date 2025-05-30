@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use postgres::schema::{TableId, TableSchema};
+use rustc_hash::FxHashMap as HashMap;
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 

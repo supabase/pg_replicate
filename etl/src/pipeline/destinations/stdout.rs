@@ -1,7 +1,6 @@
-use std::collections::{HashMap, HashSet};
-
 use async_trait::async_trait;
 use postgres::schema::{TableId, TableSchema};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use tokio_postgres::types::PgLsn;
 use tracing::info;
 
@@ -19,7 +18,7 @@ impl BatchDestination for StdoutDestination {
     type Error = InfallibleDestinationError;
     async fn get_resumption_state(&mut self) -> Result<PipelineResumptionState, Self::Error> {
         Ok(PipelineResumptionState {
-            copied_tables: HashSet::new(),
+            copied_tables: HashSet::default(),
             last_lsn: PgLsn::from(0),
         })
     }

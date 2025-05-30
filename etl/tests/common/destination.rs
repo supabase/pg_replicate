@@ -4,8 +4,8 @@ use etl::conversions::table_row::TableRow;
 use etl::pipeline::destinations::{BatchDestination, InfallibleDestinationError};
 use etl::pipeline::PipelineResumptionState;
 use postgres::schema::{TableId, TableSchema};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio_postgres::types::PgLsn;
 
@@ -39,10 +39,10 @@ impl TestDestination {
         Self {
             inner: Arc::new(Mutex::new(TestDestinationInner {
                 tables_schemas: Vec::new(),
-                tables_rows: HashMap::new(),
+                tables_rows: HashMap::default(),
                 events: Vec::new(),
-                copied_tables: HashSet::new(),
-                truncated_tables: HashSet::new(),
+                copied_tables: HashSet::default(),
+                truncated_tables: HashSet::default(),
                 last_lsn: 0,
             })),
         }

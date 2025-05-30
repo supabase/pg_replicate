@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use pg_escape::{quote_identifier, quote_literal};
 use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
@@ -307,7 +307,7 @@ impl ReplicationClient {
         table_names: &[TableName],
         publication: Option<&str>,
     ) -> Result<HashMap<TableId, TableSchema>, ReplicationClientError> {
-        let mut table_schemas = HashMap::new();
+        let mut table_schemas = HashMap::default();
 
         for table_name in table_names {
             let table_schema = self

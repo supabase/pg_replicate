@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet as HashSet;
 
 use destinations::DestinationError;
 use postgres::schema::TableId;

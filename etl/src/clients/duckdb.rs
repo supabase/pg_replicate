@@ -1,4 +1,5 @@
-use std::{collections::HashSet, path::Path};
+use rustc_hash::FxHashSet as HashSet;
+use std::path::Path;
 
 use duckdb::{
     params_from_iter,
@@ -319,7 +320,7 @@ impl DuckDbClient {
             .prepare("select table_id from etl.copied_tables")?;
         let mut rows = stmt.query([])?;
 
-        let mut res = HashSet::new();
+        let mut res = HashSet::default();
         while let Some(row) = rows.next()? {
             res.insert(row.get(0)?);
         }

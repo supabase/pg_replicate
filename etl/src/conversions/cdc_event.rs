@@ -1,5 +1,6 @@
 use core::str;
-use std::{collections::HashMap, str::Utf8Error};
+use rustc_hash::FxHashMap as HashMap;
+use std::str::Utf8Error;
 
 use postgres::schema::{ColumnSchema, TableId, TableSchema};
 use postgres_replication::protocol::{
