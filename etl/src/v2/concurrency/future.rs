@@ -1,7 +1,9 @@
+use std::any::Any;
 use futures::future::{BoxFuture, CatchUnwind};
 use futures::FutureExt;
 use pin_project_lite::pin_project;
 use std::future::Future;
+use std::panic;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -44,6 +46,7 @@ pin_project! {
         state: ReactiveFutureState,
         id: I,
         callback: Arc<RwLock<C>>,
+        original_panic: Option<Box<dyn Any + Send>>
     }
 }
 
@@ -62,6 +65,7 @@ where
             state: ReactiveFutureState::PollInnerFuture,
             id,
             callback,
+            original_panic: None
         }
     }
 }
@@ -90,15 +94,16 @@ where
                     }
                     Poll::Ready(Err(err)) => {
                         // We want to handle the most common panic types.
-                        let err = if let Some(s) = err.downcast_ref::<&str>() {
+                        let casted_err = if let Some(s) = err.downcast_ref::<&str>() {
                             s.to_string()
                         } else if let Some(s) = err.downcast_ref::<String>() {
                             s.clone()
                         } else {
                             "Unknown panic error".to_string()
                         };
-
-                        *this.state = ReactiveFutureState::InvokeCallback(Some(err));
+                        
+                        *this.original_panic = Some(Box::new(err));
+                        *this.state = ReactiveFutureState::InvokeCallback(Some(casted_err));
                     }
                     Poll::Pending => {
                         return Poll::Pending;
@@ -134,6 +139,11 @@ where
                     }
                 }
                 ReactiveFutureState::Finished => {
+                    // If we have a panic, we want to take it and resume it.
+                    if let Some(original_panic) = this.original_panic.take() {
+                        panic::resume_unwind(original_panic);
+                    }
+                    
                     return Poll::Ready(());
                 }
             }
@@ -146,9 +156,11 @@ mod tests {
     use crate::v2::concurrency::future::{ReactiveFuture, ReactiveFutureCallback};
     use std::future::Future;
     use std::panic;
+    use std::panic::AssertUnwindSafe;
     use std::pin::Pin;
     use std::sync::Arc;
     use std::task::{Context, Poll};
+    use futures::FutureExt;
     use tokio::sync::RwLock;
 
     struct ImmediateFuture;
@@ -236,9 +248,10 @@ mod tests {
         let callback = Arc::new(RwLock::new(MockCallback::default()));
         let table_id = 1;
 
-        let future =
-            ReactiveFuture::new(PanicFuture { panic_any: false }, table_id, callback.clone());
-        future.await;
+        // Test string panic
+        let future = AssertUnwindSafe(ReactiveFuture::new(PanicFuture { panic_any: false }, table_id, callback.clone())).catch_unwind();
+        let result = future.await;
+        assert!(result.is_err());
 
         {
             let guard = callback.read().await;
@@ -250,9 +263,17 @@ mod tests {
             );
         }
 
-        let future =
-            ReactiveFuture::new(PanicFuture { panic_any: true }, table_id, callback.clone());
-        future.await;
+        // Reset callback state
+        let mut guard = callback.write().await;
+        guard.complete_called = false;
+        guard.error_called = false;
+        guard.error_message = None;
+        drop(guard);
+
+        // Test any panic
+        let future = AssertUnwindSafe(ReactiveFuture::new(PanicFuture { panic_any: true }, table_id, callback.clone())).catch_unwind();
+        let result = future.await;
+        assert!(result.is_err());
 
         {
             let guard = callback.read().await;
