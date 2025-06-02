@@ -136,7 +136,7 @@ where
     let table_copy_stream =
         BoundedBatchStream::wrap(table_copy_stream, BatchConfig::default(), None);
     pin!(table_copy_stream);
-
+    
     // We start consuming the table stream. If any error occurs, we will bail the entire copy since
     // we want to be fully consistent.
     while let Some(table_rows) = table_copy_stream.next().await {

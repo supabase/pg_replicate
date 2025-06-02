@@ -4,10 +4,11 @@ use crate::common::pipeline_v2::spawn_pg_pipeline;
 use crate::common::state_store::TestStateStore;
 use etl::conversions::Cell;
 use etl::v2::state::table::TableReplicationPhaseType;
-use postgres::schema::{ColumnSchema, Oid, TableId, TableName, TableSchema};
+use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{PgDatabase, TableModification};
 use tokio_postgres::types::Type;
 
+#[derive(Debug)]
 struct DatabaseSchema {
     users_table_schema: TableSchema,
     orders_table_schema: TableSchema,
@@ -124,7 +125,7 @@ async fn get_users_age_sum_from_rows(destination: TestDestination, table_id: Oid
     let tables_rows = destination.get_table_rows().await;
     let table_rows = tables_rows.get(&table_id).unwrap();
     for table_row in table_rows {
-        if let Cell::I32(age) = &table_row.values[1] {
+        if let Cell::I32(age) = &table_row.values[2] {
             actual_sum += age;
         }
     }
@@ -157,19 +158,18 @@ async fn test_table_schema_copy_with_retry() {
     let schemas_notify = destination.wait_for_n_schemas(2).await;
     // We wait for both table states to be in finished done (sync wait is only memory and not
     // available on the store).
-    let state_notify = state_store
-        .notify_on_replication_phases(
+    let users_state_notify = state_store
+        .notify_on_replication_phase(
             pipeline_id,
-            vec![
-                (
-                    database_schema.users_table_schema.id,
-                    TableReplicationPhaseType::FinishedCopy,
-                ),
-                (
-                    database_schema.orders_table_schema.id,
-                    TableReplicationPhaseType::FinishedCopy,
-                ),
-            ],
+            database_schema.users_table_schema.id,
+            TableReplicationPhaseType::FinishedCopy,
+        )
+        .await;
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.orders_table_schema.id,
+            TableReplicationPhaseType::FinishedCopy,
         )
         .await;
 
@@ -177,7 +177,8 @@ async fn test_table_schema_copy_with_retry() {
     pipeline.start().await.unwrap();
 
     schemas_notify.notified().await;
-    state_notify.notified().await;
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
 
     // We check that the states are correctly set.
     let table_replication_states = state_store.get_table_replication_states().await;
@@ -283,19 +284,18 @@ async fn test_table_copy() {
     let pipeline_id = pipeline.identity().id();
 
     // Wait for both table states to be in finished copy
-    let state_notify = state_store
-        .notify_on_replication_phases(
+    let users_state_notify = state_store
+        .notify_on_replication_phase(
             pipeline_id,
-            vec![
-                (
-                    database_schema.users_table_schema.id,
-                    TableReplicationPhaseType::FinishedCopy,
-                ),
-                (
-                    database_schema.orders_table_schema.id,
-                    TableReplicationPhaseType::FinishedCopy,
-                ),
-            ],
+            database_schema.users_table_schema.id,
+            TableReplicationPhaseType::FinishedCopy,
+        )
+        .await;
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.orders_table_schema.id,
+            TableReplicationPhaseType::FinishedCopy,
         )
         .await;
 
@@ -303,11 +303,11 @@ async fn test_table_copy() {
     pipeline.start().await.unwrap();
 
     // Wait the state to be ready
-    state_notify.notified().await;
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
 
     // Get all CDC events
     let table_rows = destination.get_table_rows().await;
-    println!("{:?}", table_rows);
     let users_table_rows = table_rows
         .get(&database_schema.users_table_schema.id)
         .unwrap();

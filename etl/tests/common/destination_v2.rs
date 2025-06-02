@@ -176,7 +176,7 @@ impl Destination for TestDestination {
     async fn write_table_schema(&self, schema: TableSchema) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_schemas.push(schema);
-        drop(inner); // Release the write lock before checking conditions
+        drop(inner);
 
         self.check_conditions().await;
 
@@ -185,8 +185,8 @@ impl Destination for TestDestination {
 
     async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
-        inner.table_rows.insert(id, rows);
-        drop(inner); // Release the write lock before checking conditions
+        inner.table_rows.entry(id).or_default().extend(rows);
+        drop(inner);
 
         self.check_conditions().await;
 
@@ -197,7 +197,7 @@ impl Destination for TestDestination {
         let mut inner = self.inner.write().await;
         let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();
         inner.events.extend(arc_events);
-        drop(inner); // Release the write lock before checking conditions
+        drop(inner);
 
         self.check_conditions().await;
 

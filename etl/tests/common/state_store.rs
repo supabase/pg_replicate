@@ -85,27 +85,6 @@ impl TestStateStore {
         .await
     }
 
-    pub async fn notify_on_replication_phases(
-        &self,
-        pipeline_id: PipelineId,
-        conditions: Vec<(Oid, TableReplicationPhaseType)>,
-    ) -> Arc<Notify> {
-        let notify = Arc::new(Notify::new());
-        let mut inner = self.inner.write().await;
-
-        // Register a notification for each (pipeline, table, phase) combination
-        for (table_id, phase_type) in conditions {
-            let condition =
-                Box::new(move |state: &TableReplicationState| state.phase.as_type() == phase_type);
-
-            inner
-                .table_state_conditions
-                .push(((pipeline_id, table_id), condition, notify.clone()));
-        }
-
-        notify
-    }
-
     pub async fn refresh(&self) {
         self.check_conditions().await;
     }
