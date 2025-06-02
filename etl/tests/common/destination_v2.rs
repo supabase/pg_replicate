@@ -2,6 +2,7 @@ use etl::conversions::cdc_event::CdcEvent;
 use etl::conversions::table_row::TableRow;
 use etl::v2::destination::base::{Destination, DestinationError};
 use postgres::schema::{Oid, TableName, TableSchema};
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -9,12 +10,12 @@ use tokio::sync::{Notify, RwLock};
 
 type EventCondition = Box<dyn Fn(&[Arc<CdcEvent>]) -> bool + Send + Sync>;
 type SchemaCondition = Box<dyn Fn(&[TableSchema]) -> bool + Send + Sync>;
-type TableRowCondition = Box<dyn Fn(&[(Oid, Vec<TableRow>)]) -> bool + Send + Sync>;
+type TableRowCondition = Box<dyn Fn(&HashMap<Oid, Vec<TableRow>>) -> bool + Send + Sync>;
 
 struct Inner {
     events: Vec<Arc<CdcEvent>>,
     table_schemas: Vec<TableSchema>,
-    table_rows: Vec<(Oid, Vec<TableRow>)>,
+    table_rows: HashMap<Oid, Vec<TableRow>>,
     event_conditions: Vec<(EventCondition, Arc<Notify>)>,
     table_schema_conditions: Vec<(SchemaCondition, Arc<Notify>)>,
     table_row_conditions: Vec<(TableRowCondition, Arc<Notify>)>,
@@ -43,7 +44,7 @@ impl TestDestination {
         let inner = Inner {
             events: Vec::new(),
             table_schemas: Vec::new(),
-            table_rows: Vec::new(),
+            table_rows: HashMap::new(),
             event_conditions: Vec::new(),
             table_schema_conditions: Vec::new(),
             table_row_conditions: Vec::new(),
@@ -62,7 +63,7 @@ impl TestDestination {
         self.inner.read().await.table_schemas.clone()
     }
 
-    pub async fn get_table_rows(&self) -> Vec<(Oid, Vec<TableRow>)> {
+    pub async fn get_table_rows(&self) -> HashMap<Oid, Vec<TableRow>> {
         self.inner.read().await.table_rows.clone()
     }
 
@@ -101,7 +102,7 @@ impl TestDestination {
 
     pub async fn notify_on_table_rows<F>(&self, condition: F) -> Arc<Notify>
     where
-        F: Fn(&[(Oid, Vec<TableRow>)]) -> bool + Send + Sync + 'static,
+        F: Fn(&HashMap<Oid, Vec<TableRow>>) -> bool + Send + Sync + 'static,
     {
         let notify = Arc::new(Notify::new());
         let mut inner = self.inner.write().await;
@@ -184,7 +185,7 @@ impl Destination for TestDestination {
 
     async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
-        inner.table_rows.push((id, rows));
+        inner.table_rows.insert(id, rows);
         drop(inner); // Release the write lock before checking conditions
 
         self.check_conditions().await;

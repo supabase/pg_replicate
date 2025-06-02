@@ -9,7 +9,6 @@ use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use futures::StreamExt;
-use std::task::Poll;
 use thiserror::Error;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;

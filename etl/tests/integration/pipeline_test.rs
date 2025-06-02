@@ -122,12 +122,6 @@ fn get_users_age_sum_from_events(
     actual_sum
 }
 
-/*
-Tests to write:
-- Insert -> cdc -> Update -> cdc
-- Insert -> cdc -> add table -> recreate pipeline and source -> check schema
- */
-
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy_with_insert_and_update() {
     let database = spawn_database().await;
