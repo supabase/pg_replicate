@@ -5,7 +5,7 @@ use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
-use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::store::base::StateStore;
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 
@@ -38,7 +38,7 @@ pub async fn start_table_sync<S, D>(
     destination: D,
 ) -> Result<TableSyncResult, TableSyncError>
 where
-    S: PipelineStateStore + Clone + Send + 'static,
+    S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
     // 1. Load the state from the TableSyncWorkerState (must be done there since we know that the
@@ -107,7 +107,7 @@ where
     let (transaction, slot) = replication_client
         .create_slot_with_transaction(&slot_name)
         .await?;
-    
+
     // TODO: fetch table schema.
     // TODO: copy table data.
 

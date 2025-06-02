@@ -8,7 +8,7 @@ use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
 use crate::v2::replication::client::PgReplicationClient;
-use crate::v2::state::store::base::{PipelineStateStore, PipelineStateStoreError};
+use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
@@ -19,7 +19,7 @@ use crate::v2::workers::table_sync::{
 #[derive(Debug, Error)]
 pub enum ApplyWorkerError {
     #[error("An error occurred while interacting with the pipeline state store: {0}")]
-    PipelineStateStoreError(#[from] PipelineStateStoreError),
+    StateStoreError(#[from] StateStoreError),
 
     #[error("An error occurred in the apply loop: {0}")]
     ApplyLoop(#[from] ApplyLoopError),
@@ -28,7 +28,7 @@ pub enum ApplyWorkerError {
 #[derive(Debug, Error)]
 pub enum ApplyWorkerHookError {
     #[error("An error occurred while interacting with the pipeline state store: {0}")]
-    PipelineStateStoreError(#[from] PipelineStateStoreError),
+    StateStoreError(#[from] StateStoreError),
 
     #[error("An error occurred while interacting with the table sync worker state: {0}")]
     TableSyncWorkerState(#[from] TableSyncWorkerStateError),
@@ -85,7 +85,7 @@ impl<S, D> ApplyWorker<S, D> {
 
 impl<S, D> Worker<ApplyWorkerHandle, ()> for ApplyWorker<S, D>
 where
-    S: PipelineStateStore + Clone + Send + Sync + 'static,
+    S: StateStore + Clone + Send + Sync + 'static,
     D: Destination + Clone + Send + Sync + 'static,
 {
     type Error = ApplyWorkerError;
@@ -98,7 +98,7 @@ where
             .state_store
             .load_pipeline_state(self.identity.id())
             .await
-            .map_err(ApplyWorkerError::PipelineStateStoreError)?;
+            .map_err(ApplyWorkerError::StateStoreError)?;
 
         let apply_worker = async move {
             // We start the applying loop by starting from the last LSN that we know was applied
@@ -159,7 +159,7 @@ impl<S, D> Hook<S, D> {
 
 impl<S, D> ApplyLoopHook for Hook<S, D>
 where
-    S: PipelineStateStore + Clone + Send + Sync + 'static,
+    S: StateStore + Clone + Send + Sync + 'static,
     D: Destination + Clone + Send + Sync + 'static,
 {
     type Error = ApplyWorkerHookError;

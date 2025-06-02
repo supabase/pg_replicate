@@ -1,6 +1,7 @@
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
-use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::store::base::{StateStore, StateStoreError};
+use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
@@ -20,6 +21,9 @@ pub enum PipelineError {
 
     #[error("Apply worker failed to start in the pipeline: {0}")]
     ApplyWorker(#[from] ApplyWorkerError),
+
+    #[error("An error happened in the pipeline state store: {0}")]
+    StateStore(#[from] StateStoreError),
 }
 
 #[derive(Debug)]
@@ -70,10 +74,10 @@ pub struct Pipeline<S, D> {
 
 impl<S, D> Pipeline<S, D>
 where
-    S: PipelineStateStore + Clone + Send + Sync + 'static,
+    S: StateStore + Clone + Send + Sync + 'static,
     D: Destination + Clone + Send + Sync + 'static,
 {
-    pub async fn new(
+    pub fn new(
         identity: PipelineIdentity,
         options: PgDatabaseOptions,
         trusted_root_certs: Vec<CertificateDer<'static>>,
@@ -133,12 +137,18 @@ where
         replication_client: &PgReplicationClient,
     ) -> Result<(), PipelineError> {
         info!("Synchronizing relation subscription states");
-        
-        // TODO: in this function we want to:
-        //  1. Load all tables for the publication
-        //  2. For each table, we check if it already exists in the store
-        //  3. If the table is not there, add it with `Init` state
-        //  4. If it's there do not do anything
+
+        // We fetch all the table ids for the publication to which the pipeline subscribes.
+        let table_ids = replication_client
+            .get_publication_table_ids(self.identity.publication_name())
+            .await?;
+        for table_id in table_ids {
+            let state = TableReplicationState::init(table_id);
+            // We store the init state only if it's not already present.
+            self.state_store
+                .store_table_replication_state(self.identity.id, state, false)
+                .await?;
+        }
 
         Ok(())
     }

@@ -16,6 +16,10 @@ impl TableReplicationState {
         Self { id, phase }
     }
 
+    pub fn init(id: Oid) -> Self {
+        Self::new(id, TableReplicationPhase::Init)
+    }
+
     pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {
         TableReplicationState { phase, ..self }
     }

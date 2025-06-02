@@ -1,12 +1,11 @@
+use etl::v2::pipeline::PipelineId;
+use etl::v2::state::pipeline::PipelineState;
+use etl::v2::state::store::base::{StateStore, StateStoreError};
+use etl::v2::state::table::TableReplicationState;
 use postgres::schema::{Oid, TableSchema};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-use crate::v2::pipeline::PipelineId;
-use crate::v2::state::pipeline::PipelineState;
-use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug)]
 struct Inner {
@@ -16,11 +15,11 @@ struct Inner {
 }
 
 #[derive(Debug, Clone)]
-pub struct MemoryStateStore {
+pub struct TestStateStore {
     inner: Arc<RwLock<Inner>>,
 }
 
-impl MemoryStateStore {
+impl TestStateStore {
     pub fn new() -> Self {
         let inner = Inner {
             pipeline_states: HashMap::new(),
@@ -32,15 +31,32 @@ impl MemoryStateStore {
             inner: Arc::new(RwLock::new(inner)),
         }
     }
+
+    pub async fn get_pipeline_states(&self) -> HashMap<PipelineId, PipelineState> {
+        let inner = self.inner.read().await;
+        inner.pipeline_states.clone()
+    }
+
+    pub async fn get_table_replication_states(
+        &self,
+    ) -> HashMap<(PipelineId, Oid), TableReplicationState> {
+        let inner = self.inner.read().await;
+        inner.table_replication_states.clone()
+    }
+
+    pub async fn get_table_schemas(&self) -> HashMap<(PipelineId, Oid), TableSchema> {
+        let inner = self.inner.read().await;
+        inner.table_schemas.clone()
+    }
 }
 
-impl Default for MemoryStateStore {
+impl Default for TestStateStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl StateStore for MemoryStateStore {
+impl StateStore for TestStateStore {
     async fn load_pipeline_state(
         &self,
         pipeline_id: PipelineId,

@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 use crate::v2::concurrency::future::ReactiveFutureCallback;
 use crate::v2::destination::base::Destination;
-use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::store::base::StateStore;
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerError, TableSyncWorkerHandle, TableSyncWorkerState,
@@ -45,7 +45,7 @@ impl TableSyncWorkerPoolInner {
         worker: TableSyncWorker<S, D>,
     ) -> Result<bool, TableSyncWorkerError>
     where
-        S: PipelineStateStore + Clone + Send + 'static,
+        S: StateStore + Clone + Send + 'static,
         D: Destination + Clone + Send + 'static,
     {
         let table_id = worker.table_id();

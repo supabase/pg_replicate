@@ -296,7 +296,7 @@ async fn test_table_copy_stream_is_consistent() {
         .unwrap();
 
     // We create a table and insert one row.
-    database
+    let table_1_id = database
         .create_table(test_table_name("table_1"), &[("age", "integer")])
         .await
         .unwrap();
@@ -314,7 +314,7 @@ async fn test_table_copy_stream_is_consistent() {
     // We create a transaction to copy the table data consistently.
     let stream = transaction
         .get_table_copy_stream(
-            &test_table_name("table_1"),
+            table_1_id,
             &[ColumnSchema {
                 name: "age".to_string(),
                 typ: Type::INT4,
@@ -373,7 +373,7 @@ async fn test_publication_creation_and_check() {
         table_names,
         vec![test_table_name("table_1"), test_table_name("table_2")]
     );
-    
+
     // We check the table ids of the tables in the publication.
     let table_ids = parent_client
         .get_publication_table_ids("my_publication")

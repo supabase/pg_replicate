@@ -140,9 +140,7 @@ impl PgReplicationSlotTransaction {
         table_id: Oid,
         publication: Option<&str>,
     ) -> PgReplicationResult<TableSchema> {
-        self.client
-            .get_table_schema(table_id, publication)
-            .await
+        self.client.get_table_schema(table_id, publication).await
     }
 
     /// Creates a COPY stream for reading data from the specified table.
@@ -150,11 +148,11 @@ impl PgReplicationSlotTransaction {
     /// The stream will include only the columns specified in `column_schemas`.
     pub async fn get_table_copy_stream(
         &self,
-        table_name: &TableName,
+        table_id: Oid,
         column_schemas: &[ColumnSchema],
     ) -> PgReplicationResult<CopyOutStream> {
         self.client
-            .get_table_copy_stream(table_name, column_schemas)
+            .get_table_copy_stream(table_id, column_schemas)
             .await
     }
 
@@ -383,8 +381,7 @@ impl PgReplicationClient {
         let mut table_oids = vec![];
         for msg in self.inner.client.simple_query(&publication_query).await? {
             if let SimpleQueryMessage::Row(row) = msg {
-                let oid = Self::get_row_value::<Oid>(&row, "oid", "pg_class")
-                    .await?;
+                let oid = Self::get_row_value::<Oid>(&row, "oid", "pg_class").await?;
 
                 table_oids.push(oid);
             }
@@ -512,9 +509,7 @@ impl PgReplicationClient {
 
         // TODO: consider if we want to fail when at least one table was missing or not.
         for table_id in table_ids {
-            let table_schema = self
-                .get_table_schema(*table_id, publication_name)
-                .await?;
+            let table_schema = self.get_table_schema(*table_id, publication_name).await?;
 
             if !table_schema.has_primary_keys() {
                 warn!(
@@ -563,10 +558,10 @@ impl PgReplicationClient {
 
         for message in self.inner.client.simple_query(&table_info_query).await? {
             if let SimpleQueryMessage::Row(row) = message {
-                let schema_name = Self::get_row_value::<String>(&row, "schema_name", "pg_namespace")
-                    .await?;
-                let table_name = Self::get_row_value::<String>(&row, "table_name", "pg_class")
-                    .await?;
+                let schema_name =
+                    Self::get_row_value::<String>(&row, "schema_name", "pg_namespace").await?;
+                let table_name =
+                    Self::get_row_value::<String>(&row, "table_name", "pg_class").await?;
 
                 return Ok(TableName {
                     schema: schema_name,
@@ -695,12 +690,12 @@ impl PgReplicationClient {
         Ok(column_schemas)
     }
 
-    /// Creates a COPY stream for reading data from a table.
+    /// Creates a COPY stream for reading data from a table using its OID.
     ///
     /// The stream will include only the specified columns and use text format.
-    async fn get_table_copy_stream(
+    pub async fn get_table_copy_stream(
         &self,
-        table_name: &TableName,
+        table_id: Oid,
         column_schemas: &[ColumnSchema],
     ) -> PgReplicationResult<CopyOutStream> {
         let column_list = column_schemas
@@ -709,9 +704,12 @@ impl PgReplicationClient {
             .collect::<Vec<_>>()
             .join(", ");
 
+        let table_name = self.get_table_name(table_id).await?;
+
         let copy_query = format!(
-            r#"COPY {} ({column_list}) TO STDOUT WITH (FORMAT text);"#,
+            r#"COPY {} ({}) TO STDOUT WITH (FORMAT text);"#,
             table_name.as_quoted_identifier(),
+            column_list
         );
 
         let stream = self.inner.client.copy_out_simple(&copy_query).await?;

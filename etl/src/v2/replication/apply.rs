@@ -5,7 +5,7 @@ use tokio_postgres::types::PgLsn;
 
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::PgReplicationClient;
-use crate::v2::state::store::base::PipelineStateStore;
+use crate::v2::state::store::base::StateStore;
 use crate::v2::workers::apply::ApplyWorkerHookError;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 
@@ -59,7 +59,7 @@ pub async fn start_apply_loop<S, D, T>(
     _destination: D,
 ) -> Result<ApplyLoopResult, ApplyLoopError>
 where
-    S: PipelineStateStore + Clone + Send + 'static,
+    S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,

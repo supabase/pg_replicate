@@ -13,7 +13,7 @@ use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
 use crate::v2::replication::client::PgReplicationClient;
 use crate::v2::replication::table_sync::{start_table_sync, TableSyncError, TableSyncResult};
-use crate::v2::state::store::base::{PipelineStateStore, PipelineStateStoreError};
+use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
@@ -31,7 +31,7 @@ pub enum TableSyncWorkerError {
     ReplicationStateMissing(Oid),
 
     #[error("An error occurred while interacting with the pipeline state store: {0}")]
-    PipelineStateStoreError(#[from] PipelineStateStoreError),
+    StateStoreError(#[from] StateStoreError),
 
     #[error("An error occurred in the apply loop: {0}")]
     ApplyLoop(#[from] ApplyLoopError),
@@ -43,7 +43,7 @@ pub enum TableSyncWorkerHookError {}
 #[derive(Debug, Error)]
 pub enum TableSyncWorkerStateError {
     #[error("An error occurred while interacting with the pipeline state store: {0}")]
-    PipelineStateStoreError(#[from] PipelineStateStoreError),
+    StateStoreError(#[from] StateStoreError),
 }
 
 #[derive(Debug)]
@@ -68,7 +68,7 @@ impl TableSyncWorkerStateInner {
         self.phase_change.notify_waiters();
     }
 
-    pub async fn set_phase_with<S: PipelineStateStore>(
+    pub async fn set_phase_with<S: StateStore>(
         &mut self,
         phase: TableReplicationPhase,
         state_store: S,
@@ -222,7 +222,7 @@ impl<S, D> TableSyncWorker<S, D> {
 
 impl<S, D> Worker<TableSyncWorkerHandle, TableSyncWorkerState> for TableSyncWorker<S, D>
 where
-    S: PipelineStateStore + Clone + Send + 'static,
+    S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
     type Error = TableSyncWorkerError;
@@ -234,7 +234,7 @@ where
             .state_store
             .load_table_replication_state(self.identity.id(), self.table_id)
             .await
-            .map_err(TableSyncWorkerError::PipelineStateStoreError)?
+            .map_err(TableSyncWorkerError::StateStoreError)?
         else {
             warn!(
                 "No replication state found for table {}, cannot start sync worker",
