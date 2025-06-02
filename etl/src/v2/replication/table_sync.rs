@@ -1,7 +1,7 @@
 use thiserror::Error;
 use tokio_postgres::types::PgLsn;
 
-use crate::v2::destination::base::Destination;
+use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
@@ -22,6 +22,9 @@ pub enum TableSyncError {
 
     #[error("An error occurred while interacting with the table sync worker state: {0}")]
     TableSyncWorkerState(#[from] TableSyncWorkerStateError),
+    
+    #[error("An error occurred while writing to the destination: {0}")]
+    Destination(#[from] DestinationError)
 }
 
 #[derive(Debug)]
@@ -78,7 +81,7 @@ where
     // good to reduce the length of the critical section.
     drop(inner);
 
-    let slot_name = get_slot_name(identity, SlotUsage::TableSyncWorker { table_id })?;
+    let slot_name = get_slot_name(&identity, SlotUsage::TableSyncWorker { table_id })?;
 
     // If we hit this condition, it means that we crashed either before or after finishing the table
     // copying or even during catchup. Since we don't make any time assumptions about when this worker
@@ -107,11 +110,14 @@ where
     let (transaction, slot) = replication_client
         .create_slot_with_transaction(&slot_name)
         .await?;
+    
+    let table_schema = transaction.get_table_schema(table_id, Some(identity.publication_name())).await?;
+    destination.write_table_schema(table_schema).await?;
 
     // TODO: fetch table schema.
     // TODO: copy table data.
 
     Ok(TableSyncResult::SyncCompleted {
-        consistent_point: PgLsn::from(0),
+        consistent_point: slot.consistent_point,
     })
 }

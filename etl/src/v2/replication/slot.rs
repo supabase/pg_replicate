@@ -27,7 +27,7 @@ pub enum SlotUsage {
 }
 
 /// Generates a replication slot name based on the pipeline identity and usage type.
-pub fn get_slot_name(identity: PipelineIdentity, usage: SlotUsage) -> Result<String, SlotError> {
+pub fn get_slot_name(identity: &PipelineIdentity, usage: SlotUsage) -> Result<String, SlotError> {
     let slot_name = match usage {
         SlotUsage::ApplyWorker => {
             format!(
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn test_apply_worker_slot_name() {
         let identity = PipelineIdentity::new(1, "test_pub");
-        let result = get_slot_name(identity, SlotUsage::ApplyWorker).unwrap();
+        let result = get_slot_name(&identity, SlotUsage::ApplyWorker).unwrap();
         assert!(result.starts_with(APPLY_WORKER_PREFIX));
         assert!(result.len() <= MAX_SLOT_NAME_LENGTH);
     }
@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn test_table_sync_slot_name() {
         let identity = PipelineIdentity::new(1, "test_pub");
-        let result = get_slot_name(identity, SlotUsage::TableSyncWorker { table_id: 123 }).unwrap();
+        let result = get_slot_name(&identity, SlotUsage::TableSyncWorker { table_id: 123 }).unwrap();
         assert!(result.starts_with(TABLE_SYNC_PREFIX));
         assert!(result.len() <= MAX_SLOT_NAME_LENGTH);
     }

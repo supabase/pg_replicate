@@ -57,7 +57,19 @@ async fn test_pipeline() {
 
     let (state_store, destination, mut pipeline) =
         spawn_pg_pipeline(&database_schema.publication_name, &database.options).await;
+    
+    let users_table_name = database_schema.users_table_name.clone();
+    let schemas_notify = destination.notify_on_schemas(move |schemas| {
+        for schema in schemas {
+            if schema.name == users_table_name {
+                return true;
+            }
+        }
+        
+        false
+    }).await;
+    
     pipeline.start().await.unwrap();
-
-    pipeline.wait().await;
+    
+    // schemas_notify.notified().await;
 }

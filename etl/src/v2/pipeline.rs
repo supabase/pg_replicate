@@ -10,6 +10,7 @@ use rustls::pki_types::CertificateDer;
 use thiserror::Error;
 use tokio_postgres::config::SslMode;
 use tracing::{error, info};
+use crate::v2::state::pipeline::PipelineState;
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
@@ -99,6 +100,9 @@ where
             "Starting pipeline for publication {}",
             self.identity.publication_name()
         );
+        
+        // We initialize the pipeline state, if needed.
+        self.prepare_pipeline_state().await?;
 
         // We create the first connection to Postgres. Note that other connections will be created
         // by duplicating this first one.
@@ -109,10 +113,10 @@ where
         // time to new relation ids being sent over by the cdc event stream.
         self.sync_relation_subscription_states(&replication_client)
             .await?;
-
+        
         // We create the table sync workers pool to manage all table sync workers in a central place.
         let pool = TableSyncWorkerPool::new();
-
+        
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
             self.identity.clone(),
@@ -123,7 +127,7 @@ where
         )
         .start()
         .await?;
-
+        
         self.workers = PipelineWorkers::Started {
             apply_worker,
             table_sync_workers: pool,
@@ -132,6 +136,14 @@ where
         Ok(())
     }
 
+    async fn prepare_pipeline_state(&self) -> Result<(), PipelineError> {
+        // We store the init state only if it's not already present.
+        let state = PipelineState::init(self.identity.id);
+        self.state_store.store_pipeline_state(state, false).await?;
+        
+        Ok(())
+    }
+    
     async fn sync_relation_subscription_states(
         &self,
         replication_client: &PgReplicationClient,

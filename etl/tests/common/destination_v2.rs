@@ -3,16 +3,23 @@ use etl::conversions::table_row::TableRow;
 use etl::v2::destination::base::{Destination, DestinationError};
 use postgres::schema::{Oid, TableSchema};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Notify};
+use std::collections::HashMap;
 
-#[derive(Debug)]
+type EventCondition = Box<dyn Fn(&[Arc<CdcEvent>]) -> bool + Send + Sync>;
+type SchemaCondition = Box<dyn Fn(&[TableSchema]) -> bool + Send + Sync>;
+type TableRowCondition = Box<dyn Fn(&[(Oid, Vec<TableRow>)]) -> bool + Send + Sync>;
+
 struct Inner {
     events: Vec<Arc<CdcEvent>>,
     schemas: Vec<TableSchema>,
     table_rows: Vec<(Oid, Vec<TableRow>)>,
+    event_conditions: Vec<(EventCondition, Arc<Notify>)>,
+    schema_conditions: Vec<(SchemaCondition, Arc<Notify>)>,
+    table_row_conditions: Vec<(TableRowCondition, Arc<Notify>)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TestDestination {
     inner: Arc<RwLock<Inner>>,
 }
@@ -23,6 +30,9 @@ impl TestDestination {
             events: Vec::new(),
             schemas: Vec::new(),
             table_rows: Vec::new(),
+            event_conditions: Vec::new(),
+            schema_conditions: Vec::new(),
+            table_row_conditions: Vec::new(),
         };
 
         Self {
@@ -48,6 +58,73 @@ impl TestDestination {
         inner.schemas.clear();
         inner.table_rows.clear();
     }
+
+    pub async fn notify_on_events<F>(&self, condition: F) -> Arc<Notify>
+    where
+        F: Fn(&[Arc<CdcEvent>]) -> bool + Send + Sync + 'static,
+    {
+        let notify = Arc::new(Notify::new());
+        let mut inner = self.inner.write().await;
+        inner.event_conditions.push((Box::new(condition), notify.clone()));
+        
+        notify
+    }
+
+    pub async fn notify_on_schemas<F>(&self, condition: F) -> Arc<Notify>
+    where
+        F: Fn(&[TableSchema]) -> bool + Send + Sync + 'static,
+    {
+        let notify = Arc::new(Notify::new());
+        let mut inner = self.inner.write().await;
+        inner.schema_conditions.push((Box::new(condition), notify.clone()));
+        
+        notify
+    }
+
+    pub async fn notify_on_table_rows<F>(&self, condition: F) -> Arc<Notify>
+    where
+        F: Fn(&[(Oid, Vec<TableRow>)]) -> bool + Send + Sync + 'static,
+    {
+        let notify = Arc::new(Notify::new());
+        let mut inner = self.inner.write().await;
+        inner.table_row_conditions.push((Box::new(condition), notify.clone()));
+        
+        notify
+    }
+
+    async fn check_conditions(&self) {
+        let mut inner = self.inner.write().await;
+        
+        // Check event conditions
+        let events = inner.events.clone();
+        inner.event_conditions.retain(|(condition, notify)| {
+            let should_retain = !condition(&events);
+            if !should_retain {
+                notify.notify_one();
+            }
+            should_retain
+        });
+
+        // Check schema conditions
+        let schemas = inner.schemas.clone();
+        inner.schema_conditions.retain(|(condition, notify)| {
+            let should_retain = !condition(&schemas);
+            if !should_retain {
+                notify.notify_one();
+            }
+            should_retain
+        });
+
+        // Check table row conditions
+        let table_rows = inner.table_rows.clone();
+        inner.table_row_conditions.retain(|(condition, notify)| {
+            let should_retain = !condition(&table_rows);
+            if !should_retain {
+                notify.notify_one();
+            }
+            should_retain
+        });
+    }
 }
 
 impl Default for TestDestination {
@@ -60,6 +137,9 @@ impl Destination for TestDestination {
     async fn write_table_schema(&self, schema: TableSchema) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.schemas.push(schema);
+        drop(inner); // Release the write lock before checking conditions
+        
+        self.check_conditions().await;
 
         Ok(())
     }
@@ -67,6 +147,9 @@ impl Destination for TestDestination {
     async fn copy_table(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_rows.push((id, rows));
+        drop(inner); // Release the write lock before checking conditions
+        
+        self.check_conditions().await;
 
         Ok(())
     }
@@ -75,6 +158,9 @@ impl Destination for TestDestination {
         let mut inner = self.inner.write().await;
         let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();
         inner.events.extend(arc_events);
+        drop(inner); // Release the write lock before checking conditions
+        
+        self.check_conditions().await;
 
         Ok(())
     }
