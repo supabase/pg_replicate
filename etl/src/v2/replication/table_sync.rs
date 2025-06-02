@@ -22,9 +22,9 @@ pub enum TableSyncError {
 
     #[error("An error occurred while interacting with the table sync worker state: {0}")]
     TableSyncWorkerState(#[from] TableSyncWorkerStateError),
-    
+
     #[error("An error occurred while writing to the destination: {0}")]
-    Destination(#[from] DestinationError)
+    Destination(#[from] DestinationError),
 }
 
 #[derive(Debug)]
@@ -110,8 +110,10 @@ where
     let (transaction, slot) = replication_client
         .create_slot_with_transaction(&slot_name)
         .await?;
-    
-    let table_schema = transaction.get_table_schema(table_id, Some(identity.publication_name())).await?;
+
+    let table_schema = transaction
+        .get_table_schema(table_id, Some(identity.publication_name()))
+        .await?;
     destination.write_table_schema(table_schema).await?;
 
     // TODO: fetch table schema.

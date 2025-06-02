@@ -92,7 +92,7 @@ where
 
     async fn start(self) -> Result<ApplyWorkerHandle, Self::Error> {
         info!("Starting apply worker");
-        
+
         // We load the initial state that will be used for the apply worker.
         let pipeline_state = self
             .state_store
@@ -235,7 +235,10 @@ where
                         if let Err(err) = table_sync_workers.start_worker(worker).await {
                             // TODO: check if we want to build a backoff mechanism for retrying the
                             //  spawning of new table sync workers.
-                            error!("Failed to start table sync worker, retrying in next loop: {}", err);
+                            error!(
+                                "Failed to start table sync worker, retrying in next loop: {}",
+                                err
+                            );
                         }
                     }
                     Err(err) => {

@@ -1,10 +1,11 @@
 use etl::conversions::cdc_event::CdcEvent;
 use etl::conversions::table_row::TableRow;
 use etl::v2::destination::base::{Destination, DestinationError};
-use postgres::schema::{Oid, TableSchema};
+use postgres::schema::{Oid, TableName, TableSchema};
+use std::fmt;
 use std::sync::Arc;
-use tokio::sync::{RwLock, Notify};
-use std::collections::HashMap;
+use tokio::runtime::Handle;
+use tokio::sync::{Notify, RwLock};
 
 type EventCondition = Box<dyn Fn(&[Arc<CdcEvent>]) -> bool + Send + Sync>;
 type SchemaCondition = Box<dyn Fn(&[TableSchema]) -> bool + Send + Sync>;
@@ -22,6 +23,19 @@ struct Inner {
 #[derive(Clone)]
 pub struct TestDestination {
     inner: Arc<RwLock<Inner>>,
+}
+
+impl fmt::Debug for TestDestination {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let inner = tokio::task::block_in_place(move || {
+            Handle::current().block_on(async move { self.inner.read().await })
+        });
+        f.debug_struct("TestDestination")
+            .field("events", &inner.events)
+            .field("schemas", &inner.schemas)
+            .field("table_rows", &inner.table_rows)
+            .finish()
+    }
 }
 
 impl TestDestination {
@@ -65,8 +79,10 @@ impl TestDestination {
     {
         let notify = Arc::new(Notify::new());
         let mut inner = self.inner.write().await;
-        inner.event_conditions.push((Box::new(condition), notify.clone()));
-        
+        inner
+            .event_conditions
+            .push((Box::new(condition), notify.clone()));
+
         notify
     }
 
@@ -76,8 +92,10 @@ impl TestDestination {
     {
         let notify = Arc::new(Notify::new());
         let mut inner = self.inner.write().await;
-        inner.schema_conditions.push((Box::new(condition), notify.clone()));
-        
+        inner
+            .schema_conditions
+            .push((Box::new(condition), notify.clone()));
+
         notify
     }
 
@@ -87,14 +105,25 @@ impl TestDestination {
     {
         let notify = Arc::new(Notify::new());
         let mut inner = self.inner.write().await;
-        inner.table_row_conditions.push((Box::new(condition), notify.clone()));
-        
+        inner
+            .table_row_conditions
+            .push((Box::new(condition), notify.clone()));
+
         notify
+    }
+
+    pub async fn wait_for_schemas(&self, table_names: Vec<TableName>) -> Arc<Notify> {
+        self.notify_on_schemas(move |schemas| {
+            table_names
+                .iter()
+                .all(|required_name| schemas.iter().any(|schema| schema.name == *required_name))
+        })
+        .await
     }
 
     async fn check_conditions(&self) {
         let mut inner = self.inner.write().await;
-        
+
         // Check event conditions
         let events = inner.events.clone();
         inner.event_conditions.retain(|(condition, notify)| {
@@ -138,7 +167,7 @@ impl Destination for TestDestination {
         let mut inner = self.inner.write().await;
         inner.schemas.push(schema);
         drop(inner); // Release the write lock before checking conditions
-        
+
         self.check_conditions().await;
 
         Ok(())
@@ -148,7 +177,7 @@ impl Destination for TestDestination {
         let mut inner = self.inner.write().await;
         inner.table_rows.push((id, rows));
         drop(inner); // Release the write lock before checking conditions
-        
+
         self.check_conditions().await;
 
         Ok(())
@@ -159,7 +188,7 @@ impl Destination for TestDestination {
         let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();
         inner.events.extend(arc_events);
         drop(inner); // Release the write lock before checking conditions
-        
+
         self.check_conditions().await;
 
         Ok(())

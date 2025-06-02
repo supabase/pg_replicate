@@ -1,6 +1,8 @@
 use postgres::schema::Oid;
 use std::future::Future;
 use thiserror::Error;
+use tokio::task;
+use tokio::task::yield_now;
 use tokio_postgres::types::PgLsn;
 
 use crate::v2::destination::base::Destination;
@@ -74,5 +76,6 @@ where
     // TODO: for now we are looping indefinitely, implement the actual apply logic.
     loop {
         hook.process_syncing_tables(PgLsn::from(0)).await?;
+        task::yield_now().await;
     }
 }

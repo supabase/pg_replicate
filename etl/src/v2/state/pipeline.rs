@@ -10,11 +10,10 @@ pub struct PipelineState {
 }
 
 impl PipelineState {
-    
     pub fn init(id: u64) -> Self {
         Self {
             id,
-            last_lsn: PgLsn::from(0)
+            last_lsn: PgLsn::from(0),
         }
     }
 }

@@ -70,7 +70,8 @@ mod tests {
     #[test]
     fn test_table_sync_slot_name() {
         let identity = PipelineIdentity::new(1, "test_pub");
-        let result = get_slot_name(&identity, SlotUsage::TableSyncWorker { table_id: 123 }).unwrap();
+        let result =
+            get_slot_name(&identity, SlotUsage::TableSyncWorker { table_id: 123 }).unwrap();
         assert!(result.starts_with(TABLE_SYNC_PREFIX));
         assert!(result.len() <= MAX_SLOT_NAME_LENGTH);
     }
