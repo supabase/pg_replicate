@@ -17,7 +17,7 @@ use crate::v2::state::store::base::{PipelineStateStore, PipelineStateStoreError}
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
-use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
 const PHASE_CHANGE_REFRESH_FREQUENCY: Duration = Duration::from_millis(100);
@@ -48,6 +48,7 @@ pub enum TableSyncWorkerStateError {
 
 #[derive(Debug)]
 pub struct TableSyncWorkerStateInner {
+    identity: PipelineIdentity,
     table_replication_state: TableReplicationState,
     phase_change: Arc<Notify>,
 }
@@ -84,7 +85,11 @@ impl TableSyncWorkerStateInner {
             let new_table_replication_state =
                 self.table_replication_state.clone().with_phase(phase);
             state_store
-                .store_table_replication_state(new_table_replication_state, true)
+                .store_table_replication_state(
+                    self.identity.id(),
+                    new_table_replication_state,
+                    true,
+                )
                 .await?;
         }
 
@@ -106,9 +111,10 @@ pub struct TableSyncWorkerState {
 }
 
 impl TableSyncWorkerState {
-    fn new(relation_subscription_state: TableReplicationState) -> Self {
+    fn new(identity: PipelineIdentity, table_replication_state: TableReplicationState) -> Self {
         let inner = TableSyncWorkerStateInner {
-            table_replication_state: relation_subscription_state,
+            identity,
+            table_replication_state,
             phase_change: Arc::new(Notify::new()),
         };
 
@@ -169,7 +175,7 @@ impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
         self.state.clone()
     }
 
-    async fn wait(mut self) -> Result<(), WorkerError> {
+    async fn wait(mut self) -> Result<(), WorkerWaitError> {
         let Some(handle) = self.handle.take() else {
             return Ok(());
         };
@@ -219,12 +225,14 @@ where
     S: PipelineStateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    async fn start(self) -> Result<TableSyncWorkerHandle, WorkerError> {
+    type Error = TableSyncWorkerError;
+
+    async fn start(self) -> Result<TableSyncWorkerHandle, Self::Error> {
         info!("Starting table sync worker for table {}", self.table_id);
 
         let Some(relation_subscription_state) = self
             .state_store
-            .load_table_replication_state(&self.table_id)
+            .load_table_replication_state(self.identity.id(), self.table_id)
             .await
             .map_err(TableSyncWorkerError::PipelineStateStoreError)?
         else {
@@ -235,7 +243,7 @@ where
             return Err(TableSyncWorkerError::ReplicationStateMissing(self.table_id).into());
         };
 
-        let state = TableSyncWorkerState::new(relation_subscription_state);
+        let state = TableSyncWorkerState::new(self.identity.clone(), relation_subscription_state);
 
         let state_clone = state.clone();
         let table_sync_worker = async move {

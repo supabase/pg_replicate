@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fmt;
 
 use pg_escape::quote_identifier;
@@ -63,6 +64,7 @@ pub struct ColumnSchema {
 /// A type alias for PostgreSQL table OIDs.
 ///
 /// Table OIDs are unique identifiers assigned to tables in PostgreSQL.
+// TODO: delete this in favor of `Oid`.
 pub type TableId = u32;
 
 /// Represents the complete schema of a PostgreSQL table.
@@ -71,10 +73,10 @@ pub type TableId = u32;
 /// and the schemas of all its columns.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TableSchema {
-    /// The fully qualified name of the table
-    pub table_name: TableName,
     /// The PostgreSQL OID of the table
-    pub table_id: TableId,
+    pub id: Oid,
+    /// The fully qualified name of the table
+    pub name: TableName,
     /// The schemas of all columns in the table
     pub column_schemas: Vec<ColumnSchema>,
 }
@@ -85,5 +87,11 @@ impl TableSchema {
     /// This method checks if any column in the table is marked as part of the primary key.
     pub fn has_primary_keys(&self) -> bool {
         self.column_schemas.iter().any(|cs| cs.primary)
+    }
+}
+
+impl Borrow<Oid> for TableSchema {
+    fn borrow(&self) -> &Oid {
+        &self.id
     }
 }

@@ -84,19 +84,19 @@ impl<Src: Source, Dst: BatchDestination> BatchDataPipeline<Src, Dst> {
 
         for key in keys {
             let table_schema = table_schemas.get(&key).expect("failed to get table key");
-            if copied_tables.contains(&table_schema.table_id) {
-                info!("table {} already copied.", table_schema.table_name);
+            if copied_tables.contains(&table_schema.id) {
+                info!("table {} already copied.", table_schema.name);
                 continue;
             }
 
             self.destination
-                .truncate_table(table_schema.table_id)
+                .truncate_table(table_schema.id)
                 .await
                 .map_err(PipelineError::Destination)?;
 
             let table_rows = self
                 .source
-                .get_table_copy_stream(&table_schema.table_name, &table_schema.column_schemas)
+                .get_table_copy_stream(&table_schema.name, &table_schema.column_schemas)
                 .await
                 .map_err(PipelineError::Source)?;
 
@@ -116,13 +116,13 @@ impl<Src: Source, Dst: BatchDestination> BatchDataPipeline<Src, Dst> {
                     rows.push(row.map_err(CommonSourceError::TableCopyStream)?);
                 }
                 self.destination
-                    .write_table_rows(rows, table_schema.table_id)
+                    .write_table_rows(rows, table_schema.id)
                     .await
                     .map_err(PipelineError::Destination)?;
             }
 
             self.destination
-                .table_copied(table_schema.table_id)
+                .table_copied(table_schema.id)
                 .await
                 .map_err(PipelineError::Destination)?;
         }

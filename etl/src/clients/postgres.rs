@@ -311,11 +311,11 @@ impl ReplicationClient {
             if !table_schema.has_primary_keys() {
                 warn!(
                     "table {} with id {} will not be copied because it has no primary key",
-                    table_schema.table_name, table_schema.table_id
+                    table_schema.name, table_schema.id
                 );
                 continue;
             }
-            table_schemas.insert(table_schema.table_id, table_schema);
+            table_schemas.insert(table_schema.id, table_schema);
         }
 
         Ok(table_schemas)
@@ -332,8 +332,8 @@ impl ReplicationClient {
             .ok_or(ReplicationClientError::MissingTable(table_name.clone()))?;
         let column_schemas = self.get_column_schemas(table_id, publication).await?;
         Ok(TableSchema {
-            table_name,
-            table_id,
+            name: table_name,
+            id: table_id,
             column_schemas,
         })
     }

@@ -43,8 +43,8 @@ pub fn assert_table_schema(
 ) {
     let table_schema = table_schemas.get(&table_id).unwrap();
 
-    assert_eq!(table_schema.table_id, table_id);
-    assert_eq!(table_schema.table_name, expected_table_name);
+    assert_eq!(table_schema.id, table_id);
+    assert_eq!(table_schema.name, expected_table_name);
 
     let columns = &table_schema.column_schemas;
     assert_eq!(columns.len(), expected_columns.len());

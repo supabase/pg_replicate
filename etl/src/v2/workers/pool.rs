@@ -9,9 +9,9 @@ use tracing::{info, warn};
 use crate::v2::concurrency::future::ReactiveFutureCallback;
 use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::table_sync::{
-    TableSyncWorker, TableSyncWorkerHandle, TableSyncWorkerState,
+    TableSyncWorker, TableSyncWorkerError, TableSyncWorkerHandle, TableSyncWorkerState,
 };
 
 #[derive(Debug)]
@@ -43,7 +43,7 @@ impl TableSyncWorkerPoolInner {
     pub async fn start_worker<S, D>(
         &mut self,
         worker: TableSyncWorker<S, D>,
-    ) -> Result<bool, WorkerError>
+    ) -> Result<bool, TableSyncWorkerError>
     where
         S: PipelineStateStore + Clone + Send + 'static,
         D: Destination + Clone + Send + 'static,
@@ -83,7 +83,7 @@ impl TableSyncWorkerPoolInner {
         }
     }
 
-    pub async fn wait_all(&mut self) -> Vec<WorkerError> {
+    pub async fn wait_all(&mut self) -> Vec<WorkerWaitError> {
         let worker_count = self.active.len();
         info!("Waiting for {} workers to complete", worker_count);
 
@@ -99,15 +99,19 @@ impl TableSyncWorkerPoolInner {
         let finished = mem::take(&mut self.inactive);
         for (_, workers) in finished {
             for (finish, worker) in workers {
+                // If there is an error while waiting for the task, we can assume that there was un
+                // uncaught panic or a propagated error.
                 if let Err(err) = worker.wait().await {
                     errors.push(err);
+                    continue;
                 }
 
-                // If we have a failure in the worker we should not have a failure here, since the
-                // custom future we run table syncs with, catches panics, however, we do not want
-                // to make that assumption here.
+                // If we arrive here, it means that the worker task did fail but silently, since
+                // the error we see here was reported by the `ReactiveFuture` and swallowed.
+                // This should not happen since right now the `ReactiveFuture` is configured to
+                // re-propagate the error after marking a table sync worker as finished.
                 if let TableSyncWorkerInactiveReason::Error(err) = finish {
-                    errors.push(WorkerError::Caught(err));
+                    errors.push(WorkerWaitError::TaskSilentlyFailed(err));
                 }
             }
         }

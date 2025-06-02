@@ -9,13 +9,26 @@ use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::workers::apply::ApplyWorkerHookError;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 
+// TODO: figure out how to break the cycle and remove `Box`.
 #[derive(Debug, Error)]
 pub enum ApplyLoopError {
     #[error("Apply worker hook operation failed: {0}")]
-    ApplyWorkerHook(#[from] ApplyWorkerHookError),
+    ApplyWorkerHook(Box<ApplyWorkerHookError>),
 
     #[error("Table sync worker hook operation failed: {0}")]
-    TableSyncWorkerHook(#[from] TableSyncWorkerHookError),
+    TableSyncWorkerHook(Box<TableSyncWorkerHookError>),
+}
+
+impl From<ApplyWorkerHookError> for ApplyLoopError {
+    fn from(err: ApplyWorkerHookError) -> Self {
+        ApplyLoopError::ApplyWorkerHook(Box::new(err))
+    }
+}
+
+impl From<TableSyncWorkerHookError> for ApplyLoopError {
+    fn from(err: TableSyncWorkerHookError) -> Self {
+        ApplyLoopError::TableSyncWorkerHook(Box::new(err))
+    }
 }
 
 #[derive(Debug)]

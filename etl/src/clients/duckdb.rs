@@ -221,7 +221,7 @@ impl DuckDbClient {
         table_schema: &TableSchema,
         table_row: &TableRow,
     ) -> Result<(), duckdb::Error> {
-        let table_name = &table_schema.table_name;
+        let table_name = &table_schema.name;
         let column_schemas = &table_schema.column_schemas;
         let table_name = format!("{}.{}", table_name.schema, table_name.name);
         let query = Self::create_update_row_query(&table_name, column_schemas);
@@ -288,7 +288,7 @@ impl DuckDbClient {
         table_schema: &TableSchema,
         table_row: &TableRow,
     ) -> Result<(), duckdb::Error> {
-        let table_name = &table_schema.table_name;
+        let table_name = &table_schema.name;
         let column_schemas = &table_schema.column_schemas;
         let table_name = format!("{}.{}", table_name.schema, table_name.name);
         let query = Self::create_delete_row_query(&table_name, column_schemas);

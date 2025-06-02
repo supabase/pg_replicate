@@ -163,7 +163,7 @@ impl BatchDestination for BigQueryBatchDestination {
         table_schemas: HashMap<TableId, TableSchema>,
     ) -> Result<(), Self::Error> {
         for table_schema in table_schemas.values() {
-            let table_name = Self::table_name_in_bq(&table_schema.table_name);
+            let table_name = Self::table_name_in_bq(&table_schema.name);
             self.client
                 .create_table_if_missing(
                     &self.dataset_id,

@@ -1,17 +1,20 @@
+use postgres::schema::Oid;
+use thiserror::Error;
+use tokio::task::JoinHandle;
+use tokio_postgres::types::PgLsn;
+use tracing::{error, info};
+
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
 use crate::v2::replication::client::PgReplicationClient;
 use crate::v2::state::store::base::{PipelineStateStore, PipelineStateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
-use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
-use crate::v2::workers::table_sync::{TableSyncWorker, TableSyncWorkerStateError};
-use postgres::schema::Oid;
-use thiserror::Error;
-use tokio::task::JoinHandle;
-use tokio_postgres::types::PgLsn;
-use tracing::{error, info};
+use crate::v2::workers::table_sync::{
+    TableSyncWorker, TableSyncWorkerError, TableSyncWorkerStateError,
+};
 
 #[derive(Debug, Error)]
 pub enum ApplyWorkerError {
@@ -29,6 +32,9 @@ pub enum ApplyWorkerHookError {
 
     #[error("An error occurred while interacting with the table sync worker state: {0}")]
     TableSyncWorkerState(#[from] TableSyncWorkerStateError),
+
+    #[error("An error occurred while trying to start the table sync worker: {0}")]
+    TableSyncWorkerStartedFailed(#[from] TableSyncWorkerError),
 }
 
 #[derive(Debug)]
@@ -39,7 +45,7 @@ pub struct ApplyWorkerHandle {
 impl WorkerHandle<()> for ApplyWorkerHandle {
     fn state(&self) {}
 
-    async fn wait(mut self) -> Result<(), WorkerError> {
+    async fn wait(mut self) -> Result<(), WorkerWaitError> {
         let Some(handle) = self.handle.take() else {
             return Ok(());
         };
@@ -82,13 +88,15 @@ where
     S: PipelineStateStore + Clone + Send + Sync + 'static,
     D: Destination + Clone + Send + Sync + 'static,
 {
-    async fn start(self) -> Result<ApplyWorkerHandle, WorkerError> {
+    type Error = ApplyWorkerError;
+
+    async fn start(self) -> Result<ApplyWorkerHandle, Self::Error> {
         info!("Starting apply worker");
 
         // We load the initial state that will be used for the apply worker.
         let pipeline_state = self
             .state_store
-            .load_pipeline_state(&self.identity.id())
+            .load_pipeline_state(self.identity.id())
             .await
             .map_err(ApplyWorkerError::PipelineStateStoreError)?;
 
@@ -169,7 +177,11 @@ where
                     let table_replication_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
                     self.state_store
-                        .store_table_replication_state(table_replication_state, true)
+                        .store_table_replication_state(
+                            self.identity.id(),
+                            table_replication_state,
+                            true,
+                        )
                         .await?;
                 }
             } else {
@@ -220,7 +232,7 @@ where
                         );
 
                         let mut table_sync_workers = self.pool.write().await;
-                        table_sync_workers.start_worker(worker).await;
+                        table_sync_workers.start_worker(worker).await?;
                     }
                     Err(err) => {
                         error!("Failed to create new sync worker because the replication client couldn't be duplicated: {}", err);

@@ -94,13 +94,18 @@ where
         }
     }
 
-    // We are ready to start copying table data and we update the state accordingly.
+    // We are ready to start copying table data, and we update the state accordingly.
     let mut inner = table_sync_worker_state.inner().write().await;
     inner
         .set_phase_with(TableReplicationPhase::DataSync, state_store.clone())
         .await?;
     drop(inner);
 
+    // We create the slot with a transaction, since we need to have a consistent snapshot of the database
+    // before copying tables.
+    let (transaction, slot) = replication_client
+        .create_slot_with_transaction(&slot_name)
+        .await?;
     // TODO: implement table copying.
 
     Ok(TableSyncResult::SyncCompleted {

@@ -1,8 +1,8 @@
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerHandle};
-use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
+use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use postgres::tokio::options::PgDatabaseOptions;
 use rustls::pki_types::CertificateDer;
@@ -13,10 +13,13 @@ use tracing::{error, info};
 #[derive(Debug, Error)]
 pub enum PipelineError {
     #[error("Worker operation failed: {0}")]
-    WorkerError(#[from] WorkerError),
+    WorkerError(#[from] WorkerWaitError),
 
     #[error("PostgreSQL replication operation failed: {0}")]
     PgReplicationClient(#[from] PgReplicationError),
+
+    #[error("Apply worker failed to start in the pipeline: {0}")]
+    ApplyWorker(#[from] ApplyWorkerError),
 }
 
 #[derive(Debug)]
@@ -30,9 +33,11 @@ enum PipelineWorkers {
     },
 }
 
+pub type PipelineId = u64;
+
 #[derive(Debug, Clone)]
 pub struct PipelineIdentity {
-    id: u64,
+    id: PipelineId,
     publication_name: String,
 }
 
@@ -44,7 +49,7 @@ impl PipelineIdentity {
         }
     }
 
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> PipelineId {
         self.id
     }
 
