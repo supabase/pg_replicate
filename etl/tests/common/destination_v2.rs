@@ -7,6 +7,20 @@ use std::fmt;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
+use tokio::time::{timeout, Duration};
+
+/// A trait for notification types that can be waited on with a timeout
+pub trait TimeoutNotify {
+    /// Wait for the notification with a timeout of 2 seconds
+    /// Returns true if the notification was received, false if it timed out
+    async fn wait_with_timeout(&self) -> bool;
+}
+
+impl TimeoutNotify for Arc<Notify> {
+    async fn wait_with_timeout(&self) -> bool {
+        timeout(Duration::from_secs(2), self.notified()).await.is_ok()
+    }
+}
 
 type EventCondition = Box<dyn Fn(&[Arc<CdcEvent>]) -> bool + Send + Sync>;
 type SchemaCondition = Box<dyn Fn(&[TableSchema]) -> bool + Send + Sync>;

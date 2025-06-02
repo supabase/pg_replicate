@@ -1,5 +1,5 @@
 use crate::common::database::{spawn_database, test_table_name};
-use crate::common::destination_v2::TestDestination;
+use crate::common::destination_v2::{TestDestination, TimeoutNotify};
 use crate::common::pipeline_v2::spawn_pg_pipeline;
 use crate::common::state_store::TestStateStore;
 use etl::conversions::Cell;
@@ -176,9 +176,10 @@ async fn test_table_schema_copy_with_retry() {
     // We start the pipeline.
     pipeline.start().await.unwrap();
 
-    schemas_notify.notified().await;
-    users_state_notify.notified().await;
-    orders_state_notify.notified().await;
+    // Wait for notifications with timeout
+    schemas_notify.wait_with_timeout().await;
+    users_state_notify.wait_with_timeout().await;
+    orders_state_notify.wait_with_timeout().await;
 
     // We check that the states are correctly set.
     let table_replication_states = state_store.get_table_replication_states().await;
@@ -302,9 +303,9 @@ async fn test_table_copy() {
     // Start the pipeline
     pipeline.start().await.unwrap();
 
-    // Wait the state to be ready
-    users_state_notify.notified().await;
-    orders_state_notify.notified().await;
+    // Wait for notifications with timeout
+    users_state_notify.wait_with_timeout().await;
+    orders_state_notify.wait_with_timeout().await;
 
     // Get all CDC events
     let table_rows = destination.get_table_rows().await;
