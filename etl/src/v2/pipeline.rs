@@ -95,6 +95,10 @@ where
         }
     }
 
+    pub fn identity(&self) -> &PipelineIdentity {
+        &self.identity
+    }
+
     pub async fn start(&mut self) -> Result<(), PipelineError> {
         info!(
             "Starting pipeline for publication {}",

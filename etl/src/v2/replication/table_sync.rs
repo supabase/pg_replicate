@@ -111,13 +111,28 @@ where
         .create_slot_with_transaction(&slot_name)
         .await?;
 
+    // We copy the table schema and write it to the destination.
     let table_schema = transaction
         .get_table_schema(table_id, Some(identity.publication_name()))
         .await?;
     destination.write_table_schema(table_schema).await?;
 
-    // TODO: fetch table schema.
+    // We copy the actual table.
     // TODO: copy table data.
+
+    // We mark that we finished the copy of the table schema and data. Then we immediately set
+    // this worker as ready to be synced.
+    //
+    // Note that `FinishedCopy` will be saved to the store but `SyncWait` will be just saved in the
+    // table sync state.
+    let mut inner = table_sync_worker_state.inner().write().await;
+    inner
+        .set_phase_with(TableReplicationPhase::FinishedCopy, state_store.clone())
+        .await?;
+    inner
+        .set_phase_with(TableReplicationPhase::SyncWait, state_store)
+        .await?;
+    drop(inner);
 
     Ok(TableSyncResult::SyncCompleted {
         consistent_point: slot.consistent_point,

@@ -14,7 +14,7 @@ pub trait Destination {
         schema: TableSchema,
     ) -> impl Future<Output = Result<(), DestinationError>> + Send;
 
-    fn copy_table(
+    fn copy_table_rows(
         &self,
         id: Oid,
         rows: Vec<TableRow>,

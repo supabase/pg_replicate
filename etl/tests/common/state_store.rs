@@ -1,20 +1,24 @@
 use etl::v2::pipeline::PipelineId;
 use etl::v2::state::pipeline::PipelineState;
 use etl::v2::state::store::base::{StateStore, StateStoreError};
-use etl::v2::state::table::TableReplicationState;
+use etl::v2::state::table::{TableReplicationPhaseType, TableReplicationState};
 use postgres::schema::{Oid, TableSchema};
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::runtime::Handle;
+use tokio::sync::{Notify, RwLock};
 
-#[derive(Debug)]
+type TableStateCondition = Box<dyn Fn(&TableReplicationState) -> bool + Send + Sync>;
+
 struct Inner {
     pipeline_states: HashMap<PipelineId, PipelineState>,
     table_replication_states: HashMap<(PipelineId, Oid), TableReplicationState>,
     table_schemas: HashMap<(PipelineId, Oid), TableSchema>,
+    table_state_conditions: Vec<((PipelineId, Oid), TableStateCondition, Arc<Notify>)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TestStateStore {
     inner: Arc<RwLock<Inner>>,
 }
@@ -25,6 +29,7 @@ impl TestStateStore {
             pipeline_states: HashMap::new(),
             table_replication_states: HashMap::new(),
             table_schemas: HashMap::new(),
+            table_state_conditions: Vec::new(),
         };
 
         Self {
@@ -47,6 +52,82 @@ impl TestStateStore {
     pub async fn get_table_schemas(&self) -> HashMap<(PipelineId, Oid), TableSchema> {
         let inner = self.inner.read().await;
         inner.table_schemas.clone()
+    }
+
+    pub async fn notify_on_replication_state<F>(
+        &self,
+        pipeline_id: PipelineId,
+        table_id: Oid,
+        condition: F,
+    ) -> Arc<Notify>
+    where
+        F: Fn(&TableReplicationState) -> bool + Send + Sync + 'static,
+    {
+        let notify = Arc::new(Notify::new());
+        let mut inner = self.inner.write().await;
+        inner.table_state_conditions.push((
+            (pipeline_id, table_id),
+            Box::new(condition),
+            notify.clone(),
+        ));
+        notify
+    }
+
+    pub async fn notify_on_replication_phase(
+        &self,
+        pipeline_id: PipelineId,
+        table_id: Oid,
+        phase_type: TableReplicationPhaseType,
+    ) -> Arc<Notify> {
+        self.notify_on_replication_state(pipeline_id, table_id, move |state| {
+            state.phase.as_type() == phase_type
+        })
+        .await
+    }
+
+    pub async fn notify_on_replication_phases(
+        &self,
+        pipeline_id: PipelineId,
+        conditions: Vec<(Oid, TableReplicationPhaseType)>,
+    ) -> Arc<Notify> {
+        let notify = Arc::new(Notify::new());
+        let mut inner = self.inner.write().await;
+
+        // Register a notification for each (pipeline, table, phase) combination
+        for (table_id, phase_type) in conditions {
+            let condition =
+                Box::new(move |state: &TableReplicationState| state.phase.as_type() == phase_type);
+
+            inner
+                .table_state_conditions
+                .push(((pipeline_id, table_id), condition, notify.clone()));
+        }
+
+        notify
+    }
+
+    pub async fn refresh(&self) {
+        self.check_conditions().await;
+    }
+
+    async fn check_conditions(&self) {
+        let mut inner = self.inner.write().await;
+
+        // Check table state conditions
+        let table_states = inner.table_replication_states.clone();
+        inner
+            .table_state_conditions
+            .retain(|((pid, tid), condition, notify)| {
+                if let Some(state) = table_states.get(&(*pid, *tid)) {
+                    let should_retain = !condition(state);
+                    if !should_retain {
+                        notify.notify_one();
+                    }
+                    should_retain
+                } else {
+                    true
+                }
+            });
     }
 }
 
@@ -121,6 +202,9 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_replication_states.insert(key, state);
+        drop(inner); // Release the write lock before checking conditions
+
+        self.check_conditions().await;
 
         Ok(true)
     }
@@ -164,5 +248,18 @@ impl StateStore for TestStateStore {
         inner.table_schemas.insert(key, table_schema);
 
         Ok(true)
+    }
+}
+
+impl fmt::Debug for TestStateStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let inner = tokio::task::block_in_place(move || {
+            Handle::current().block_on(async move { self.inner.read().await })
+        });
+        f.debug_struct("TestStateStore")
+            .field("pipeline_states", &inner.pipeline_states)
+            .field("table_replication_states", &inner.table_replication_states)
+            .field("table_schemas", &inner.table_schemas)
+            .finish()
     }
 }

@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::fmt;
 
 use pg_escape::quote_identifier;
@@ -34,6 +35,21 @@ impl TableName {
 impl fmt::Display for TableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{0}.{1}", self.schema, self.name))
+    }
+}
+
+impl PartialOrd for TableName {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TableName {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.schema.cmp(&other.schema) {
+            Ordering::Equal => self.name.cmp(&other.name),
+            other => other,
+        }
     }
 }
 
@@ -82,11 +98,31 @@ pub struct TableSchema {
 }
 
 impl TableSchema {
+    pub fn new(id: Oid, name: TableName, column_schemas: Vec<ColumnSchema>) -> Self {
+        Self {
+            id,
+            name,
+            column_schemas,
+        }
+    }
+
     /// Returns whether the table has any primary key columns.
     ///
     /// This method checks if any column in the table is marked as part of the primary key.
     pub fn has_primary_keys(&self) -> bool {
         self.column_schemas.iter().any(|cs| cs.primary)
+    }
+}
+
+impl PartialOrd for TableSchema {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TableSchema {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
     }
 }
 

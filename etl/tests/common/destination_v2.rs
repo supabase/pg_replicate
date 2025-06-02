@@ -13,10 +13,10 @@ type TableRowCondition = Box<dyn Fn(&[(Oid, Vec<TableRow>)]) -> bool + Send + Sy
 
 struct Inner {
     events: Vec<Arc<CdcEvent>>,
-    schemas: Vec<TableSchema>,
+    table_schemas: Vec<TableSchema>,
     table_rows: Vec<(Oid, Vec<TableRow>)>,
     event_conditions: Vec<(EventCondition, Arc<Notify>)>,
-    schema_conditions: Vec<(SchemaCondition, Arc<Notify>)>,
+    table_schema_conditions: Vec<(SchemaCondition, Arc<Notify>)>,
     table_row_conditions: Vec<(TableRowCondition, Arc<Notify>)>,
 }
 
@@ -32,7 +32,7 @@ impl fmt::Debug for TestDestination {
         });
         f.debug_struct("TestDestination")
             .field("events", &inner.events)
-            .field("schemas", &inner.schemas)
+            .field("schemas", &inner.table_schemas)
             .field("table_rows", &inner.table_rows)
             .finish()
     }
@@ -42,10 +42,10 @@ impl TestDestination {
     pub fn new() -> Self {
         let inner = Inner {
             events: Vec::new(),
-            schemas: Vec::new(),
+            table_schemas: Vec::new(),
             table_rows: Vec::new(),
             event_conditions: Vec::new(),
-            schema_conditions: Vec::new(),
+            table_schema_conditions: Vec::new(),
             table_row_conditions: Vec::new(),
         };
 
@@ -58,8 +58,8 @@ impl TestDestination {
         self.inner.read().await.events.clone()
     }
 
-    pub async fn get_schemas(&self) -> Vec<TableSchema> {
-        self.inner.read().await.schemas.clone()
+    pub async fn get_table_schemas(&self) -> Vec<TableSchema> {
+        self.inner.read().await.table_schemas.clone()
     }
 
     pub async fn get_table_rows(&self) -> Vec<(Oid, Vec<TableRow>)> {
@@ -69,7 +69,7 @@ impl TestDestination {
     pub async fn clear(&self) {
         let mut inner = self.inner.write().await;
         inner.events.clear();
-        inner.schemas.clear();
+        inner.table_schemas.clear();
         inner.table_rows.clear();
     }
 
@@ -93,7 +93,7 @@ impl TestDestination {
         let notify = Arc::new(Notify::new());
         let mut inner = self.inner.write().await;
         inner
-            .schema_conditions
+            .table_schema_conditions
             .push((Box::new(condition), notify.clone()));
 
         notify
@@ -121,6 +121,15 @@ impl TestDestination {
         .await
     }
 
+    pub async fn wait_for_n_schemas(&self, n: usize) -> Arc<Notify> {
+        self.notify_on_schemas(move |schemas| schemas.len() == n)
+            .await
+    }
+
+    pub async fn refresh(&self) {
+        self.check_conditions().await;
+    }
+
     async fn check_conditions(&self) {
         let mut inner = self.inner.write().await;
 
@@ -135,8 +144,8 @@ impl TestDestination {
         });
 
         // Check schema conditions
-        let schemas = inner.schemas.clone();
-        inner.schema_conditions.retain(|(condition, notify)| {
+        let schemas = inner.table_schemas.clone();
+        inner.table_schema_conditions.retain(|(condition, notify)| {
             let should_retain = !condition(&schemas);
             if !should_retain {
                 notify.notify_one();
@@ -165,7 +174,7 @@ impl Default for TestDestination {
 impl Destination for TestDestination {
     async fn write_table_schema(&self, schema: TableSchema) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
-        inner.schemas.push(schema);
+        inner.table_schemas.push(schema);
         drop(inner); // Release the write lock before checking conditions
 
         self.check_conditions().await;
@@ -173,7 +182,7 @@ impl Destination for TestDestination {
         Ok(())
     }
 
-    async fn copy_table(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
+    async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_rows.push((id, rows));
         drop(inner); // Release the write lock before checking conditions

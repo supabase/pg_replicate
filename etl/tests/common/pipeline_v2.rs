@@ -1,28 +1,27 @@
-use crate::common::destination_v2::TestDestination;
-use crate::common::state_store::TestStateStore;
+use etl::v2::destination::base::Destination;
 use etl::v2::pipeline::{Pipeline, PipelineIdentity};
+use etl::v2::state::store::base::StateStore;
 use postgres::tokio::options::PgDatabaseOptions;
 
-pub async fn spawn_pg_pipeline(
+pub fn spawn_pg_pipeline<S, D>(
     publication_name: &str,
     options: &PgDatabaseOptions,
-) -> (
-    TestStateStore,
-    TestDestination,
-    Pipeline<TestStateStore, TestDestination>,
-) {
+    state_store: S,
+    destination: D,
+) -> Pipeline<S, D>
+where
+    S: StateStore + Clone + Send + Sync + 'static,
+    D: Destination + Clone + Send + Sync + 'static,
+{
     let pipeline_identity = PipelineIdentity::new(0, publication_name);
-
-    let state_store = TestStateStore::new();
-    let destination = TestDestination::new();
 
     let pipeline = Pipeline::new(
         pipeline_identity,
         options.clone(),
         vec![],
-        state_store.clone(),
-        destination.clone(),
+        state_store,
+        destination,
     );
 
-    (state_store, destination, pipeline)
+    pipeline
 }

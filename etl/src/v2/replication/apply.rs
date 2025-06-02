@@ -2,7 +2,6 @@ use postgres::schema::Oid;
 use std::future::Future;
 use thiserror::Error;
 use tokio::task;
-use tokio::task::yield_now;
 use tokio_postgres::types::PgLsn;
 
 use crate::v2::destination::base::Destination;

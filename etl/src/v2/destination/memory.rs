@@ -44,7 +44,7 @@ impl Destination for MemoryDestination {
         Ok(())
     }
 
-    async fn copy_table(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
+    async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_rows.push((id, rows));
         Ok(())
