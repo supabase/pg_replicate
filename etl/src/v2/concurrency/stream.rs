@@ -1,5 +1,3 @@
-use crate::v2::config::batch::BatchConfig;
-
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::{ready, Future, Stream};
@@ -8,21 +6,24 @@ use tokio::sync::futures::Notified;
 use tokio::time::{sleep, Sleep};
 use tracing::info;
 
+use crate::v2::config::batch::BatchConfig;
+
 /// A trait that determines whether an item in a stream marks the end of a batch.
 ///
 /// Types implementing this trait can signal when they should be the last item in a batch,
 /// allowing for intelligent batch boundary decisions in streaming operations.
 pub trait BatchBoundary: Sized {
-    /// Returns `true` if this item should be the last in its batch.
+    /// Returns `true` if this item should be the last in its batch, that is, the item is on
+    /// a boundary.
     ///
     /// This method is used by [`BoundedBatchStream`] to determine when to emit a batch.
-    fn is_last_in_batch(&self) -> bool;
+    fn is_on_boundary(&self) -> bool;
 }
 
 impl<T: BatchBoundary, E> BatchBoundary for Result<T, E> {
-    fn is_last_in_batch(&self) -> bool {
+    fn is_on_boundary(&self) -> bool {
         match self {
-            Ok(v) => v.is_last_in_batch(),
+            Ok(v) => v.is_on_boundary(),
             // We return true since in case of error we want to fail fast, since the batch is
             // anyway going to fail.
             Err(_) => true,
@@ -41,7 +42,7 @@ pin_project! {
     /// - The stream is forcefully stopped
     ///
     /// The stream guarantees that batches will end on items that return `true` from
-    /// [`BatchBoundary::is_last_in_batch`], unless the stream is forcefully stopped.
+    /// [`BatchBoundary::is_on_boundary`], unless the stream is forcefully stopped.
     ///
     /// # Implementation Details
     ///
@@ -54,7 +55,7 @@ pin_project! {
         #[pin]
         deadline: Option<Sleep>,
         #[pin]
-        stream_stop: Notified<'a>,
+        stream_stop: Option<Notified<'a>>,
         items: Vec<S::Item>,
         batch_config: BatchConfig,
         reset_timer: bool,
@@ -68,7 +69,7 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> BoundedBatchStream<'a, B, S> {
     ///
     /// The stream will batch items according to the provided `batch_config` and can be
     /// stopped using the `stream_stop` notification handle.
-    pub fn new(stream: S, batch_config: BatchConfig, stream_stop: Notified<'a>) -> Self {
+    pub fn wrap(stream: S, batch_config: BatchConfig, stream_stop: Option<Notified<'a>>) -> Self {
         BoundedBatchStream {
             stream,
             deadline: None,
@@ -117,15 +118,17 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<'a
 
             // If the stream has been asked to stop, we mark the stream as stopped and return the
             // remaining elements, irrespectively of boundaries.
-            if this.stream_stop.as_mut().poll(cx).is_ready() {
-                info!("the stream has been forcefully stopped");
-                *this.stream_stopped = true;
+            if let Some(stream_stop) = this.stream_stop.as_mut().as_pin_mut() {
+                if stream_stop.poll(cx).is_ready() {
+                    info!("the stream has been forcefully stopped");
+                    *this.stream_stopped = true;
 
-                return if !this.items.is_empty() {
-                    Poll::Ready(Some(std::mem::take(this.items)))
-                } else {
-                    Poll::Ready(None)
-                };
+                    return if !this.items.is_empty() {
+                        Poll::Ready(Some(std::mem::take(this.items)))
+                    } else {
+                        Poll::Ready(None)
+                    };
+                }
             }
 
             if *this.reset_timer {
@@ -139,7 +142,7 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<'a
             match this.stream.as_mut().poll_next(cx) {
                 Poll::Pending => break,
                 Poll::Ready(Some(item)) => {
-                    let is_last_in_batch = item.is_last_in_batch();
+                    let is_last_in_batch = item.is_on_boundary();
                     this.items.push(item);
                     if this.items.len() >= this.batch_config.max_batch_size && is_last_in_batch {
                         *this.reset_timer = true;
@@ -167,7 +170,7 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<'a
             }
 
             let last_item = this.items.last().expect("missing last item");
-            if last_item.is_last_in_batch() {
+            if last_item.is_on_boundary() {
                 *this.reset_timer = true;
                 return Poll::Ready(Some(std::mem::take(this.items)));
             }

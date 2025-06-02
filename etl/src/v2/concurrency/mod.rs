@@ -1,2 +1,2 @@
 pub mod future;
-mod stream;
+pub mod stream;

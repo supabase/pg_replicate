@@ -2,7 +2,7 @@ use futures::{ready, Future, Stream};
 use pin_project_lite::pin_project;
 use tokio::time::{sleep, Sleep};
 
-use super::{BatchBoundary, BatchConfig};
+use super::{BatchBoundaryV1, BatchConfig};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use tokio::sync::futures::Notified;
@@ -12,12 +12,12 @@ use tracing::info;
 pin_project! {
     /// Adapter stream which batches the items of the underlying stream when it
     /// reaches max_size or when a timeout expires. The underlying streams items
-    /// must implement [`BatchBoundary`]. A batch is guaranteed to end on an
-    /// item which returns true from [`BatchBoundary::is_last_in_batch`] unless the
+    /// must implement [`BatchBoundaryV1`]. A batch is guaranteed to end on an
+    /// item which returns true from [`BatchBoundaryV1::is_last_in_batch`] unless the
     /// stream is forcefully stopped.
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
-    pub struct BatchTimeoutStream<'a, B: BatchBoundary, S: Stream<Item = B>> {
+    pub struct BatchTimeoutStream<'a, B: BatchBoundaryV1, S: Stream<Item = B>> {
         #[pin]
         stream: S,
         #[pin]
@@ -32,7 +32,7 @@ pin_project! {
     }
 }
 
-impl<'a, B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<'a, B, S> {
+impl<'a, B: BatchBoundaryV1, S: Stream<Item = B>> BatchTimeoutStream<'a, B, S> {
     pub fn new(stream: S, batch_config: BatchConfig, stream_stop: Notified<'a>) -> Self {
         BatchTimeoutStream {
             stream,
@@ -51,7 +51,7 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> BatchTimeoutStream<'a, B, S> {
     }
 }
 
-impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BatchTimeoutStream<'a, B, S> {
+impl<'a, B: BatchBoundaryV1, S: Stream<Item = B>> Stream for BatchTimeoutStream<'a, B, S> {
     type Item = Vec<S::Item>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {

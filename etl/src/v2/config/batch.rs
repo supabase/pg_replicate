@@ -14,3 +14,12 @@ impl BatchConfig {
         }
     }
 }
+
+impl Default for BatchConfig {
+    fn default() -> BatchConfig {
+        Self {
+            max_batch_size: 1000,
+            max_batch_fill_time: Duration::from_secs(1),
+        }
+    }
+}

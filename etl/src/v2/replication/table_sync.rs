@@ -1,13 +1,18 @@
-use thiserror::Error;
-use tokio_postgres::types::PgLsn;
-
+use crate::v2::concurrency::stream::BoundedBatchStream;
+use crate::v2::config::batch::BatchConfig;
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
-use crate::v2::state::store::base::StateStore;
+use crate::v2::replication::stream::{TableCopyStream, TableCopyStreamError};
+use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
+use futures::StreamExt;
+use std::task::Poll;
+use thiserror::Error;
+use tokio::pin;
+use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Error)]
 pub enum TableSyncError {
@@ -25,6 +30,12 @@ pub enum TableSyncError {
 
     #[error("An error occurred while writing to the destination: {0}")]
     Destination(#[from] DestinationError),
+
+    #[error("An error happened in the pipeline state store: {0}")]
+    StateStore(#[from] StateStoreError),
+
+    #[error("An error happened in the table copy stream")]
+    TableCopyStream(#[from] TableCopyStreamError),
 }
 
 #[derive(Debug)]
@@ -44,15 +55,6 @@ where
     S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    // 1. Load the state from the TableSyncWorkerState (must be done there since we know that the
-    //    in-memory state is consistent from this point, if we re-read from the store, we already
-    //    gave out the state which could have been changed already).
-    // 2. Check the state and exit if SyncDone, Ready, Unknown
-    // 3. Compute the slot name
-    // 4. Make sure the state is either Init, DataSync, FinishedCopy
-    // 5. Handle slot deletion in case it's in DataSync
-    // 6. Start copy table with transaction
-    // 7. Mark the table as FinishedCopy
     let inner = table_sync_worker_state.inner().read().await;
 
     let table_id = inner.table_id();
@@ -111,14 +113,37 @@ where
         .create_slot_with_transaction(&slot_name)
         .await?;
 
-    // We copy the table schema and write it to the destination.
+    // We copy the table schema and write it both to the state store and destination.
+    //
+    // Note that we write the schema in both places:
+    // - State store -> we write here because the table schema is used across table copying and cdc
+    //  for correct decoding, thus we rely on our own state store to preserve this information.
+    // - Destination -> we write here because some consumers might want to have the schema of incoming
+    //  data.
     let table_schema = transaction
         .get_table_schema(table_id, Some(identity.publication_name()))
         .await?;
-    destination.write_table_schema(table_schema).await?;
+    state_store
+        .store_table_schema(identity.id(), table_schema.clone(), true)
+        .await?;
+    destination.write_table_schema(table_schema.clone()).await?;
 
-    // We copy the actual table.
-    // TODO: copy table data.
+    // We create the copy table stream.
+    let table_copy_stream = transaction
+        .get_table_copy_stream(table_id, &table_schema.column_schemas)
+        .await?;
+    let table_copy_stream = TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
+    // TODO: supply the actual pipeline config.
+    let table_copy_stream =
+        BoundedBatchStream::wrap(table_copy_stream, BatchConfig::default(), None);
+    pin!(table_copy_stream);
+
+    // We start consuming the table stream. If any error occurs, we will bail the entire copy since
+    // we want to be fully consistent.
+    while let Some(table_rows) = table_copy_stream.next().await {
+        let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
+        destination.copy_table_rows(table_id, table_rows).await?;
+    }
 
     // We mark that we finished the copy of the table schema and data. Then we immediately set
     // this worker as ready to be synced.
