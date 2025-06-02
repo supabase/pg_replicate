@@ -177,7 +177,7 @@ async fn test_table_schema_copy_is_consistent() {
 
     // We use the transaction to consistently read the table schemas.
     let table_1_schema = transaction
-        .get_table_schemas(&[test_table_name("table_1")], None)
+        .get_table_schemas(&[table_1_id], None)
         .await
         .unwrap();
     transaction.commit().await.unwrap();
@@ -226,7 +226,7 @@ async fn test_table_schema_copy_across_multiple_connections() {
 
     // We use the transaction to consistently read the table schemas.
     let table_1_schema = transaction
-        .get_table_schemas(&[test_table_name("table_1")], None)
+        .get_table_schemas(&[table_1_id], None)
         .await
         .unwrap();
     transaction.commit().await.unwrap();
@@ -261,11 +261,11 @@ async fn test_table_schema_copy_across_multiple_connections() {
 
     // We use the transaction to consistently read the table schemas.
     let table_1_schema = transaction
-        .get_table_schemas(&[test_table_name("table_1")], None)
+        .get_table_schemas(&[table_1_id], None)
         .await
         .unwrap();
     let table_2_schema = transaction
-        .get_table_schemas(&[test_table_name("table_2")], None)
+        .get_table_schemas(&[table_2_id], None)
         .await
         .unwrap();
     transaction.commit().await.unwrap();
@@ -341,11 +341,11 @@ async fn test_publication_creation_and_check() {
         .unwrap();
 
     // We create two tables and a publication on those tables.
-    database
+    let table_1_id = database
         .create_table(test_table_name("table_1"), &[("age", "integer")])
         .await
         .unwrap();
-    database
+    let table_2_id = database
         .create_table(test_table_name("table_2"), &[("age", "integer")])
         .await
         .unwrap();
@@ -357,12 +357,14 @@ async fn test_publication_creation_and_check() {
         .await
         .unwrap();
 
+    // We check if the publication exists.
     let publication_exists = parent_client
         .publication_exists("my_publication")
         .await
         .unwrap();
     assert!(publication_exists);
 
+    // We check the table names of the tables in the publication.
     let table_names = parent_client
         .get_publication_table_names("my_publication")
         .await
@@ -371,6 +373,13 @@ async fn test_publication_creation_and_check() {
         table_names,
         vec![test_table_name("table_1"), test_table_name("table_2")]
     );
+    
+    // We check the table ids of the tables in the publication.
+    let table_ids = parent_client
+        .get_publication_table_ids("my_publication")
+        .await
+        .unwrap();
+    assert_eq!(table_ids, vec![table_1_id, table_2_id]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

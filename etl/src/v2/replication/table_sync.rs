@@ -1,3 +1,6 @@
+use thiserror::Error;
+use tokio_postgres::types::PgLsn;
+
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
@@ -5,8 +8,6 @@ use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::state::store::base::PipelineStateStore;
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
-use thiserror::Error;
-use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Error)]
 pub enum TableSyncError {
@@ -102,11 +103,13 @@ where
     drop(inner);
 
     // We create the slot with a transaction, since we need to have a consistent snapshot of the database
-    // before copying tables.
+    // before copying the schema and tables.
     let (transaction, slot) = replication_client
         .create_slot_with_transaction(&slot_name)
         .await?;
-    // TODO: implement table copying.
+    
+    // TODO: fetch table schema.
+    // TODO: copy table data.
 
     Ok(TableSyncResult::SyncCompleted {
         consistent_point: PgLsn::from(0),

@@ -133,7 +133,7 @@ where
         replication_client: &PgReplicationClient,
     ) -> Result<(), PipelineError> {
         info!("Synchronizing relation subscription states");
-
+        
         // TODO: in this function we want to:
         //  1. Load all tables for the publication
         //  2. For each table, we check if it already exists in the store

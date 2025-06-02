@@ -1,5 +1,5 @@
 use pg_escape::{quote_identifier, quote_literal};
-use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::options::PgDatabaseOptions;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
@@ -119,15 +119,29 @@ impl PgReplicationSlotTransaction {
 
     /// Retrieves the schema information for the specified tables.
     ///
-    /// If a publication name is provided, only tables included in that publication
-    /// will be considered.
+    /// If a publication is specified, only columns of the tables included in that publication
+    /// will be returned.
     pub async fn get_table_schemas(
         &self,
-        table_names: &[TableName],
+        table_ids: &[Oid],
         publication_name: Option<&str>,
-    ) -> PgReplicationResult<HashMap<TableId, TableSchema>> {
+    ) -> PgReplicationResult<HashMap<Oid, TableSchema>> {
         self.client
-            .get_table_schemas(table_names, publication_name)
+            .get_table_schemas(table_ids, publication_name)
+            .await
+    }
+
+    /// Retrieves the schema information for the supplied table.
+    ///
+    /// If a publication is specified, only columns included in that publication
+    /// will be returned.
+    pub async fn get_table_schema(
+        &self,
+        table_id: Oid,
+        publication: Option<&str>,
+    ) -> PgReplicationResult<TableSchema> {
+        self.client
+            .get_table_schema(table_id, publication)
             .await
     }
 
@@ -353,6 +367,32 @@ impl PgReplicationClient {
         Ok(table_names)
     }
 
+    /// Retrieves the OIDs of all tables included in a publication.
+    pub async fn get_publication_table_ids(
+        &self,
+        publication_name: &str,
+    ) -> PgReplicationResult<Vec<Oid>> {
+        let publication_query = format!(
+            "select c.oid from pg_publication_tables pt 
+         join pg_class c on c.relname = pt.tablename 
+         join pg_namespace n on n.oid = c.relnamespace AND n.nspname = pt.schemaname 
+         where pt.pubname = {};",
+            quote_literal(publication_name)
+        );
+
+        let mut table_oids = vec![];
+        for msg in self.inner.client.simple_query(&publication_query).await? {
+            if let SimpleQueryMessage::Row(row) = msg {
+                let oid = Self::get_row_value::<Oid>(&row, "oid", "pg_class")
+                    .await?;
+
+                table_oids.push(oid);
+            }
+        }
+
+        Ok(table_oids)
+    }
+
     /// Starts a logical replication stream from the specified publication and slot.
     ///
     /// The stream will begin reading changes from the provided `start_lsn`.
@@ -465,15 +505,15 @@ impl PgReplicationClient {
     /// Tables without primary keys will be skipped and logged with a warning.
     async fn get_table_schemas(
         &self,
-        table_names: &[TableName],
+        table_ids: &[Oid],
         publication_name: Option<&str>,
-    ) -> PgReplicationResult<HashMap<TableId, TableSchema>> {
+    ) -> PgReplicationResult<HashMap<Oid, TableSchema>> {
         let mut table_schemas = HashMap::new();
 
         // TODO: consider if we want to fail when at least one table was missing or not.
-        for table_name in table_names {
+        for table_id in table_ids {
             let table_schema = self
-                .get_table_schema(table_name.clone(), publication_name)
+                .get_table_schema(*table_id, publication_name)
                 .await?;
 
             if !table_schema.has_primary_keys() {
@@ -496,14 +536,10 @@ impl PgReplicationClient {
     /// will be returned.
     async fn get_table_schema(
         &self,
-        table_name: TableName,
+        table_id: Oid,
         publication: Option<&str>,
     ) -> PgReplicationResult<TableSchema> {
-        let table_id = self
-            .get_table_id(&table_name)
-            .await?
-            .ok_or(PgReplicationError::TableNotFound(table_name.clone()))?;
-
+        let table_name = self.get_table_name(table_id).await?;
         let column_schemas = self.get_column_schemas(table_id, publication).await?;
 
         Ok(TableSchema {
@@ -513,52 +549,36 @@ impl PgReplicationClient {
         })
     }
 
-    /// Retrieves the OID of a table and verifies its replica identity.
+    /// Loads the table name and schema information for a given table OID.
     ///
-    /// Returns `None` if the table doesn't exist. The replica identity must be
-    /// either 'd' (default) or 'f' (full).
-    async fn get_table_id(&self, table: &TableName) -> PgReplicationResult<Option<TableId>> {
-        let quoted_schema = quote_literal(&table.schema);
-        let quoted_name = quote_literal(&table.name);
-
+    /// Returns a `TableName` containing both the schema and table name.
+    async fn get_table_name(&self, table_id: Oid) -> PgReplicationResult<TableName> {
         let table_info_query = format!(
-            "select c.oid,
-                c.relreplident
+            "select n.nspname as schema_name, c.relname as table_name
             from pg_class c
-            join pg_namespace n
-                on (c.relnamespace = n.oid)
-            where n.nspname = {}
-                and c.relname = {}
-            ",
-            quoted_schema, quoted_name
+            join pg_namespace n on c.relnamespace = n.oid
+            where c.oid = {}",
+            table_id
         );
 
         for message in self.inner.client.simple_query(&table_info_query).await? {
             if let SimpleQueryMessage::Row(row) = message {
-                let replica_identity =
-                    Self::get_row_value::<String>(&row, "relreplident", "pg_class")
-                        .await
-                        .map_err(|_| {
-                            PgReplicationError::ColumnNotFound(
-                                "relreplident".to_string(),
-                                "pg_class".to_string(),
-                            )
-                        })?;
+                let schema_name = Self::get_row_value::<String>(&row, "schema_name", "pg_namespace")
+                    .await?;
+                let table_name = Self::get_row_value::<String>(&row, "table_name", "pg_class")
+                    .await?;
 
-                if !(replica_identity == "d" || replica_identity == "f") {
-                    return Err(PgReplicationError::UnsupportedReplicaIdentity(
-                        replica_identity,
-                    ));
-                }
-
-                let oid = Self::get_row_value::<u32>(&row, "oid", "pg_class")
-                    .await
-                    .map_err(|_| PgReplicationError::InvalidOid)?;
-                return Ok(Some(oid));
+                return Ok(TableName {
+                    schema: schema_name,
+                    name: table_name,
+                });
             }
         }
 
-        Ok(None)
+        Err(PgReplicationError::TableNotFound(TableName {
+            schema: String::new(),
+            name: format!("oid: {}", table_id),
+        }))
     }
 
     /// Retrieves schema information for all columns in a table.
@@ -567,7 +587,7 @@ impl PgReplicationClient {
     /// will be returned.
     async fn get_column_schemas(
         &self,
-        table_id: TableId,
+        table_id: Oid,
         publication: Option<&str>,
     ) -> PgReplicationResult<Vec<ColumnSchema>> {
         let (pub_cte, pub_pred) = if let Some(publication) = publication {
