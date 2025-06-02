@@ -284,7 +284,7 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
         .execute(
             &format!(
                 r#"
-                select pg_drop_replication_slot(slot_name) 
+                select pg_drop_replication_slot(slot_name)
                 from pg_replication_slots 
                 where slot_name like 'test_%'
                 and database = '{}';"#,

@@ -2,7 +2,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::{ready, Future, Stream};
 use pin_project_lite::pin_project;
-use tokio::sync::futures::Notified;
+use tokio::sync::watch;
 use tokio::time::{sleep, Sleep};
 use tracing::info;
 
@@ -49,13 +49,12 @@ pin_project! {
     /// The implementation is adapted from Tokio's chunks_timeout stream extension.
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
-    pub struct BoundedBatchStream<'a, B: BatchBoundary, S: Stream<Item = B>> {
+    pub struct BoundedBatchStream<B: BatchBoundary, S: Stream<Item = B>> {
         #[pin]
         stream: S,
         #[pin]
         deadline: Option<Sleep>,
-        #[pin]
-        stream_stop: Option<Notified<'a>>,
+        shutdown_rx: watch::Receiver<()>,
         items: Vec<S::Item>,
         batch_config: BatchConfig,
         reset_timer: bool,
@@ -64,16 +63,16 @@ pin_project! {
     }
 }
 
-impl<'a, B: BatchBoundary, S: Stream<Item = B>> BoundedBatchStream<'a, B, S> {
+impl<B: BatchBoundary, S: Stream<Item = B>> BoundedBatchStream<B, S> {
     /// Creates a new [`BoundedBatchStream`] with the given configuration.
     ///
     /// The stream will batch items according to the provided `batch_config` and can be
-    /// stopped using the `stream_stop` notification handle.
-    pub fn wrap(stream: S, batch_config: BatchConfig, stream_stop: Option<Notified<'a>>) -> Self {
+    /// stopped using the `shutdown_rx` watch channel.
+    pub fn wrap(stream: S, batch_config: BatchConfig, shutdown_rx: watch::Receiver<()>) -> Self {
         BoundedBatchStream {
             stream,
             deadline: None,
-            stream_stop,
+            shutdown_rx,
             items: Vec::with_capacity(batch_config.max_batch_size),
             batch_config,
             reset_timer: true,
@@ -90,7 +89,7 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> BoundedBatchStream<'a, B, S> {
     }
 }
 
-impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<'a, B, S> {
+impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> {
     type Item = Vec<S::Item>;
 
     /// Polls the stream for the next batch of items.
@@ -118,17 +117,15 @@ impl<'a, B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<'a
 
             // If the stream has been asked to stop, we mark the stream as stopped and return the
             // remaining elements, irrespectively of boundaries.
-            if let Some(stream_stop) = this.stream_stop.as_mut().as_pin_mut() {
-                if stream_stop.poll(cx).is_ready() {
-                    info!("the stream has been forcefully stopped");
-                    *this.stream_stopped = true;
+            if this.shutdown_rx.has_changed().unwrap_or(false) {
+                info!("the stream has been forcefully stopped");
+                *this.stream_stopped = true;
 
-                    return if !this.items.is_empty() {
-                        Poll::Ready(Some(std::mem::take(this.items)))
-                    } else {
-                        Poll::Ready(None)
-                    };
-                }
+                return if !this.items.is_empty() {
+                    Poll::Ready(Some(std::mem::take(this.items)))
+                } else {
+                    Poll::Ready(None)
+                };
             }
 
             if *this.reset_timer {

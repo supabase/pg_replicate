@@ -321,4 +321,7 @@ async fn test_table_copy() {
     let age_sum =
         get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
     assert_eq!(age_sum, expected_age_sum);
+    
+    pipeline.shutdown().await;
+    pipeline.wait().await.unwrap();
 }

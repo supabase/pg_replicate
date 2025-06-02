@@ -11,6 +11,7 @@ use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateE
 use futures::StreamExt;
 use thiserror::Error;
 use tokio::pin;
+use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Error)]
@@ -49,6 +50,7 @@ pub async fn start_table_sync<S, D>(
     table_sync_worker_state: TableSyncWorkerState,
     state_store: S,
     destination: D,
+    shutdown_rx: watch::Receiver<()>,
 ) -> Result<TableSyncResult, TableSyncError>
 where
     S: StateStore + Clone + Send + 'static,
@@ -134,7 +136,7 @@ where
     let table_copy_stream = TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
     // TODO: supply the actual pipeline config.
     let table_copy_stream =
-        BoundedBatchStream::wrap(table_copy_stream, BatchConfig::default(), None);
+        BoundedBatchStream::wrap(table_copy_stream, BatchConfig::default(), shutdown_rx);
     pin!(table_copy_stream);
     
     // We start consuming the table stream. If any error occurs, we will bail the entire copy since

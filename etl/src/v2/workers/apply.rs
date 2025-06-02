@@ -1,6 +1,7 @@
 use postgres::schema::Oid;
 use thiserror::Error;
 use tokio::task::JoinHandle;
+use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 use tracing::{error, info};
 
@@ -63,6 +64,7 @@ pub struct ApplyWorker<S, D> {
     pool: TableSyncWorkerPool,
     state_store: S,
     destination: D,
+    shutdown_rx: watch::Receiver<()>,
 }
 
 impl<S, D> ApplyWorker<S, D> {
@@ -72,6 +74,7 @@ impl<S, D> ApplyWorker<S, D> {
         pool: TableSyncWorkerPool,
         state_store: S,
         destination: D,
+        shutdown_rx: watch::Receiver<()>,
     ) -> Self {
         Self {
             identity,
@@ -79,6 +82,7 @@ impl<S, D> ApplyWorker<S, D> {
             pool,
             state_store,
             destination,
+            shutdown_rx,
         }
     }
 }
@@ -109,6 +113,7 @@ where
                 self.pool,
                 self.state_store.clone(),
                 self.destination.clone(),
+                self.shutdown_rx.clone(),
             );
             start_apply_loop(
                 hook,
@@ -116,6 +121,7 @@ where
                 pipeline_state.last_lsn,
                 self.state_store,
                 self.destination,
+                self.shutdown_rx,
             )
             .await?;
 
@@ -137,6 +143,7 @@ struct Hook<S, D> {
     pool: TableSyncWorkerPool,
     state_store: S,
     destination: D,
+    shutdown_rx: watch::Receiver<()>,
 }
 
 impl<S, D> Hook<S, D> {
@@ -146,6 +153,7 @@ impl<S, D> Hook<S, D> {
         pool: TableSyncWorkerPool,
         state_store: S,
         destination: D,
+        shutdown_rx: watch::Receiver<()>,
     ) -> Self {
         Self {
             identity,
@@ -153,6 +161,7 @@ impl<S, D> Hook<S, D> {
             pool,
             state_store,
             destination,
+            shutdown_rx,
         }
     }
 }
@@ -229,6 +238,7 @@ where
                             table_replication_state.id,
                             self.state_store.clone(),
                             self.destination.clone(),
+                            self.shutdown_rx.clone(),
                         );
 
                         let mut table_sync_workers = self.pool.write().await;

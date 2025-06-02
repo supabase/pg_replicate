@@ -2,6 +2,7 @@ use postgres::schema::Oid;
 use std::future::Future;
 use thiserror::Error;
 use tokio::task;
+use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 
 use crate::v2::destination::base::Destination;
@@ -58,6 +59,7 @@ pub async fn start_apply_loop<S, D, T>(
     _last_received: PgLsn,
     _state_store: S,
     _destination: D,
+    mut shutdown_rx: watch::Receiver<()>,
 ) -> Result<ApplyLoopResult, ApplyLoopError>
 where
     S: StateStore + Clone + Send + 'static,
@@ -65,16 +67,16 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Create a select between:
-    //  - Shutdown signal -> when called we stop the apply operation.
-    //  - Logical replication stream socket -> when an event is received, we handle it in a special
-    //      processing component.
-    //  - Else we do the table syncing if we are not at a boundary -> we perform table syncing to make
-    //     sure progress is happening in table sync workers.
-
-    // TODO: for now we are looping indefinitely, implement the actual apply logic.
     loop {
-        hook.process_syncing_tables(PgLsn::from(0)).await?;
-        task::yield_now().await;
+        tokio::select! {
+            _ = shutdown_rx.changed() => {
+                return Ok(ApplyLoopResult::ApplyCompleted);
+            }
+            _ = async {
+                hook.process_syncing_tables(PgLsn::from(0)).await?;
+                task::yield_now().await;
+                Ok::<(), ApplyLoopError>(())
+            } => {}
+        }
     }
 }

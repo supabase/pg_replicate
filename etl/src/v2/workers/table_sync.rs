@@ -2,7 +2,7 @@ use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::{Notify, RwLock, RwLockReadGuard};
+use tokio::sync::{watch, Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 use tracing::{info, warn};
@@ -194,6 +194,7 @@ pub struct TableSyncWorker<S, D> {
     table_id: Oid,
     state_store: S,
     destination: D,
+    shutdown_rx: watch::Receiver<()>,
 }
 
 impl<S, D> TableSyncWorker<S, D> {
@@ -204,6 +205,7 @@ impl<S, D> TableSyncWorker<S, D> {
         table_id: Oid,
         state_store: S,
         destination: D,
+        shutdown_rx: watch::Receiver<()>,
     ) -> Self {
         Self {
             identity,
@@ -212,6 +214,7 @@ impl<S, D> TableSyncWorker<S, D> {
             table_id,
             state_store,
             destination,
+            shutdown_rx,
         }
     }
 
@@ -254,6 +257,7 @@ where
                 state_clone,
                 self.state_store.clone(),
                 self.destination.clone(),
+                self.shutdown_rx.clone(),
             )
             .await;
 
@@ -285,6 +289,7 @@ where
                 PgLsn::from(0),
                 self.state_store,
                 self.destination,
+                self.shutdown_rx,
             )
             .await?;
 

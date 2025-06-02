@@ -9,6 +9,7 @@ use crate::v2::workers::pool::TableSyncWorkerPool;
 use postgres::tokio::options::PgDatabaseOptions;
 use rustls::pki_types::CertificateDer;
 use thiserror::Error;
+use tokio::sync::watch;
 use tokio_postgres::config::SslMode;
 use tracing::{error, info};
 
@@ -71,6 +72,7 @@ pub struct Pipeline<S, D> {
     state_store: S,
     destination: D,
     workers: PipelineWorkers,
+    shutdown_tx: watch::Sender<()>,
 }
 
 impl<S, D> Pipeline<S, D>
@@ -85,6 +87,7 @@ where
         state_store: S,
         destination: D,
     ) -> Self {
+        let (shutdown_tx, _) = watch::channel(());
         Self {
             identity,
             options,
@@ -92,6 +95,7 @@ where
             state_store,
             destination,
             workers: PipelineWorkers::NotStarted,
+            shutdown_tx,
         }
     }
 
@@ -128,6 +132,7 @@ where
             pool.clone(),
             self.state_store.clone(),
             self.destination.clone(),
+            self.shutdown_tx.subscribe(),
         )
         .start()
         .await?;
@@ -185,14 +190,14 @@ where
         Ok(replication_client)
     }
 
-    pub async fn wait(self) {
+    pub async fn wait(self) -> Result<(), Vec<WorkerWaitError>> {
         let PipelineWorkers::Started {
             apply_worker,
             table_sync_workers,
         } = self.workers
         else {
             info!("Pipeline was not started, nothing to wait for");
-            return;
+            return Ok(());
         };
 
         // TODO: handle failure of errors on wait.
@@ -204,11 +209,18 @@ where
         apply_worker
             .wait()
             .await
-            .expect("Failed to wait for apply worker");
+            .map_err(|e| vec![e])?;
         info!("Apply worker completed");
 
         let mut table_sync_workers = table_sync_workers.write().await;
-        table_sync_workers.wait_all().await;
+        table_sync_workers.wait_all().await?;
         info!("All table sync workers completed");
+        
+        Ok(())
+    }
+
+    pub async fn shutdown(&self) {
+        info!("Shutting down pipeline");
+        let _ = self.shutdown_tx.send(());
     }
 }

@@ -83,7 +83,7 @@ impl TableSyncWorkerPoolInner {
         }
     }
 
-    pub async fn wait_all(&mut self) -> Vec<WorkerWaitError> {
+    pub async fn wait_all(&mut self) -> Result<(), Vec<WorkerWaitError>> {
         let worker_count = self.active.len();
         info!("Waiting for {} workers to complete", worker_count);
 
@@ -118,7 +118,11 @@ impl TableSyncWorkerPoolInner {
 
         info!("All {} workers completed", worker_count);
 
-        errors
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
