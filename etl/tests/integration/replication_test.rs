@@ -303,11 +303,22 @@ async fn test_table_copy_stream_is_consistent() {
         .create_table(test_table_name("table_1"), &[("age", "integer")])
         .await
         .unwrap();
+
+    // An earlier version of this test only inserted one row but was
+    // incorrectly committing the transaction before the copy stream was done.
+    // The test still passed because the copy messages were buffered
+    // and the commit was not yet sent to the server.
+    // We now insert a larger number of rows to ensure that the copy stream
+    // is not buffered and the commit is sent only after the copy stream is done.
+    let expected_rows_count = 1_0000;
+
     database
-        .insert_values(
+        .insert_generate_series(
             test_table_name("table_1"),
             &["age"],
-            &[&10 as &(dyn ToSql + Sync + 'static)],
+            1,
+            expected_rows_count,
+            1,
         )
         .await
         .unwrap();
@@ -332,11 +343,14 @@ async fn test_table_copy_stream_is_consistent() {
         )
         .await
         .unwrap();
-    transaction.commit().await.unwrap();
 
     let rows_count = count_stream_rows(stream).await;
-    // We expect to have only one row since we just inserted one.
-    assert_eq!(rows_count, 1);
+
+    // Transaction should be committed after the copy stream is exhausted.
+    transaction.commit().await.unwrap();
+
+    // We expect to have the inserted number of rows.
+    assert_eq!(rows_count, expected_rows_count as u64);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -130,6 +130,29 @@ impl PgDatabase {
         self.client.execute(&insert_query, values).await
     }
 
+    /// Generates values using PostgreSQL's `generate_series` function
+    /// and inserts them into the specified table.
+    pub async fn insert_generate_series(
+        &self,
+        table_name: TableName,
+        columns: &[&str],
+        start: i64,
+        end: i64,
+        step: i64,
+    ) -> Result<u64, tokio_postgres::Error> {
+        let columns_str = columns.join(", ");
+        let values = (1..=columns.len())
+            .map(|_| format!("generate_series({}, {}, {})", start, end, step))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let insert_query = format!(
+            "insert into {} ({columns_str}) values ({values})",
+            table_name.as_quoted_identifier(),
+        );
+
+        self.client.execute(&dbg!(insert_query), &[]).await
+    }
+
     /// Updates all rows in the specified table with the given values.
     pub async fn update_values(
         &self,
