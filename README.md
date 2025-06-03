@@ -77,19 +77,6 @@ To run the test suite:
 cargo test
 ```
 
-For more specific test targets:
-
-```bash
-# Run tests for a specific crate
-cargo test -p etl
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Run a specific test
-cargo test test_name
-```
-
 ## Docker
 
 The repository includes Docker support for both the `replicator` and `api` components:

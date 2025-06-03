@@ -16,6 +16,7 @@ For local development, we use a single PostgreSQL database that serves the API, 
 Before running the script, ensure you have the following installed:
 - PostgreSQL client (`psql`)
 - Docker (if you want to run PostgreSQL in a container)
+- Rust toolchain
 - SQLx CLI (if you plan to run migrations)
 
 To install SQLx CLI, run:
@@ -55,7 +56,7 @@ This will:
 
 #### Skip Docker Container
 
-To skip the Docker container setup (useful if you're running PostgreSQL locally):
+To skip the Docker container setup (useful if you're already running PostgreSQL locally):
 
 ```bash
 SKIP_DOCKER=1 ./scripts/init_db.sh
@@ -76,16 +77,3 @@ To specify a custom location for persistent storage:
 ```bash
 POSTGRES_DATA_VOLUME="/path/to/storage" ./scripts/init_db.sh
 ```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"PostgreSQL client (psql) is not installed"**
-   - Install PostgreSQL client using your system's package manager
-
-2. **"SQLx CLI is not installed"**
-   - Run the cargo install command provided in the Prerequisites section
-
-3. **"api/migrations folder not found"**
-   - Ensure you're running the script from the repository directory
