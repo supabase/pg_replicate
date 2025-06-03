@@ -57,9 +57,15 @@ jobs:
             sleep 1
           done
 
-      - name: Enable logical WAL
+      - name: Update WAL Settings
+        # This step is necessary to enable logical replication for the tests
+        # wal_level = logical is needed because we use logical replication in tests
+        # max_wal_senders = 100 is needed because we use multiple connections
+        # to the database in tests, without which the tests would fail
         run: |
-          PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres -c "ALTER SYSTEM SET wal_level = 'logical';"
+          PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres \
+            -c "ALTER SYSTEM SET wal_level = 'logical';" \
+            -c "ALTER SYSTEM SET max_wal_senders = 100;"
 
       - name: Restart Postgres service container
         run: |
