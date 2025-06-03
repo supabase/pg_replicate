@@ -37,21 +37,11 @@ impl TestStateStore {
         }
     }
 
-    pub async fn get_pipeline_states(&self) -> HashMap<PipelineId, PipelineState> {
-        let inner = self.inner.read().await;
-        inner.pipeline_states.clone()
-    }
-
     pub async fn get_table_replication_states(
         &self,
     ) -> HashMap<(PipelineId, Oid), TableReplicationState> {
         let inner = self.inner.read().await;
         inner.table_replication_states.clone()
-    }
-
-    pub async fn get_table_schemas(&self) -> HashMap<(PipelineId, Oid), TableSchema> {
-        let inner = self.inner.read().await;
-        inner.table_schemas.clone()
     }
 
     pub async fn notify_on_replication_state<F>(
@@ -83,10 +73,6 @@ impl TestStateStore {
             state.phase.as_type() == phase_type
         })
         .await
-    }
-
-    pub async fn refresh(&self) {
-        self.check_conditions().await;
     }
 
     async fn check_conditions(&self) {

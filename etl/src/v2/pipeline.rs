@@ -137,10 +137,7 @@ where
         .start()
         .await?;
 
-        self.workers = PipelineWorkers::Started {
-            apply_worker,
-            pool: pool,
-        };
+        self.workers = PipelineWorkers::Started { apply_worker, pool };
 
         Ok(())
     }

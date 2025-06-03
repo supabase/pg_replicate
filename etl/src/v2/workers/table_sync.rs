@@ -245,7 +245,7 @@ where
                 "No replication state found for table {}, cannot start sync worker",
                 self.table_id
             );
-            return Err(TableSyncWorkerError::ReplicationStateMissing(self.table_id).into());
+            return Err(TableSyncWorkerError::ReplicationStateMissing(self.table_id));
         };
 
         let state = TableSyncWorkerState::new(self.identity.clone(), relation_subscription_state);

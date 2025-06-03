@@ -74,9 +74,7 @@ where
                 return Ok(ApplyLoopResult::ApplyCompleted);
             }
             result = inner_apply_loop(&hook, replication_client.clone(), last_received, state_store.clone(), destination.clone()) => {
-                if let Err(err) = result {
-                    return Err(err);
-                }
+                result?;
             }
         }
     }

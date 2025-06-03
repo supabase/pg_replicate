@@ -1,7 +1,7 @@
 use etl::conversions::cdc_event::CdcEvent;
 use etl::conversions::table_row::TableRow;
 use etl::v2::destination::base::{Destination, DestinationError};
-use postgres::schema::{Oid, TableName, TableSchema};
+use postgres::schema::{Oid, TableSchema};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -55,36 +55,12 @@ impl TestDestination {
         }
     }
 
-    pub async fn get_events(&self) -> Vec<Arc<CdcEvent>> {
-        self.inner.read().await.events.clone()
-    }
-
     pub async fn get_table_schemas(&self) -> Vec<TableSchema> {
         self.inner.read().await.table_schemas.clone()
     }
 
     pub async fn get_table_rows(&self) -> HashMap<Oid, Vec<TableRow>> {
         self.inner.read().await.table_rows.clone()
-    }
-
-    pub async fn clear(&self) {
-        let mut inner = self.inner.write().await;
-        inner.events.clear();
-        inner.table_schemas.clear();
-        inner.table_rows.clear();
-    }
-
-    pub async fn notify_on_events<F>(&self, condition: F) -> Arc<Notify>
-    where
-        F: Fn(&[Arc<CdcEvent>]) -> bool + Send + Sync + 'static,
-    {
-        let notify = Arc::new(Notify::new());
-        let mut inner = self.inner.write().await;
-        inner
-            .event_conditions
-            .push((Box::new(condition), notify.clone()));
-
-        notify
     }
 
     pub async fn notify_on_schemas<F>(&self, condition: F) -> Arc<Notify>
@@ -100,35 +76,9 @@ impl TestDestination {
         notify
     }
 
-    pub async fn notify_on_table_rows<F>(&self, condition: F) -> Arc<Notify>
-    where
-        F: Fn(&HashMap<Oid, Vec<TableRow>>) -> bool + Send + Sync + 'static,
-    {
-        let notify = Arc::new(Notify::new());
-        let mut inner = self.inner.write().await;
-        inner
-            .table_row_conditions
-            .push((Box::new(condition), notify.clone()));
-
-        notify
-    }
-
-    pub async fn wait_for_schemas(&self, table_names: Vec<TableName>) -> Arc<Notify> {
-        self.notify_on_schemas(move |schemas| {
-            table_names
-                .iter()
-                .all(|required_name| schemas.iter().any(|schema| schema.name == *required_name))
-        })
-        .await
-    }
-
     pub async fn wait_for_n_schemas(&self, n: usize) -> Arc<Notify> {
         self.notify_on_schemas(move |schemas| schemas.len() == n)
             .await
-    }
-
-    pub async fn refresh(&self) {
-        self.check_conditions().await;
     }
 
     async fn check_conditions(&self) {

@@ -185,7 +185,7 @@ impl BatchDestination for BigQueryBatchDestination {
         table_id: TableId,
     ) -> Result<(), Self::Error> {
         let table_schema = self.get_table_schema(table_id)?;
-        let table_name = Self::table_name_in_bq(&table_schema.table_name);
+        let table_name = Self::table_name_in_bq(&table_schema.name);
         let table_descriptor = table_schema_to_descriptor(table_schema);
 
         for table_row in &mut table_rows {
@@ -254,7 +254,7 @@ impl BatchDestination for BigQueryBatchDestination {
 
         for (table_id, table_rows) in table_name_to_table_rows {
             let table_schema = self.get_table_schema(table_id)?;
-            let table_name = Self::table_name_in_bq(&table_schema.table_name);
+            let table_name = Self::table_name_in_bq(&table_schema.name);
             let table_descriptor = table_schema_to_descriptor(table_schema);
             self.client
                 .stream_rows(&self.dataset_id, table_name, &table_descriptor, &table_rows)
