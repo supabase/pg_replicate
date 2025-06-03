@@ -1,3 +1,10 @@
+use rustls::pki_types::CertificateDer;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::watch;
+use tokio_postgres::config::SslMode;
+use tracing::{error, info};
+
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
@@ -7,13 +14,6 @@ use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
-use postgres::tokio::options::PgDatabaseOptions;
-use rustls::pki_types::CertificateDer;
-use std::sync::Arc;
-use thiserror::Error;
-use tokio::sync::watch;
-use tokio_postgres::config::SslMode;
-use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
@@ -70,7 +70,6 @@ impl PipelineIdentity {
 pub struct Pipeline<S, D> {
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
-    options: PgDatabaseOptions,
     trusted_root_certs: Vec<CertificateDer<'static>>,
     state_store: S,
     destination: D,
@@ -86,7 +85,6 @@ where
     pub fn new(
         identity: PipelineIdentity,
         config: PipelineConfig,
-        options: PgDatabaseOptions,
         trusted_root_certs: Vec<CertificateDer<'static>>,
         state_store: S,
         destination: D,
@@ -98,7 +96,6 @@ where
         Self {
             identity,
             config: Arc::new(config),
-            options,
             trusted_root_certs,
             state_store,
             destination,
@@ -182,11 +179,13 @@ where
 
     async fn connect(&self) -> Result<PgReplicationClient, PipelineError> {
         // We create the main replication client that will be used by the apply worker.
-        let replication_client = match self.options.ssl_mode {
-            SslMode::Disable => PgReplicationClient::connect_no_tls(self.options.clone()).await?,
+        let replication_client = match self.config.pg_database_config.ssl_mode {
+            SslMode::Disable => {
+                PgReplicationClient::connect_no_tls(self.config.pg_database_config.clone()).await?
+            }
             _ => {
                 PgReplicationClient::connect_tls(
-                    self.options.clone(),
+                    self.config.pg_database_config.clone(),
                     self.trusted_root_certs.clone(),
                 )
                 .await?

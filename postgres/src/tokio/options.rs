@@ -1,13 +1,13 @@
 use tokio_postgres::Config;
 use tokio_postgres::config::SslMode;
 
-/// Connection options for a PostgreSQL database.
+/// Connection config for a PostgreSQL database.
 ///
 /// Contains the connection parameters needed to establish a connection to a PostgreSQL
 /// database server, including network location, authentication credentials, and security
 /// settings.
 #[derive(Debug, Clone)]
-pub struct PgDatabaseOptions {
+pub struct PgDatabaseConfig {
     /// Host name or IP address of the PostgreSQL server
     pub host: String,
     /// Port number that the PostgreSQL server listens on
@@ -22,7 +22,7 @@ pub struct PgDatabaseOptions {
     pub ssl_mode: SslMode,
 }
 
-impl PgDatabaseOptions {
+impl PgDatabaseConfig {
     /// Creates connection options for connecting to the PostgreSQL server without
     /// specifying a database.
     ///
@@ -48,12 +48,12 @@ impl PgDatabaseOptions {
     }
 }
 
-impl From<PgDatabaseOptions> for Config {
-    /// Converts [`PgDatabaseOptions`] into a [`Config`] instance.
+impl From<PgDatabaseConfig> for Config {
+    /// Converts [`PgDatabaseConfig`] into a [`Config`] instance.
     ///
     /// Sets all connection parameters including host, port, database name, username,
     /// SSL mode, and optional password.
-    fn from(value: PgDatabaseOptions) -> Self {
+    fn from(value: PgDatabaseConfig) -> Self {
         let mut config = Config::new();
         config
             .host(value.host)

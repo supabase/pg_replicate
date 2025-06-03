@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pg_escape::{quote_identifier, quote_literal};
 use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
-use postgres::tokio::options::PgDatabaseOptions;
+use postgres::tokio::options::PgDatabaseConfig;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use thiserror::Error;
@@ -63,7 +63,7 @@ pub enum ReplicationClientError {
 impl ReplicationClient {
     /// Connect to a postgres database in logical replication mode without TLS
     pub async fn connect_no_tls(
-        options: PgDatabaseOptions,
+        options: PgDatabaseConfig,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres without TLS");
 
@@ -91,7 +91,7 @@ impl ReplicationClient {
 
     /// Connect to a postgres database in logical replication mode with TLS
     pub async fn connect_tls(
-        options: PgDatabaseOptions,
+        options: PgDatabaseConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres with TLS");

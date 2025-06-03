@@ -1,5 +1,5 @@
 use crate::schema::{ColumnSchema, Oid, TableName};
-use crate::tokio::options::PgDatabaseOptions;
+use crate::tokio::options::PgDatabaseConfig;
 use tokio::runtime::Handle;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, NoTls};
@@ -11,12 +11,12 @@ pub enum TableModification<'a> {
 }
 
 pub struct PgDatabase {
-    pub options: PgDatabaseOptions,
+    pub options: PgDatabaseConfig,
     pub client: Client,
 }
 
 impl PgDatabase {
-    pub async fn new(options: PgDatabaseOptions) -> Self {
+    pub async fn new(options: PgDatabaseConfig) -> Self {
         let client = create_pg_database(&options).await;
 
         Self { options, client }
@@ -204,7 +204,7 @@ impl Drop for PgDatabase {
 /// Establishes a connection to the PostgreSQL server using the provided options,
 /// creates a new database, and returns a [`Client`] connected to the new database.
 /// Panics if the connection fails or if database creation fails.
-pub async fn create_pg_database(options: &PgDatabaseOptions) -> Client {
+pub async fn create_pg_database(options: &PgDatabaseConfig) -> Client {
     // Create the database via a single connection
     let (client, connection) = options
         .without_db()
@@ -246,9 +246,9 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> Client {
 ///
 /// Connects to the PostgreSQL server, forcefully terminates all active connections
 /// to the target database, and drops the database if it exists. Useful for cleaning
-/// up test databases. Takes a reference to [`PgDatabaseOptions`] specifying the database
+/// up test databases. Takes a reference to [`PgDatabaseConfig`] specifying the database
 /// to drop. Panics if any operation fails.
-pub async fn drop_pg_database(options: &PgDatabaseOptions) {
+pub async fn drop_pg_database(options: &PgDatabaseConfig) {
     // Connect to the default database
     let (client, connection) = options
         .without_db()
