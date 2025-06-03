@@ -11,7 +11,7 @@ pub type Oid = u32;
 ///
 /// This type represents a table identifier in PostgreSQL, which requires both a schema name
 /// and a table name. It provides methods for formatting the name in different contexts.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct TableName {
     /// The schema name containing the table
     pub schema: String,
@@ -34,21 +34,6 @@ impl TableName {
 impl fmt::Display for TableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{0}.{1}", self.schema, self.name))
-    }
-}
-
-impl PartialOrd for TableName {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TableName {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match self.schema.cmp(&other.schema) {
-            Ordering::Equal => self.name.cmp(&other.name),
-            other => other,
-        }
     }
 }
 
