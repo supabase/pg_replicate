@@ -231,7 +231,7 @@ impl DuckDbExecutor {
     ) -> Result<(), DuckDbExecutorError> {
         let table_schema = self.get_table_schema(table_id)?;
         self.client
-            .insert_row(&table_schema.table_name, &table_row)?;
+            .insert_row(&table_schema.name, &table_row)?;
         Ok(())
     }
 
@@ -270,7 +270,7 @@ impl DuckDbExecutor {
 
     fn truncate_table(&self, table_id: TableId) -> Result<(), DuckDbExecutorError> {
         let table_schema = self.get_table_schema(table_id)?;
-        self.client.truncate_table(&table_schema.table_name)?;
+        self.client.truncate_table(&table_schema.name)?;
         Ok(())
     }
 
