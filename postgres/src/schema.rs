@@ -125,9 +125,3 @@ impl Ord for TableSchema {
         self.name.cmp(&other.name)
     }
 }
-
-impl Borrow<Oid> for TableSchema {
-    fn borrow(&self) -> &Oid {
-        &self.id
-    }
-}
