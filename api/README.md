@@ -9,6 +9,15 @@ This API service provides a RESTful interface for managing PostgreSQL replicatio
 - Secure configuration with encryption
 - Deploy and manage replicators in Kubernetes
 
+## Features
+
+- RESTful API endpoints for pipeline management
+- Multi-tenant support with isolated configurations
+- Kubernetes deployment support
+- Secure configuration management
+- Database schema versioning with migrations
+- Integration with the core ETL system
+
 ## Table of Contents
 
 - [Local Setup](#local-setup)
@@ -27,6 +36,14 @@ Before you begin, ensure you have the following installed:
 - Rust toolchain
 
 ## Database Management
+
+For detailed instructions on setting up and managing the database, please refer to our [Database Setup Guide](../../docs/database-setup.md). The guide covers:
+
+- Prerequisites and installation
+- Environment variables configuration
+- Basic and advanced usage
+- Troubleshooting common issues
+- Container management
 
 ### Initial Setup
 
