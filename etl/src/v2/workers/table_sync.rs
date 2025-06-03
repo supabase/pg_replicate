@@ -280,7 +280,7 @@ where
             };
 
             // If we succeed syncing the table, we want to start the same apply loop as in the apply
-            // worker.
+            // worker with the consistent point as the starting point.
             let hook = Hook::new(self.table_id);
             start_apply_loop(
                 hook,
