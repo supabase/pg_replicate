@@ -145,7 +145,10 @@ async fn test_replication_client_doesnt_recreate_slot() {
 
     let slot_name = test_slot_name("my_slot");
     assert!(client.create_slot(&slot_name).await.is_ok());
-    assert!(client.create_slot(&slot_name).await.is_err());
+    assert!(matches!(
+        client.create_slot(&slot_name).await,
+        Err(PgReplicationError::SlotAlreadyExists(_))
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]

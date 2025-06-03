@@ -54,6 +54,9 @@ pub enum PgReplicationError {
     #[error("Replication slot '{0}' not found in database")]
     SlotNotFound(String),
 
+    #[error("Replication slot '{0}' already exists in database")]
+    SlotAlreadyExists(String),
+
     #[error("Invalid replication slot response: missing required fields in server response")]
     SlotResponseInvalid,
 
@@ -485,16 +488,30 @@ impl PgReplicationClient {
             quote_identifier(slot_name),
             snapshot_option
         );
-
-        let results = self.inner.client.simple_query(&query).await?;
-        for result in results {
-            if let SimpleQueryMessage::Row(row) = result {
-                let consistent_point =
-                    Self::get_row_value::<PgLsn>(&row, "consistent_point", "pg_replication_slots")
+        match self.inner.client.simple_query(&query).await {
+            Ok(results) => {
+                for result in results {
+                    if let SimpleQueryMessage::Row(row) = result {
+                        let consistent_point = Self::get_row_value::<PgLsn>(
+                            &row,
+                            "consistent_point",
+                            "pg_replication_slots",
+                        )
                         .await?;
-                let slot = CreateSlotResult { consistent_point };
+                        let slot = CreateSlotResult { consistent_point };
 
-                return Ok(slot);
+                        return Ok(slot);
+                    }
+                }
+            }
+            Err(err) => {
+                if let Some(code) = err.code() {
+                    if *code == SqlState::DUPLICATE_OBJECT {
+                        return Err(PgReplicationError::SlotAlreadyExists(slot_name.to_string()));
+                    }
+                }
+
+                return Err(err.into());
             }
         }
 
