@@ -1,15 +1,16 @@
-use postgres::schema::Oid;
-use std::future::Future;
-use thiserror::Error;
-use tokio::sync::watch;
-use tokio::task;
-use tokio_postgres::types::PgLsn;
-
+use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::PgReplicationClient;
 use crate::v2::state::store::base::StateStore;
 use crate::v2::workers::apply::ApplyWorkerHookError;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
+use postgres::schema::Oid;
+use std::future::Future;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::watch;
+use tokio::task;
+use tokio_postgres::types::PgLsn;
 
 // TODO: figure out how to break the cycle and remove `Box`.
 #[derive(Debug, Error)]
@@ -55,6 +56,7 @@ pub trait ApplyLoopHook {
 
 pub async fn start_apply_loop<S, D, T>(
     hook: T,
+    config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     last_received: PgLsn,
     state_store: S,
@@ -73,7 +75,7 @@ where
             _ = shutdown_rx.changed() => {
                 return Ok(ApplyLoopResult::ApplyCompleted);
             }
-            result = inner_apply_loop(&hook, replication_client.clone(), last_received, state_store.clone(), destination.clone()) => {
+            result = inner_apply_loop(&hook, config.clone(), replication_client.clone(), last_received, state_store.clone(), destination.clone()) => {
                 result?;
             }
         }
@@ -82,6 +84,7 @@ where
 
 async fn inner_apply_loop<S, D, T>(
     hook: &T,
+    _config: Arc<PipelineConfig>,
     _replication_client: PgReplicationClient,
     _last_received: PgLsn,
     _state_store: S,

@@ -8,6 +8,7 @@ use tokio_postgres::types::PgLsn;
 use tracing::{info, warn};
 
 use crate::v2::concurrency::future::ReactiveFuture;
+use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
@@ -189,6 +190,7 @@ impl WorkerHandle<TableSyncWorkerState> for TableSyncWorkerHandle {
 #[derive(Debug)]
 pub struct TableSyncWorker<S, D> {
     identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
     table_id: Oid,
@@ -200,6 +202,7 @@ pub struct TableSyncWorker<S, D> {
 impl<S, D> TableSyncWorker<S, D> {
     pub fn new(
         identity: PipelineIdentity,
+        config: Arc<PipelineConfig>,
         replication_client: PgReplicationClient,
         pool: TableSyncWorkerPool,
         table_id: Oid,
@@ -209,6 +212,7 @@ impl<S, D> TableSyncWorker<S, D> {
     ) -> Self {
         Self {
             identity,
+            config,
             replication_client,
             pool,
             table_id,
@@ -255,6 +259,7 @@ where
             // We first start syncing the table.
             let result = start_table_sync(
                 self.identity.clone(),
+                self.config.clone(),
                 self.replication_client.clone(),
                 state_clone,
                 self.state_store.clone(),
@@ -284,6 +289,7 @@ where
             let hook = Hook::new(self.table_id);
             start_apply_loop(
                 hook,
+                self.config,
                 self.replication_client,
                 consistent_point,
                 self.state_store,

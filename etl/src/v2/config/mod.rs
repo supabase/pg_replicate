@@ -1,2 +1,2 @@
 pub mod batch;
-mod pipeline;
+pub mod pipeline;

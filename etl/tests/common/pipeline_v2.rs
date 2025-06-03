@@ -1,3 +1,4 @@
+use etl::v2::config::pipeline::PipelineConfig;
 use etl::v2::destination::base::Destination;
 use etl::v2::pipeline::{Pipeline, PipelineIdentity};
 use etl::v2::state::store::base::StateStore;
@@ -13,10 +14,12 @@ where
     S: StateStore + Clone + Send + Sync + 'static,
     D: Destination + Clone + Send + Sync + 'static,
 {
-    let pipeline_identity = PipelineIdentity::new(0, publication_name);
+    let identify = PipelineIdentity::new(0, publication_name);
+    let config = PipelineConfig::default();
 
     let pipeline = Pipeline::new(
-        pipeline_identity,
+        identify,
+        config,
         options.clone(),
         vec![],
         state_store,

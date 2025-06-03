@@ -1,3 +1,4 @@
+use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::state::pipeline::PipelineState;
@@ -8,6 +9,7 @@ use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use postgres::tokio::options::PgDatabaseOptions;
 use rustls::pki_types::CertificateDer;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio_postgres::config::SslMode;
@@ -67,6 +69,7 @@ impl PipelineIdentity {
 #[derive(Debug)]
 pub struct Pipeline<S, D> {
     identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
     options: PgDatabaseOptions,
     trusted_root_certs: Vec<CertificateDer<'static>>,
     state_store: S,
@@ -82,14 +85,19 @@ where
 {
     pub fn new(
         identity: PipelineIdentity,
+        config: PipelineConfig,
         options: PgDatabaseOptions,
         trusted_root_certs: Vec<CertificateDer<'static>>,
         state_store: S,
         destination: D,
     ) -> Self {
+        // We create a watch channel of unit types since this is just used to notify all subscribers
+        // that shutdown is needed.
         let (shutdown_tx, _) = watch::channel(());
+
         Self {
             identity,
+            config: Arc::new(config),
             options,
             trusted_root_certs,
             state_store,
@@ -128,6 +136,7 @@ where
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
             self.identity.clone(),
+            self.config.clone(),
             replication_client,
             pool.clone(),
             self.state_store.clone(),

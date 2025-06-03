@@ -1,5 +1,5 @@
 use crate::v2::concurrency::stream::BoundedBatchStream;
-use crate::v2::config::batch::BatchConfig;
+use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
@@ -9,6 +9,7 @@ use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use futures::StreamExt;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::pin;
 use tokio::sync::watch;
@@ -46,6 +47,7 @@ pub enum TableSyncResult {
 
 pub async fn start_table_sync<S, D>(
     identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     table_sync_worker_state: TableSyncWorkerState,
     state_store: S,
@@ -136,7 +138,7 @@ where
     let table_copy_stream = TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
     // TODO: supply the actual pipeline config.
     let table_copy_stream =
-        BoundedBatchStream::wrap(table_copy_stream, BatchConfig::default(), shutdown_rx);
+        BoundedBatchStream::wrap(table_copy_stream, config.batch_config.clone(), shutdown_rx);
     pin!(table_copy_stream);
 
     // We start consuming the table stream. If any error occurs, we will bail the entire copy since

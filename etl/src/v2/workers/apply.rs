@@ -1,10 +1,4 @@
-use postgres::schema::Oid;
-use thiserror::Error;
-use tokio::sync::watch;
-use tokio::task::JoinHandle;
-use tokio_postgres::types::PgLsn;
-use tracing::{error, info};
-
+use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
@@ -16,6 +10,13 @@ use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerError, TableSyncWorkerStateError,
 };
+use postgres::schema::Oid;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
+use tokio_postgres::types::PgLsn;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum ApplyWorkerError {
@@ -60,6 +61,7 @@ impl WorkerHandle<()> for ApplyWorkerHandle {
 #[derive(Debug)]
 pub struct ApplyWorker<S, D> {
     identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
     state_store: S,
@@ -70,6 +72,7 @@ pub struct ApplyWorker<S, D> {
 impl<S, D> ApplyWorker<S, D> {
     pub fn new(
         identity: PipelineIdentity,
+        config: Arc<PipelineConfig>,
         replication_client: PgReplicationClient,
         pool: TableSyncWorkerPool,
         state_store: S,
@@ -78,6 +81,7 @@ impl<S, D> ApplyWorker<S, D> {
     ) -> Self {
         Self {
             identity,
+            config,
             replication_client,
             pool,
             state_store,
@@ -108,6 +112,7 @@ where
             // by the destination.
             let hook = Hook::new(
                 self.identity,
+                self.config.clone(),
                 self.replication_client.clone(),
                 self.pool,
                 self.state_store.clone(),
@@ -116,6 +121,7 @@ where
             );
             start_apply_loop(
                 hook,
+                self.config,
                 self.replication_client,
                 pipeline_state.last_lsn,
                 self.state_store,
@@ -138,6 +144,7 @@ where
 #[derive(Debug)]
 struct Hook<S, D> {
     identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
     state_store: S,
@@ -148,6 +155,7 @@ struct Hook<S, D> {
 impl<S, D> Hook<S, D> {
     fn new(
         identity: PipelineIdentity,
+        config: Arc<PipelineConfig>,
         replication_client: PgReplicationClient,
         pool: TableSyncWorkerPool,
         state_store: S,
@@ -156,6 +164,7 @@ impl<S, D> Hook<S, D> {
     ) -> Self {
         Self {
             identity,
+            config,
             replication_client,
             pool,
             state_store,
@@ -232,6 +241,7 @@ where
                     Ok(duplicate_replication_client) => {
                         let worker = TableSyncWorker::new(
                             self.identity.clone(),
+                            self.config.clone(),
                             duplicate_replication_client,
                             self.pool.clone(),
                             table_replication_state.id,
