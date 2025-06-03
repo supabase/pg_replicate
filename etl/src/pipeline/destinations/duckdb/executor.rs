@@ -230,8 +230,7 @@ impl DuckDbExecutor {
         table_row: TableRow,
     ) -> Result<(), DuckDbExecutorError> {
         let table_schema = self.get_table_schema(table_id)?;
-        self.client
-            .insert_row(&table_schema.name, &table_row)?;
+        self.client.insert_row(&table_schema.name, &table_row)?;
         Ok(())
     }
 
