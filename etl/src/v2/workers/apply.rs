@@ -97,14 +97,13 @@ where
     async fn start(self) -> Result<ApplyWorkerHandle, Self::Error> {
         info!("Starting apply worker");
 
-        // We load the initial state that will be used for the apply worker.
-        let pipeline_state = self
-            .state_store
-            .load_pipeline_state(self.identity.id())
-            .await
-            .map_err(ApplyWorkerError::StateStoreError)?;
-
         let apply_worker = async move {
+            // We load the initial state that will be used for the apply worker.
+            let pipeline_state = self
+                .state_store
+                .load_pipeline_state(self.identity.id())
+                .await?;
+
             // We start the applying loop by starting from the last LSN that we know was applied
             // by the destination.
             let hook = Hook::new(

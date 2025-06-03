@@ -233,6 +233,8 @@ where
     async fn start(self) -> Result<TableSyncWorkerHandle, Self::Error> {
         info!("Starting table sync worker for table {}", self.table_id);
 
+        // TODO: maybe we can optimize the performance by doing this loading within the task and
+        //  implementing a mechanism for table sync state to be updated after the fact.
         let Some(relation_subscription_state) = self
             .state_store
             .load_table_replication_state(self.identity.id(), self.table_id)
@@ -262,7 +264,7 @@ where
             .await;
 
             // We handle the result of the table sync operation gracefully.
-            let consistent_point = match result {
+            let _consistent_point = match result {
                 Ok(result) => {
                     match result {
                         TableSyncResult::SyncNotRequired => {
