@@ -29,6 +29,7 @@ pub struct TableSyncWorkerPoolInner {
     /// Having the state of finished workers gives us the power to reschedule failed table sync
     /// workers very cheaply since the state can be fed into a new table worker future as if it was
     /// read initially from the state store.
+    // TODO: make it a bounded history to guard memory usage.
     inactive: HashMap<Oid, Vec<(TableSyncWorkerInactiveReason, TableSyncWorkerHandle)>>,
     waiting: Option<Arc<Notify>>,
 }

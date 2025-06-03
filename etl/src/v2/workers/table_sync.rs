@@ -264,7 +264,7 @@ where
             .await;
 
             // We handle the result of the table sync operation gracefully.
-            let _consistent_point = match result {
+            let consistent_point = match result {
                 Ok(result) => {
                     match result {
                         TableSyncResult::SyncNotRequired => {
@@ -280,15 +280,12 @@ where
             };
 
             // If we succeed syncing the table, we want to start the same apply loop as in the apply
-            // worker but starting from the `0/0` LSN which means that the slot is starting streaming
-            // from its consistent snapshot.
-            // TODO: check if this is the right LSN to start with, maybe we want the consistent
-            //  point of the slot.
+            // worker.
             let hook = Hook::new(self.table_id);
             start_apply_loop(
                 hook,
                 self.replication_client,
-                PgLsn::from(0),
+                consistent_point,
                 self.state_store,
                 self.destination,
                 self.shutdown_rx,
