@@ -471,6 +471,10 @@ impl PgReplicationClient {
         slot_name: &str,
         use_snapshot: bool,
     ) -> PgReplicationResult<CreateSlotResult> {
+        // Do not convert the query or the options to lowercase, since the lexer for
+        // replication commands (repl_scanner.l) in Postgres code expects the commands
+        // in uppercase. This probably should be fixed in upstream, but for now we will
+        // keep the commands in uppercase.
         let snapshot_option = if use_snapshot {
             "USE_SNAPSHOT"
         } else {
