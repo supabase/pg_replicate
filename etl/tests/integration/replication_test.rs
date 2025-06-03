@@ -5,7 +5,7 @@ use postgres::tokio::test_utils::{PgDatabase, TableModification};
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
 use postgres_replication::LogicalReplicationStream;
 use tokio::pin;
-use tokio_postgres::types::Type;
+use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyOutStream;
 
 use crate::common::database::{spawn_database, test_table_name};
@@ -301,7 +301,11 @@ async fn test_table_copy_stream_is_consistent() {
         .await
         .unwrap();
     database
-        .insert_values(test_table_name("table_1"), &["age"], &[&10])
+        .insert_values(
+            test_table_name("table_1"),
+            &["age"],
+            &[&10 as &(dyn ToSql + Sync + 'static)],
+        )
         .await
         .unwrap();
 
@@ -405,7 +409,11 @@ async fn test_start_logical_replication() {
         .unwrap();
     for i in 0..10 {
         database
-            .insert_values(test_table_name("table_1"), &["age"], &[&i])
+            .insert_values(
+                test_table_name("table_1"),
+                &["age"],
+                &[&i as &(dyn ToSql + Sync + 'static)],
+            )
             .await
             .unwrap();
     }

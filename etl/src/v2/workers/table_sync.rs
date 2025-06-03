@@ -200,6 +200,7 @@ pub struct TableSyncWorker<S, D> {
 }
 
 impl<S, D> TableSyncWorker<S, D> {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         identity: PipelineIdentity,
         config: Arc<PipelineConfig>,
