@@ -10,7 +10,7 @@ A Rust crate to quickly build replication solutions for Postgres. It provides bu
 - [Features](#features)
 - [Installation](#installation)
 - [Quickstart](#quickstart)
-- [Usage](#usage)
+- [Examples](#examples)
 - [Database Setup](#database-setup)
 - [Running Tests](#running-tests)
 - [Docker](#docker)
@@ -60,55 +60,9 @@ cargo run -p etl --example stdout --features="stdout" -- --db-host localhost --d
 
 In the above example, `etl` connects to a Postgres database named `postgres` running on `localhost:5432` with a username `postgres` and password `password`. The slot name `stdout_slot` will be created by `etl` automatically.
 
-## Usage
+## Examples
 
-Here's a basic example of how to use `etl` in your Rust code:
-
-```rust
-use std::error::Error;
-use etl::pipeline::{
-    data_pipeline::DataPipeline,
-    destinations::stdout::StdoutDestination,
-    sources::postgres::{PostgresSource, TableNamesFrom},
-    PipelineAction,
-};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let host = "localhost";
-    let port = 5432;
-    let database = "postgres";
-    let username = "postgres";
-    let password = Some("password".to_string());
-    let slot_name = Some("my_slot".to_string());
-    let table_names = TableNamesFrom::Publication("my_publication".to_string());
-
-    // Create a PostgresSource
-    let postgres_source = PostgresSource::new(
-        host,
-        port,
-        database,
-        username,
-        password,
-        slot_name,
-        table_names,
-    )
-    .await?;
-
-    // Create a StdoutDestination
-    let stdout_destination = StdoutDestination;
-
-    // Create a `DataPipeline` to connect the source to the destination
-    let mut pipeline = DataPipeline::new(postgres_source, stdout_destination, PipelineAction::Both);
-
-    // Start the `DataPipeline` to start copying data from Postgres to stdout
-    pipeline.start().await?;
-
-    Ok(())
-}
-```
-
-For more examples, please refer to the [examples](https://github.com/supabase/etl/tree/main/etl/examples) folder in the source.
+For code examples on how to use `etl`, please refer to the [examples](https://github.com/supabase/etl/tree/main/etl/examples) folder in the source.
 
 ## Database Setup
 
