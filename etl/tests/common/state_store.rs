@@ -121,7 +121,7 @@ impl StateStore for TestStateStore {
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
         let mut inner = self.inner.write().await;
-        let pipeline_id = state.id.clone();
+        let pipeline_id = state.id;
 
         if !overwrite && inner.pipeline_states.contains_key(&pipeline_id) {
             return Ok(false);

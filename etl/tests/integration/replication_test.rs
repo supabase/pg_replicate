@@ -412,7 +412,7 @@ async fn test_start_logical_replication() {
 
     // We start the cdc of events from the consistent point.
     let stream = parent_client
-        .start_logical_replication("my_publication", &slot_name, slot.consistent_point.clone())
+        .start_logical_replication("my_publication", &slot_name, slot.consistent_point)
         .await
         .unwrap();
     let counts = count_stream_components(stream, |counts| counts.insert_count == 10).await;
@@ -426,7 +426,7 @@ async fn test_start_logical_replication() {
 
     // We try to stream again from that consistent point and see if we get the same data.
     let stream = parent_client
-        .start_logical_replication("my_publication", &slot_name, slot.consistent_point.clone())
+        .start_logical_replication("my_publication", &slot_name, slot.consistent_point)
         .await
         .unwrap();
     let counts = count_stream_components(stream, |counts| counts.insert_count == 10).await;

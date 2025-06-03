@@ -272,7 +272,7 @@ mod tests {
         let table_id = 1;
 
         let future = ReactiveFuture::new(ImmediateFuture, table_id, callback.clone());
-        future.await;
+        future.await.unwrap();
 
         let guard = callback.read().await;
         assert!(guard.complete_called);

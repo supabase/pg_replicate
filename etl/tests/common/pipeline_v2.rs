@@ -21,7 +21,5 @@ where
         batch_config: BatchConfig::default(),
     };
 
-    let pipeline = Pipeline::new(identify, config, vec![], state_store, destination);
-
-    pipeline
+    Pipeline::new(identify, config, vec![], state_store, destination)
 }
