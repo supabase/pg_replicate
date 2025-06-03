@@ -123,7 +123,7 @@ impl TableSyncWorkerState {
         }
     }
 
-    pub fn inner(&self) -> &RwLock<TableSyncWorkerStateInner> {
+    pub fn get_inner(&self) -> &RwLock<TableSyncWorkerStateInner> {
         &self.inner
     }
 

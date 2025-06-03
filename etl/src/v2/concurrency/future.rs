@@ -45,7 +45,7 @@ pin_project! {
         callback_fut: Option<BoxFuture<'static, ()>>,
         state: ReactiveFutureState,
         id: I,
-        callback: Arc<RwLock<C>>,
+        callback_source: Arc<RwLock<C>>,
         original_error: Option<E>,
         original_panic: Option<Box<dyn Any + Send>>
     }
@@ -59,13 +59,13 @@ where
     ///
     /// The callback will be notified of either success or failure, and will receive the provided
     /// identifier to track which future completed.
-    pub fn new(future: Fut, id: I, callback: Arc<RwLock<C>>) -> Self {
+    pub fn new(future: Fut, id: I, callback_source: Arc<RwLock<C>>) -> Self {
         Self {
             future: AssertUnwindSafe(future).catch_unwind(),
             callback_fut: None,
             state: ReactiveFutureState::PollInnerFuture,
             id,
-            callback,
+            callback_source,
             original_error: None,
             original_panic: None,
         }
@@ -123,11 +123,11 @@ where
                 ReactiveFutureState::InvokeCallback(error) => {
                     if this.callback_fut.is_none() {
                         let id = this.id.clone();
-                        let callback = this.callback.clone();
+                        let callback_source = this.callback_source.clone();
                         let error = error.clone();
 
                         let callback_fut = async move {
-                            let mut guard = callback.write().await;
+                            let mut guard = callback_source.write().await;
                             match error {
                                 Some(err) => guard.on_error(id, err),
                                 None => guard.on_complete(id),

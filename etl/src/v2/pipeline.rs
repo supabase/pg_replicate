@@ -35,7 +35,7 @@ enum PipelineWorkers {
         // TODO: investigate whether we could benefit from a central launcher that deals at a high-level
         //  with workers management, which should not be done in the pipeline.
         apply_worker: ApplyWorkerHandle,
-        table_sync_workers: TableSyncWorkerPool,
+        pool: TableSyncWorkerPool,
     },
 }
 
@@ -139,7 +139,7 @@ where
 
         self.workers = PipelineWorkers::Started {
             apply_worker,
-            table_sync_workers: pool,
+            pool: pool,
         };
 
         Ok(())
@@ -191,36 +191,33 @@ where
     }
 
     pub async fn wait(self) -> Result<(), Vec<WorkerWaitError>> {
-        let PipelineWorkers::Started {
-            apply_worker,
-            table_sync_workers,
-        } = self.workers
-        else {
+        let PipelineWorkers::Started { apply_worker, pool } = self.workers else {
             info!("Pipeline was not started, nothing to wait for");
             return Ok(());
         };
 
-        // TODO: handle failure of errors on wait.
         info!("Waiting for pipeline workers to complete");
+
         // We first wait for the apply worker to finish, since that must be done before waiting for
         // the table sync workers to finish, otherwise if we wait for sync workers first, we might
         // be having the apply worker that spawns new sync workers after we waited for the current
         // ones to finish.
-        apply_worker
-            .wait()
-            .await
-            .map_err(|e| vec![e])?;
+        apply_worker.wait().await.map_err(|e| vec![e])?;
         info!("Apply worker completed");
 
-        let mut table_sync_workers = table_sync_workers.write().await;
-        table_sync_workers.wait_all().await?;
+        pool.wait_all().await?;
         info!("All table sync workers completed");
-        
+
         Ok(())
     }
 
     pub async fn shutdown(&self) {
         info!("Shutting down pipeline");
         let _ = self.shutdown_tx.send(());
+    }
+
+    pub async fn shutdown_and_wait(self) -> Result<(), Vec<WorkerWaitError>> {
+        self.shutdown().await;
+        self.wait().await
     }
 }

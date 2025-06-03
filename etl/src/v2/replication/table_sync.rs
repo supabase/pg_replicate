@@ -56,7 +56,7 @@ where
     S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
-    let inner = table_sync_worker_state.inner().read().await;
+    let inner = table_sync_worker_state.get_inner().read().await;
 
     let table_id = inner.table_id();
     let phase_type = inner.replication_phase().as_type();
@@ -102,7 +102,7 @@ where
     }
 
     // We are ready to start copying table data, and we update the state accordingly.
-    let mut inner = table_sync_worker_state.inner().write().await;
+    let mut inner = table_sync_worker_state.get_inner().write().await;
     inner
         .set_phase_with(TableReplicationPhase::DataSync, state_store.clone())
         .await?;
@@ -138,7 +138,7 @@ where
     let table_copy_stream =
         BoundedBatchStream::wrap(table_copy_stream, BatchConfig::default(), shutdown_rx);
     pin!(table_copy_stream);
-    
+
     // We start consuming the table stream. If any error occurs, we will bail the entire copy since
     // we want to be fully consistent.
     while let Some(table_rows) = table_copy_stream.next().await {
@@ -151,7 +151,7 @@ where
     //
     // Note that `FinishedCopy` will be saved to the store but `SyncWait` will be just saved in the
     // table sync state.
-    let mut inner = table_sync_worker_state.inner().write().await;
+    let mut inner = table_sync_worker_state.get_inner().write().await;
     inner
         .set_phase_with(TableReplicationPhase::FinishedCopy, state_store.clone())
         .await?;

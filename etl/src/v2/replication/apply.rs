@@ -1,8 +1,8 @@
 use postgres::schema::Oid;
 use std::future::Future;
 use thiserror::Error;
-use tokio::task;
 use tokio::sync::watch;
+use tokio::task;
 use tokio_postgres::types::PgLsn;
 
 use crate::v2::destination::base::Destination;
@@ -55,10 +55,10 @@ pub trait ApplyLoopHook {
 
 pub async fn start_apply_loop<S, D, T>(
     hook: T,
-    _replication_client: PgReplicationClient,
-    _last_received: PgLsn,
-    _state_store: S,
-    _destination: D,
+    replication_client: PgReplicationClient,
+    last_received: PgLsn,
+    state_store: S,
+    destination: D,
     mut shutdown_rx: watch::Receiver<()>,
 ) -> Result<ApplyLoopResult, ApplyLoopError>
 where
@@ -69,14 +69,34 @@ where
 {
     loop {
         tokio::select! {
+            biased;
             _ = shutdown_rx.changed() => {
                 return Ok(ApplyLoopResult::ApplyCompleted);
             }
-            _ = async {
-                hook.process_syncing_tables(PgLsn::from(0)).await?;
-                task::yield_now().await;
-                Ok::<(), ApplyLoopError>(())
-            } => {}
+            result = inner_apply_loop(&hook, replication_client.clone(), last_received, state_store.clone(), destination.clone()) => {
+                if let Err(err) = result {
+                    return Err(err);
+                }
+            }
         }
     }
+}
+
+async fn inner_apply_loop<S, D, T>(
+    hook: &T,
+    _replication_client: PgReplicationClient,
+    _last_received: PgLsn,
+    _state_store: S,
+    _destination: D,
+) -> Result<ApplyLoopResult, ApplyLoopError>
+where
+    S: StateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    hook.process_syncing_tables(PgLsn::from(0)).await?;
+    task::yield_now().await;
+
+    Ok(ApplyLoopResult::ApplyCompleted)
 }

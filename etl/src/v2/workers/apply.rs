@@ -1,7 +1,7 @@
 use postgres::schema::Oid;
 use thiserror::Error;
-use tokio::task::JoinHandle;
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 use tracing::{error, info};
 
@@ -200,7 +200,7 @@ where
                         pool.get_worker_state(table_replication_state.id)
                     {
                         let mut catchup_started = false;
-                        let mut inner = table_sync_worker_state.inner().write().await;
+                        let mut inner = table_sync_worker_state.get_inner().write().await;
                         if inner.replication_phase().as_type()
                             == TableReplicationPhaseType::SyncWait
                         {
@@ -241,8 +241,8 @@ where
                             self.shutdown_rx.clone(),
                         );
 
-                        let mut table_sync_workers = self.pool.write().await;
-                        if let Err(err) = table_sync_workers.start_worker(worker).await {
+                        let mut pool = self.pool.write().await;
+                        if let Err(err) = pool.start_worker(worker).await {
                             // TODO: check if we want to build a backoff mechanism for retrying the
                             //  spawning of new table sync workers.
                             error!(
@@ -267,7 +267,7 @@ where
             return false;
         };
 
-        let inner = table_sync_worker_state.inner().read().await;
+        let inner = table_sync_worker_state.get_inner().read().await;
         match inner.replication_phase() {
             TableReplicationPhase::Ready { .. } => true,
             TableReplicationPhase::SyncDone { lsn } => lsn <= remote_final_lsn,

@@ -6,6 +6,8 @@ use etl::conversions::Cell;
 use etl::v2::state::table::TableReplicationPhaseType;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{PgDatabase, TableModification};
+use std::time::Duration;
+use tokio::time::timeout;
 use tokio_postgres::types::Type;
 
 #[derive(Debug)]
@@ -176,10 +178,11 @@ async fn test_table_schema_copy_with_retry() {
     // We start the pipeline.
     pipeline.start().await.unwrap();
 
-    // Wait for notifications with timeout
-    schemas_notify.wait_with_timeout().await;
-    users_state_notify.wait_with_timeout().await;
-    orders_state_notify.wait_with_timeout().await;
+    schemas_notify.wait().await;
+    users_state_notify.wait().await;
+    orders_state_notify.wait().await;
+
+    pipeline.shutdown_and_wait().await.unwrap();
 
     // We check that the states are correctly set.
     let table_replication_states = state_store.get_table_replication_states().await;
@@ -248,6 +251,12 @@ async fn test_table_schema_copy_with_retry() {
 
     schemas_notify.notified().await;
 
+    // pipeline.shutdown_and_wait().await.unwrap();
+    timeout(Duration::from_secs(5), pipeline.shutdown_and_wait())
+        .await
+        .unwrap()
+        .unwrap();
+
     // We check that the table schema for orders has changed and for users has not.
     let mut second_table_schemas = destination.get_table_schemas().await;
     second_table_schemas.sort();
@@ -304,8 +313,10 @@ async fn test_table_copy() {
     pipeline.start().await.unwrap();
 
     // Wait for notifications with timeout
-    users_state_notify.wait_with_timeout().await;
-    orders_state_notify.wait_with_timeout().await;
+    users_state_notify.wait().await;
+    orders_state_notify.wait().await;
+
+    pipeline.shutdown_and_wait().await.unwrap();
 
     // Get all CDC events
     let table_rows = destination.get_table_rows().await;
@@ -321,7 +332,4 @@ async fn test_table_copy() {
     let age_sum =
         get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
     assert_eq!(age_sum, expected_age_sum);
-    
-    pipeline.shutdown().await;
-    pipeline.wait().await.unwrap();
 }
