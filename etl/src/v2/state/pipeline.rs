@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Clone)]
@@ -25,9 +24,3 @@ impl PartialEq for PipelineState {
 }
 
 impl Eq for PipelineState {}
-
-impl Borrow<u64> for PipelineState {
-    fn borrow(&self) -> &u64 {
-        &self.id
-    }
-}
