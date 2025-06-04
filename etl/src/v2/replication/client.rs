@@ -306,6 +306,7 @@ impl PgReplicationClient {
     ///
     /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.
     pub async fn delete_slot(&self, slot_name: &str) -> PgReplicationResult<()> {
+        // Do not convert the query or the options to lowercase, see comment in `create_slot_internal`.
         let query = format!(r#"DROP_REPLICATION_SLOT {};"#, quote_identifier(slot_name));
 
         match self.inner.client.simple_query(&query).await {
@@ -402,6 +403,7 @@ impl PgReplicationClient {
         slot_name: &str,
         start_lsn: PgLsn,
     ) -> PgReplicationResult<LogicalReplicationStream> {
+        // Do not convert the query or the options to lowercase, see comment in `create_slot_internal`.
         let options = format!(
             r#"("proto_version" '1', "publication_names" {})"#,
             quote_literal(quote_identifier(publication_name).as_ref()),
@@ -727,6 +729,7 @@ impl PgReplicationClient {
 
         let table_name = self.get_table_name(table_id).await?;
 
+        // TODO: allow passing in format binary or text
         let copy_query = format!(
             r#"COPY {} ({}) TO STDOUT WITH (FORMAT text);"#,
             table_name.as_quoted_identifier(),
