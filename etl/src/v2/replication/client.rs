@@ -102,7 +102,7 @@ pub struct GetSlotResult {
 /// This type ensures that the parent connection remains active for the duration of any
 /// transaction spawned by that connection for a given slot.
 ///
-/// The `parent_client` is the client that created the slot and must be active for the duration of
+/// The `client` is the client that created the slot and must be active for the duration of
 /// the transaction for the snapshot of the slot to be consistent.
 #[derive(Debug)]
 pub struct PgReplicationSlotTransaction {
