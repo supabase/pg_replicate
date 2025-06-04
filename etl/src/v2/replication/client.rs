@@ -528,6 +528,8 @@ impl PgReplicationClient {
         for table_id in table_ids {
             let table_schema = self.get_table_schema(*table_id, publication_name).await?;
 
+            // TODO: this warning and skipping should not happen in this method,
+            // but rather higher in the stack.
             if !table_schema.has_primary_keys() {
                 warn!(
                     "table {} with id {} will not be copied because it has no primary key",
