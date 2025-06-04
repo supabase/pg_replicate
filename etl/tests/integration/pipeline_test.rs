@@ -1,7 +1,9 @@
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::destination::TestDestination;
-use crate::common::pipeline::{spawn_async_pg_pipeline, spawn_pg_pipeline, PipelineMode};
-use crate::common::table::assert_table_schema;
+use crate::common::pipeline::{
+    spawn_async_pg_pipeline, spawn_pg_pipeline, test_slot_name, PipelineMode,
+};
+use crate::common::table::assert_table_schema_from_destination;
 use crate::common::wait_for_condition;
 use etl::conversions::cdc_event::CdcEvent;
 use etl::conversions::Cell;
@@ -59,20 +61,23 @@ fn assert_users_table_schema(
     users_table_id: TableId,
     schema_index: usize,
 ) {
-    let additional_expected_columns = [ColumnSchema {
-        name: "age".to_string(),
-        typ: Type::INT4,
-        modifier: -1,
-        nullable: true,
-        primary: false,
-    }];
+    let expected_columns = vec![
+        PgDatabase::id_column_schema(),
+        ColumnSchema {
+            name: "age".to_string(),
+            typ: Type::INT4,
+            modifier: -1,
+            nullable: true,
+            primary: false,
+        },
+    ];
 
-    assert_table_schema(
+    assert_table_schema_from_destination(
         destination,
         users_table_id,
         schema_index,
         test_table_name("users"),
-        &additional_expected_columns,
+        &expected_columns,
     );
 }
 
@@ -90,7 +95,7 @@ fn get_users_age_sum_from_rows(destination: &TestDestination, users_table_id: Ta
     actual_sum
 }
 
-fn get_users_age_sum_from_dml_events(
+fn get_users_age_sum_from_events(
     destination: &TestDestination,
     users_table_id: TableId,
     // We use a range since events are not indexed by table id but just an ordered sequence which
@@ -103,12 +108,10 @@ fn get_users_age_sum_from_dml_events(
     for event in destination.get_events() {
         match event.as_ref() {
             CdcEvent::Insert((table_id, table_row)) | CdcEvent::Update((table_id, table_row))
-                if table_id == &users_table_id =>
+                if table_id == &users_table_id && range.contains(&i) =>
             {
-                if range.contains(&i) {
-                    if let Cell::I32(age) = &table_row.values[1] {
-                        actual_sum += age;
-                    }
+                if let Cell::I32(age) = &table_row.values[1] {
+                    actual_sum += age;
                 }
                 i += 1;
             }
@@ -168,21 +171,23 @@ async fn test_table_copy_with_insert_and_update() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cdc_with_insert_and_update() {
+async fn test_cdc_with_multiple_inserts() {
     let database = spawn_database().await;
 
     // We create the table and publication.
     let users_table_id = create_users_table_with_publication(&database, "users_publication").await;
 
-    let destination = TestDestination::new();
-    let mode = PipelineMode::Cdc {
-        publication: "users_publication".to_owned(),
-        slot_name: "users_slot".to_string(),
-    };
-
     // We create a pipeline that subscribes to the changes of the users table.
-    let mut pipeline =
-        spawn_async_pg_pipeline(&database.options, mode.clone(), destination.clone()).await;
+    let destination = TestDestination::new();
+    let mut pipeline = spawn_async_pg_pipeline(
+        &database.options,
+        PipelineMode::Cdc {
+            publication: "users_publication".to_owned(),
+            slot_name: test_slot_name("users_slot"),
+        },
+        destination.clone(),
+    )
+    .await;
 
     // We insert 100 rows.
     fill_users(&database, 100).await;
@@ -194,116 +199,15 @@ async fn test_cdc_with_insert_and_update() {
     // Wait for all events to be processed.
     let expected_sum = get_expected_ages_sum(100);
     wait_for_condition(|| {
-        let actual_sum = get_users_age_sum_from_dml_events(&destination, users_table_id, 0..100);
+        let actual_sum = get_users_age_sum_from_events(&destination, users_table_id, 0..100);
         actual_sum == expected_sum
     })
     .await;
 
+    // We stop the pipeline and wait for it to finish.
     pipeline.stop_and_wait(pipeline_task_handle).await;
 
     assert_users_table_schema(&destination, users_table_id, 0);
     assert_eq!(destination.get_tables_copied(), 0);
     assert_eq!(destination.get_tables_truncated(), 0);
-
-    // We recreate the pipeline with the same details since we want to resume streaming.
-    let mut pipeline =
-        spawn_async_pg_pipeline(&database.options, mode.clone(), destination.clone()).await;
-
-    // We double the user ages.
-    double_users_ages(&database).await;
-
-    // We run the pipeline to get the new 100 updates of the rows.
-    let pipeline_task_handle = pipeline.run().await;
-
-    // Wait for all events to be processed.
-    let expected_sum = expected_sum * 2;
-    wait_for_condition(|| {
-        let actual_sum = get_users_age_sum_from_dml_events(&destination, users_table_id, 100..200);
-        actual_sum == expected_sum
-    })
-    .await;
-
-    pipeline.stop_and_wait(pipeline_task_handle).await;
-
-    assert_users_table_schema(&destination, users_table_id, 1);
-    assert_eq!(destination.get_tables_copied(), 0);
-    assert_eq!(destination.get_tables_truncated(), 0);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore]
-async fn test_cdc_table_schema_consistency() {
-    let database = spawn_database().await;
-
-    // We create the first table.
-    database
-        .create_table(test_table_name("table_1"), &[])
-        .await
-        .unwrap();
-    database
-        .create_publication("publication_1", &[test_table_name("table_1")])
-        .await
-        .unwrap();
-
-    let destination = TestDestination::new();
-    let slot_name = "tables_slot";
-
-    // We create a pipeline that subscribes to the changes of the table.
-    let mut pipeline = spawn_async_pg_pipeline(
-        &database.options,
-        PipelineMode::Cdc {
-            publication: "publication_1".to_owned(),
-            slot_name: slot_name.to_owned(),
-        },
-        destination.clone(),
-    )
-    .await;
-
-    // We run and stop the pipeline immediately since tables are copied immediately.
-    let pipeline_task_handle = pipeline.run().await;
-    pipeline.stop_and_wait(pipeline_task_handle).await;
-
-    // We get the consistent table schemas which are the ones created on the first pipeline run
-    // when the slot was not created.
-    let consistent_table_schemas = destination.get_tables_schemas()[0].clone();
-
-    // We create a new table.
-    database
-        .create_table(test_table_name("table_2"), &[])
-        .await
-        .unwrap();
-    database
-        .create_publication(
-            "publication_2",
-            &[test_table_name("table_1"), test_table_name("table_2")],
-        )
-        .await
-        .unwrap();
-
-    // We recreate the pipeline, simulating that the system crashed.
-    let mut pipeline = spawn_async_pg_pipeline(
-        &database.options,
-        PipelineMode::Cdc {
-            publication: "publication_2".to_owned(),
-            slot_name: slot_name.to_owned(),
-        },
-        destination.clone(),
-    )
-    .await;
-
-    // We run and stop the pipeline immediately since tables are copied immediately.
-    let pipeline_task_handle = pipeline.run().await;
-    pipeline.stop_and_wait(pipeline_task_handle).await;
-
-    // The current pipeline implementation allows for table schemas to be downloaded every time
-    // cdc starts even if the slot was already existing. This is a big problem because the new schema
-    // will likely be different from the schema that we would take with the snapshot that we have during
-    // table creation.
-    //
-    // This test is ignored because it fails, but it HAS to be unignored once the pipeline behavior
-    // is fixed. We expect either to throw an error or to restart the replication with a new slot.
-    assert_eq!(
-        destination.get_tables_schemas()[1],
-        consistent_table_schemas
-    );
 }

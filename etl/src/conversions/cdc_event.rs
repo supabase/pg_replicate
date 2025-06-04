@@ -8,7 +8,7 @@ use postgres_replication::protocol::{
 };
 use thiserror::Error;
 
-use crate::pipeline::batching::BatchBoundary;
+use crate::pipeline::batching::BatchBoundaryV1;
 
 use super::{
     table_row::TableRow,
@@ -181,7 +181,7 @@ pub enum CdcEvent {
     KeepAliveRequested { reply: bool },
 }
 
-impl BatchBoundary for CdcEvent {
+impl BatchBoundaryV1 for CdcEvent {
     fn is_last_in_batch(&self) -> bool {
         matches!(
             self,

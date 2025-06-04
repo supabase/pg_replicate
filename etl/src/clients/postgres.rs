@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pg_escape::{quote_identifier, quote_literal};
 use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
-use postgres::tokio::options::PgDatabaseOptions;
+use postgres::tokio::options::PgDatabaseConfig;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use thiserror::Error;
@@ -63,7 +63,7 @@ pub enum ReplicationClientError {
 impl ReplicationClient {
     /// Connect to a postgres database in logical replication mode without TLS
     pub async fn connect_no_tls(
-        options: PgDatabaseOptions,
+        options: PgDatabaseConfig,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres without TLS");
 
@@ -91,7 +91,7 @@ impl ReplicationClient {
 
     /// Connect to a postgres database in logical replication mode with TLS
     pub async fn connect_tls(
-        options: PgDatabaseOptions,
+        options: PgDatabaseConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres with TLS");
@@ -311,11 +311,11 @@ impl ReplicationClient {
             if !table_schema.has_primary_keys() {
                 warn!(
                     "table {} with id {} will not be copied because it has no primary key",
-                    table_schema.table_name, table_schema.table_id
+                    table_schema.name, table_schema.id
                 );
                 continue;
             }
-            table_schemas.insert(table_schema.table_id, table_schema);
+            table_schemas.insert(table_schema.id, table_schema);
         }
 
         Ok(table_schemas)
@@ -332,8 +332,8 @@ impl ReplicationClient {
             .ok_or(ReplicationClientError::MissingTable(table_name.clone()))?;
         let column_schemas = self.get_column_schemas(table_id, publication).await?;
         Ok(TableSchema {
-            table_name,
-            table_id,
+            name: table_name,
+            id: table_id,
             column_schemas,
         })
     }

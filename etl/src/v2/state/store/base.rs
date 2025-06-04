@@ -1,24 +1,64 @@
-use crate::v2::state::pipeline::PipelineState;
-use crate::v2::state::table::TableReplicationState;
-use postgres::schema::Oid;
+use postgres::schema::{Oid, TableSchema};
 use std::future::Future;
+use thiserror::Error;
 
-pub trait PipelineStateStore {
-    fn load_pipeline_state(&self) -> impl Future<Output = PipelineState> + Send;
+use crate::v2::pipeline::PipelineId;
+use crate::v2::state::origin::ReplicationOriginState;
+use crate::v2::state::table::TableReplicationState;
 
-    fn store_pipeline_state(&self, state: PipelineState) -> impl Future<Output = ()> + Send;
+#[derive(Debug, Error)]
+pub enum StateStoreError {
+    #[error("Replication origin state not found in store")]
+    ReplicationOriginStateNotFound,
 
-    fn load_table_replication_states(
+    #[error("Table replication state not found in store")]
+    TableReplicationStateNotFound,
+}
+
+pub trait StateStore {
+    fn load_replication_origin_state(
         &self,
-    ) -> impl Future<Output = Vec<TableReplicationState>> + Send;
+        pipeline_id: PipelineId,
+        table_id: Option<Oid>,
+    ) -> impl Future<Output = Result<Option<ReplicationOriginState>, StateStoreError>> + Send;
+
+    fn store_replication_origin_state(
+        &self,
+        state: ReplicationOriginState,
+        overwrite: bool,
+    ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;
 
     fn load_table_replication_state(
         &self,
-        table_id: &Oid,
-    ) -> impl Future<Output = Option<TableReplicationState>> + Send;
+        pipeline_id: PipelineId,
+        table_id: Oid,
+    ) -> impl Future<Output = Result<Option<TableReplicationState>, StateStoreError>> + Send;
+
+    fn load_table_replication_states(
+        &self,
+    ) -> impl Future<Output = Result<Vec<TableReplicationState>, StateStoreError>> + Send;
 
     fn store_table_replication_state(
         &self,
         state: TableReplicationState,
-    ) -> impl Future<Output = ()> + Send;
+        overwrite: bool,
+    ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;
+
+    fn load_table_schemas(
+        &self,
+        pipeline_id: PipelineId,
+    ) -> impl Future<Output = Result<Vec<TableSchema>, StateStoreError>> + Send;
+
+    fn load_table_schema(
+        &self,
+        pipeline_id: PipelineId,
+        table_id: Oid,
+    ) -> impl Future<Output = Result<Option<TableSchema>, StateStoreError>> + Send;
+
+    fn store_table_schema(
+        &self,
+        pipeline_id: PipelineId,
+        table_schema: TableSchema,
+        overwrite: bool,
+    ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;
 }

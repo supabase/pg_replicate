@@ -438,7 +438,7 @@ impl BigQueryClient {
         table_row: &TableRow,
     ) -> Result<(), BQError> {
         let project_id = &self.project_id;
-        let table_name = &table_schema.table_name.name;
+        let table_name = &table_schema.name.name;
         let table_name = &format!("`{project_id}.{dataset_id}.{table_name}`");
         let column_schemas = &table_schema.column_schemas;
         let query = Self::create_update_row_query(table_name, column_schemas, table_row);
@@ -513,7 +513,7 @@ impl BigQueryClient {
         table_row: &TableRow,
     ) -> Result<(), BQError> {
         let project_id = &self.project_id;
-        let table_name = &table_schema.table_name.name;
+        let table_name = &table_schema.name.name;
         let table_name = &format!("`{project_id}.{dataset_id}.{table_name}`");
         let column_schemas = &table_schema.column_schemas;
         let query = Self::create_delete_row_query(table_name, column_schemas, table_row);

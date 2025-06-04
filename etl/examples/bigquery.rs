@@ -11,7 +11,7 @@ use etl::{
     SslMode,
 };
 use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseOptions;
+use postgres::tokio::options::PgDatabaseConfig;
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -121,7 +121,7 @@ async fn main_impl() -> Result<(), Box<dyn Error>> {
     let db_args = args.db_args;
     let bq_args = args.bq_args;
 
-    let options = PgDatabaseOptions {
+    let options = PgDatabaseConfig {
         host: db_args.db_host,
         port: db_args.db_port,
         name: db_args.db_name,

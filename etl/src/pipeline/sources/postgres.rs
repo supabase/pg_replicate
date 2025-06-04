@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use futures::{ready, Stream};
 use pin_project_lite::pin_project;
 use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
-use postgres::tokio::options::PgDatabaseOptions;
+use postgres::tokio::options::PgDatabaseConfig;
 use postgres_replication::LogicalReplicationStream;
 use rustls::pki_types::CertificateDer;
 use thiserror::Error;
@@ -54,7 +54,7 @@ pub struct PostgresSource {
 
 impl PostgresSource {
     pub async fn new(
-        options: PgDatabaseOptions,
+        options: PgDatabaseConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
         slot_name: Option<String>,
         table_names_from: TableNamesFrom,

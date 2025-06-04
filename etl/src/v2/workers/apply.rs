@@ -1,30 +1,59 @@
+use crate::v2::config::pipeline::PipelineConfig;
+use crate::v2::destination::base::Destination;
+use crate::v2::pipeline::PipelineIdentity;
+use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
+use crate::v2::replication::client::PgReplicationClient;
+use crate::v2::state::origin::ReplicationOriginState;
+use crate::v2::state::store::base::{StateStore, StateStoreError};
+use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
+use crate::v2::workers::pool::TableSyncWorkerPool;
+use crate::v2::workers::table_sync::{
+    TableSyncWorker, TableSyncWorkerError, TableSyncWorkerStateError,
+};
 use postgres::schema::Oid;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
-use tracing::info;
+use tracing::{error, info};
 
-use crate::v2::destination::base::Destination;
-use crate::v2::replication::apply::{start_apply_loop, ApplyLoopHook};
-use crate::v2::state::store::base::PipelineStateStore;
-use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
-use crate::v2::workers::base::{Worker, WorkerError, WorkerHandle};
-use crate::v2::workers::pool::TableSyncWorkerPool;
-use crate::v2::workers::table_sync::TableSyncWorker;
+#[derive(Debug, Error)]
+pub enum ApplyWorkerError {
+    #[error("An error occurred while interacting with the pipeline state store: {0}")]
+    StateStoreError(#[from] StateStoreError),
+
+    #[error("An error occurred in the apply loop: {0}")]
+    ApplyLoop(#[from] ApplyLoopError),
+}
+
+#[derive(Debug, Error)]
+pub enum ApplyWorkerHookError {
+    #[error("An error occurred while interacting with the pipeline state store: {0}")]
+    StateStoreError(#[from] StateStoreError),
+
+    #[error("An error occurred while interacting with the table sync worker state: {0}")]
+    TableSyncWorkerState(#[from] TableSyncWorkerStateError),
+
+    #[error("An error occurred while trying to start the table sync worker: {0}")]
+    TableSyncWorkerStartedFailed(#[from] TableSyncWorkerError),
+}
 
 #[derive(Debug)]
 pub struct ApplyWorkerHandle {
-    handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<Result<(), ApplyWorkerError>>>,
 }
 
 impl WorkerHandle<()> for ApplyWorkerHandle {
     fn state(&self) {}
 
-    async fn wait(mut self) -> Result<(), WorkerError> {
+    async fn wait(mut self) -> Result<(), WorkerWaitError> {
         let Some(handle) = self.handle.take() else {
             return Ok(());
         };
 
-        handle.await?;
+        handle.await??;
 
         Ok(())
     }
@@ -32,74 +61,143 @@ impl WorkerHandle<()> for ApplyWorkerHandle {
 
 #[derive(Debug)]
 pub struct ApplyWorker<S, D> {
+    identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
+    replication_client: PgReplicationClient,
+    pool: TableSyncWorkerPool,
     state_store: S,
     destination: D,
-    pool: TableSyncWorkerPool,
+    shutdown_rx: watch::Receiver<()>,
 }
 
 impl<S, D> ApplyWorker<S, D> {
-    pub fn new(state_store: S, destination: D, pool: TableSyncWorkerPool) -> Self {
+    pub fn new(
+        identity: PipelineIdentity,
+        config: Arc<PipelineConfig>,
+        replication_client: PgReplicationClient,
+        pool: TableSyncWorkerPool,
+        state_store: S,
+        destination: D,
+        shutdown_rx: watch::Receiver<()>,
+    ) -> Self {
         Self {
+            identity,
+            config,
+            replication_client,
+            pool,
             state_store,
             destination,
-            pool,
+            shutdown_rx,
         }
     }
 }
 
 impl<S, D> Worker<ApplyWorkerHandle, ()> for ApplyWorker<S, D>
 where
-    S: PipelineStateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
+    S: StateStore + Clone + Send + Sync + 'static,
+    D: Destination + Clone + Send + Sync + 'static,
 {
-    async fn start(self) -> Option<ApplyWorkerHandle> {
+    type Error = ApplyWorkerError;
+
+    async fn start(self) -> Result<ApplyWorkerHandle, Self::Error> {
         info!("Starting apply worker");
 
         let apply_worker = async move {
-            // We load the initial state that will be used for the apply worker.
-            let pipeline_state = self.state_store.load_pipeline_state().await;
-            info!(
-                "Loaded initial pipeline state with LSN: {}",
-                pipeline_state.last_lsn
-            );
+            // TODO: get the slot of the main apply worker or create it if needed.
+            // We load or initialize the initial state that will be used for the apply worker.
+            let replication_origin_state = match self
+                .state_store
+                .load_replication_origin_state(self.identity.id(), None)
+                .await?
+            {
+                Some(replication_origin_state) => replication_origin_state,
+                None => {
+                    // TODO: use the consistent point from the slot during creation here.
+                    let replication_origin_state =
+                        ReplicationOriginState::new(self.identity.id(), None, PgLsn::from(0));
+                    self.state_store
+                        .store_replication_origin_state(replication_origin_state.clone(), true)
+                        .await?;
+
+                    replication_origin_state
+                }
+            };
 
             // We start the applying loop by starting from the last LSN that we know was applied
             // by the destination.
+            let hook = Hook::new(
+                self.identity,
+                self.config.clone(),
+                self.replication_client.clone(),
+                self.pool,
+                self.state_store.clone(),
+                self.destination.clone(),
+                self.shutdown_rx.clone(),
+            );
             start_apply_loop(
+                hook,
+                self.config,
+                self.replication_client,
+                replication_origin_state.remote_lsn,
                 self.state_store,
                 self.destination,
-                Hook::new(self.pool),
-                pipeline_state.last_lsn,
+                self.shutdown_rx,
             )
-            .await;
+            .await?;
+
+            Ok(())
         };
 
         let handle = tokio::spawn(apply_worker);
 
-        Some(ApplyWorkerHandle {
+        Ok(ApplyWorkerHandle {
             handle: Some(handle),
         })
     }
 }
 
 #[derive(Debug)]
-struct Hook {
+struct Hook<S, D> {
+    identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
+    replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
+    state_store: S,
+    destination: D,
+    shutdown_rx: watch::Receiver<()>,
 }
 
-impl Hook {
-    fn new(pool: TableSyncWorkerPool) -> Self {
-        Self { pool }
+impl<S, D> Hook<S, D> {
+    fn new(
+        identity: PipelineIdentity,
+        config: Arc<PipelineConfig>,
+        replication_client: PgReplicationClient,
+        pool: TableSyncWorkerPool,
+        state_store: S,
+        destination: D,
+        shutdown_rx: watch::Receiver<()>,
+    ) -> Self {
+        Self {
+            identity,
+            config,
+            replication_client,
+            pool,
+            state_store,
+            destination,
+            shutdown_rx,
+        }
     }
 }
 
-impl<S, D> ApplyLoopHook<S, D> for Hook
+impl<S, D> ApplyLoopHook for Hook<S, D>
 where
-    S: PipelineStateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
+    S: StateStore + Clone + Send + Sync + 'static,
+    D: Destination + Clone + Send + Sync + 'static,
 {
-    async fn process_syncing_tables(&self, state_store: S, destination: D, current_lsn: PgLsn) {
-        let table_replication_states = state_store.load_table_replication_states().await;
+    type Error = ApplyWorkerHookError;
+
+    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<(), Self::Error> {
+        let table_replication_states = self.state_store.load_table_replication_states().await?;
         info!(
             "Processing syncing tables for apply worker with LSN {}",
             current_lsn
@@ -110,25 +208,27 @@ where
                 if current_lsn >= lsn {
                     let table_replication_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
-                    state_store
-                        .store_table_replication_state(table_replication_state)
-                        .await;
+                    self.state_store
+                        .store_table_replication_state(table_replication_state, true)
+                        .await?;
                 }
             } else {
                 {
                     let pool = self.pool.read().await;
                     if let Some(table_sync_worker_state) =
-                        pool.get_worker_state(table_replication_state.id)
+                        pool.get_worker_state(table_replication_state.table_id)
                     {
                         let mut catchup_started = false;
-                        let mut inner = table_sync_worker_state.inner().write().await;
-                        if inner.phase().as_type() == TableReplicationPhaseType::SyncWait {
+                        let mut inner = table_sync_worker_state.get_inner().write().await;
+                        if inner.replication_phase().as_type()
+                            == TableReplicationPhaseType::SyncWait
+                        {
                             inner
                                 .set_phase_with(
                                     TableReplicationPhase::Catchup { lsn: current_lsn },
-                                    state_store.clone(),
+                                    self.state_store.clone(),
                                 )
-                                .await;
+                                .await?;
                             catchup_started = true;
                         }
                         drop(inner);
@@ -145,20 +245,40 @@ where
 
                 info!(
                     "Creating new sync worker for table {}",
-                    table_replication_state.id
+                    table_replication_state.table_id
                 );
 
-                let worker = TableSyncWorker::new(
-                    state_store.clone(),
-                    destination.clone(),
-                    table_replication_state.id,
-                    self.pool.clone(),
-                );
+                match self.replication_client.duplicate().await {
+                    Ok(duplicate_replication_client) => {
+                        let worker = TableSyncWorker::new(
+                            self.identity.clone(),
+                            self.config.clone(),
+                            duplicate_replication_client,
+                            self.pool.clone(),
+                            table_replication_state.table_id,
+                            self.state_store.clone(),
+                            self.destination.clone(),
+                            self.shutdown_rx.clone(),
+                        );
 
-                let mut table_sync_workers = self.pool.write().await;
-                table_sync_workers.start_worker(worker).await;
+                        let mut pool = self.pool.write().await;
+                        if let Err(err) = pool.start_worker(worker).await {
+                            // TODO: check if we want to build a backoff mechanism for retrying the
+                            //  spawning of new table sync workers.
+                            error!(
+                                "Failed to start table sync worker, retrying in next loop: {}",
+                                err
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        error!("Failed to create new sync worker because the replication client couldn't be duplicated: {}", err);
+                    }
+                }
             }
         }
+
+        Ok(())
     }
 
     async fn should_apply_changes(&self, table_id: Oid, remote_final_lsn: PgLsn) -> bool {
@@ -167,8 +287,8 @@ where
             return false;
         };
 
-        let inner = table_sync_worker_state.inner().read().await;
-        match inner.phase() {
+        let inner = table_sync_worker_state.get_inner().read().await;
+        match inner.replication_phase() {
             TableReplicationPhase::Ready { .. } => true,
             TableReplicationPhase::SyncDone { lsn } => lsn <= remote_final_lsn,
             _ => false,

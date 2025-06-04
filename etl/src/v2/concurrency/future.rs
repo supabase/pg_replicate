@@ -3,11 +3,11 @@ use futures::FutureExt;
 use pin_project_lite::pin_project;
 use std::any::Any;
 use std::future::Future;
-use std::panic;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::{fmt, panic};
 use tokio::sync::RwLock;
 
 /// A callback interface for receiving notifications about future completion.
@@ -38,45 +38,48 @@ pin_project! {
     /// - `Fut`: The underlying future type
     /// - `I`: The identifier type for tracking futures
     /// - `C`: The callback type that implements [`ReactiveFutureCallback`]
-    pub struct ReactiveFuture<Fut, I, C> {
+    pub struct ReactiveFuture<Fut, I, C, E> {
         #[pin]
         future: CatchUnwind<AssertUnwindSafe<Fut>>,
         #[pin]
         callback_fut: Option<BoxFuture<'static, ()>>,
         state: ReactiveFutureState,
         id: I,
-        callback: Arc<RwLock<C>>,
+        callback_source: Arc<RwLock<C>>,
+        original_error: Option<E>,
         original_panic: Option<Box<dyn Any + Send>>
     }
 }
 
-impl<Fut, I, C> ReactiveFuture<Fut, I, C>
+impl<Fut, I, C, E> ReactiveFuture<Fut, I, C, E>
 where
-    Fut: Future<Output = ()>,
+    Fut: Future<Output = Result<(), E>>,
 {
     /// Creates a new reactive future that will notify the callback when it completes.
     ///
     /// The callback will be notified of either success or failure, and will receive the provided
     /// identifier to track which future completed.
-    pub fn new(future: Fut, id: I, callback: Arc<RwLock<C>>) -> Self {
+    pub fn new(future: Fut, id: I, callback_source: Arc<RwLock<C>>) -> Self {
         Self {
             future: AssertUnwindSafe(future).catch_unwind(),
             callback_fut: None,
             state: ReactiveFutureState::PollInnerFuture,
             id,
-            callback,
+            callback_source,
+            original_error: None,
             original_panic: None,
         }
     }
 }
 
-impl<Fut, I, C> Future for ReactiveFuture<Fut, I, C>
+impl<Fut, I, C, E> Future for ReactiveFuture<Fut, I, C, E>
 where
-    Fut: Future<Output = ()>,
+    Fut: Future<Output = Result<(), E>>,
     I: Clone + Send + 'static,
     C: ReactiveFutureCallback<I> + Send + Sync + 'static,
+    E: fmt::Display,
 {
-    type Output = ();
+    type Output = Result<(), E>;
 
     /// Polls the future, handling both successful completion and errors.
     ///
@@ -89,9 +92,17 @@ where
         loop {
             match this.state {
                 ReactiveFutureState::PollInnerFuture => match this.future.as_mut().poll(cx) {
-                    Poll::Ready(Ok(())) => {
-                        *this.state = ReactiveFutureState::InvokeCallback(None);
-                    }
+                    Poll::Ready(Ok(inner_result)) => match inner_result {
+                        Ok(_) => {
+                            *this.state = ReactiveFutureState::InvokeCallback(None);
+                        }
+                        Err(err) => {
+                            let casted_err = format!("{}", err);
+
+                            *this.original_error = Some(err);
+                            *this.state = ReactiveFutureState::InvokeCallback(Some(casted_err));
+                        }
+                    },
                     Poll::Ready(Err(err)) => {
                         // We want to handle the most common panic types.
                         let casted_err = if let Some(s) = err.downcast_ref::<&str>() {
@@ -112,11 +123,11 @@ where
                 ReactiveFutureState::InvokeCallback(error) => {
                     if this.callback_fut.is_none() {
                         let id = this.id.clone();
-                        let callback = this.callback.clone();
+                        let callback_source = this.callback_source.clone();
                         let error = error.clone();
 
                         let callback_fut = async move {
-                            let mut guard = callback.write().await;
+                            let mut guard = callback_source.write().await;
                             match error {
                                 Some(err) => guard.on_error(id, err),
                                 None => guard.on_complete(id),
@@ -144,7 +155,12 @@ where
                         panic::resume_unwind(original_panic);
                     }
 
-                    return Poll::Ready(());
+                    // If we have an error, we want to take it and propagate it.
+                    if let Some(original_error) = this.original_error.take() {
+                        return Poll::Ready(Err(original_error));
+                    }
+
+                    return Poll::Ready(Ok(()));
                 }
             }
         }
@@ -155,6 +171,7 @@ where
 mod tests {
     use crate::v2::concurrency::future::{ReactiveFuture, ReactiveFutureCallback};
     use futures::FutureExt;
+    use std::fmt;
     use std::future::Future;
     use std::panic;
     use std::panic::AssertUnwindSafe;
@@ -163,13 +180,22 @@ mod tests {
     use std::task::{Context, Poll};
     use tokio::sync::RwLock;
 
+    #[derive(Debug)]
+    struct SimpleError(String);
+
+    impl fmt::Display for SimpleError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
     struct ImmediateFuture;
 
     impl Future for ImmediateFuture {
-        type Output = ();
+        type Output = Result<(), SimpleError>;
 
         fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-            Poll::Ready(())
+            Poll::Ready(Ok(()))
         }
     }
 
@@ -178,7 +204,7 @@ mod tests {
     }
 
     impl Future for PanicFuture {
-        type Output = ();
+        type Output = Result<(), SimpleError>;
 
         fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
             if self.panic_any {
@@ -200,15 +226,25 @@ mod tests {
     }
 
     impl Future for PendingFuture {
-        type Output = ();
+        type Output = Result<(), SimpleError>;
 
         fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
             if self.polled {
-                Poll::Ready(())
+                Poll::Ready(Ok(()))
             } else {
                 self.polled = true;
                 Poll::Pending
             }
+        }
+    }
+
+    struct ErrorFuture;
+
+    impl Future for ErrorFuture {
+        type Output = Result<(), SimpleError>;
+
+        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+            Poll::Ready(Err(SimpleError("Test error".to_string())))
         }
     }
 
@@ -236,7 +272,7 @@ mod tests {
         let table_id = 1;
 
         let future = ReactiveFuture::new(ImmediateFuture, table_id, callback.clone());
-        future.await;
+        future.await.unwrap();
 
         let guard = callback.read().await;
         assert!(guard.complete_called);
@@ -314,12 +350,30 @@ mod tests {
         // The future will be ready on the second poll
         assert!(matches!(
             pinned_future.as_mut().poll(&mut cx),
-            Poll::Ready(())
+            Poll::Ready(Ok(()))
         ));
 
         // Verify the callback was notified of success
         let guard = callback.read().await;
         assert!(guard.complete_called);
         assert!(!guard.error_called);
+    }
+
+    #[tokio::test]
+    async fn test_error_handling() {
+        let callback = Arc::new(RwLock::new(MockCallback::default()));
+        let table_id = 1;
+
+        let future = ReactiveFuture::new(ErrorFuture, table_id, callback.clone());
+        let result = future.await;
+
+        // Verify the error was propagated
+        assert!(result.is_err());
+
+        // Verify the callback was notified of the error
+        let guard = callback.read().await;
+        assert!(!guard.complete_called);
+        assert!(guard.error_called);
+        assert_eq!(guard.error_message, Some("Test error".to_string()));
     }
 }

@@ -1,15 +1,22 @@
-use crate::schema::{TableId, TableName};
-use crate::tokio::options::PgDatabaseOptions;
+use crate::schema::{ColumnSchema, Oid, TableName};
+use crate::tokio::options::PgDatabaseConfig;
 use tokio::runtime::Handle;
+use tokio_postgres::types::Type;
 use tokio_postgres::{Client, NoTls};
 
+pub enum TableModification<'a> {
+    AddColumn { name: &'a str, data_type: &'a str },
+    DropColumn { name: &'a str },
+    AlterColumn { name: &'a str, alteration: &'a str },
+}
+
 pub struct PgDatabase {
-    pub options: PgDatabaseOptions,
+    pub options: PgDatabaseConfig,
     pub client: Client,
 }
 
 impl PgDatabase {
-    pub async fn new(options: PgDatabaseOptions) -> Self {
+    pub async fn new(options: PgDatabaseConfig) -> Self {
         let client = create_pg_database(&options).await;
 
         Self { options, client }
@@ -41,23 +48,18 @@ impl PgDatabase {
         &self,
         table_name: TableName,
         columns: &[(&str, &str)], // (column_name, column_type)
-    ) -> Result<TableId, tokio_postgres::Error> {
-        let mut create_table_query = format!(
-            "create table {} (id bigserial primary key",
-            table_name.as_quoted_identifier()
+    ) -> Result<Oid, tokio_postgres::Error> {
+        let columns_str = columns
+            .iter()
+            .map(|(name, typ)| format!("{} {}", name, typ))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let create_table_query = format!(
+            "create table {} (id bigserial primary key, {})",
+            table_name.as_quoted_identifier(),
+            columns_str
         );
-
-        if !columns.is_empty() {
-            let columns_str = columns
-                .iter()
-                .map(|(name, typ)| format!("{} {}", name, typ))
-                .collect::<Vec<_>>()
-                .join(", ");
-            create_table_query.push_str(", ");
-            create_table_query.push_str(&columns_str);
-        }
-
-        create_table_query.push(')');
         self.client.execute(&create_table_query, &[]).await?;
 
         // Get the OID of the newly created table
@@ -70,9 +72,41 @@ impl PgDatabase {
             )
             .await?;
 
-        let table_id: TableId = row.get(0);
+        let table_id: Oid = row.get(0);
 
         Ok(table_id)
+    }
+
+    /// Modifies a table by adding, dropping, or altering columns.
+    pub async fn alter_table(
+        &self,
+        table_name: TableName,
+        modifications: &[TableModification<'_>],
+    ) -> Result<(), tokio_postgres::Error> {
+        let modifications_str = modifications
+            .iter()
+            .map(|modification| match modification {
+                TableModification::AddColumn { name, data_type } => {
+                    format!("add column {} {}", name, data_type)
+                }
+                TableModification::DropColumn { name } => {
+                    format!("drop column {}", name)
+                }
+                TableModification::AlterColumn { name, alteration } => {
+                    format!("alter column {} {}", name, alteration)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let alter_table_query = format!(
+            "alter table {} {}",
+            table_name.as_quoted_identifier(),
+            modifications_str
+        );
+        self.client.execute(&alter_table_query, &[]).await?;
+
+        Ok(())
     }
 
     /// Inserts values into the specified table.
@@ -82,25 +116,41 @@ impl PgDatabase {
         columns: &[&str],
         values: &[&(dyn tokio_postgres::types::ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::Error> {
-        let insert_query = if columns.is_empty() {
-            format!(
-                "insert into {} default values",
-                table_name.as_quoted_identifier()
-            )
-        } else {
-            let columns_str = columns.join(", ");
-            let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${}", i)).collect();
-            let placeholders_str = placeholders.join(", ");
+        let columns_str = columns.join(", ");
+        let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${}", i)).collect();
+        let placeholders_str = placeholders.join(", ");
 
-            format!(
-                "insert into {} ({}) values ({})",
-                table_name.as_quoted_identifier(),
-                columns_str,
-                placeholders_str
-            )
-        };
+        let insert_query = format!(
+            "insert into {} ({}) values ({})",
+            table_name.as_quoted_identifier(),
+            columns_str,
+            placeholders_str
+        );
 
         self.client.execute(&insert_query, values).await
+    }
+
+    /// Generates values using PostgreSQL's `generate_series` function
+    /// and inserts them into the specified table.
+    pub async fn insert_generate_series(
+        &self,
+        table_name: TableName,
+        columns: &[&str],
+        start: i64,
+        end: i64,
+        step: i64,
+    ) -> Result<u64, tokio_postgres::Error> {
+        let columns_str = columns.join(", ");
+        let values = (1..=columns.len())
+            .map(|_| format!("generate_series({}, {}, {})", start, end, step))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let insert_query = format!(
+            "insert into {} ({columns_str}) values ({values})",
+            table_name.as_quoted_identifier(),
+        );
+
+        self.client.execute(&dbg!(insert_query), &[]).await
     }
 
     /// Updates all rows in the specified table with the given values.
@@ -147,6 +197,19 @@ impl PgDatabase {
         let rows = self.client.query(&query, &[]).await?;
         Ok(rows.iter().map(|row| row.get(0)).collect())
     }
+
+    /// Returns a [`ColumnSchema`] representing a non-nullable, primary key column
+    /// named "id" of type `INT8` which is added by default to all tables created within
+    /// [`PgDatabase`].
+    pub fn id_column_schema() -> ColumnSchema {
+        ColumnSchema {
+            name: "id".to_string(),
+            typ: Type::INT8,
+            modifier: -1,
+            nullable: false,
+            primary: true,
+        }
+    }
 }
 
 impl Drop for PgDatabase {
@@ -164,7 +227,7 @@ impl Drop for PgDatabase {
 /// Establishes a connection to the PostgreSQL server using the provided options,
 /// creates a new database, and returns a [`Client`] connected to the new database.
 /// Panics if the connection fails or if database creation fails.
-pub async fn create_pg_database(options: &PgDatabaseOptions) -> Client {
+pub async fn create_pg_database(options: &PgDatabaseConfig) -> Client {
     // Create the database via a single connection
     let (client, connection) = options
         .without_db()
@@ -206,9 +269,9 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> Client {
 ///
 /// Connects to the PostgreSQL server, forcefully terminates all active connections
 /// to the target database, and drops the database if it exists. Useful for cleaning
-/// up test databases. Takes a reference to [`PgDatabaseOptions`] specifying the database
+/// up test databases. Takes a reference to [`PgDatabaseConfig`] specifying the database
 /// to drop. Panics if any operation fails.
-pub async fn drop_pg_database(options: &PgDatabaseOptions) {
+pub async fn drop_pg_database(options: &PgDatabaseConfig) {
     // Connect to the default database
     let (client, connection) = options
         .without_db()
@@ -244,7 +307,7 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
         .execute(
             &format!(
                 r#"
-                select pg_drop_replication_slot(slot_name) 
+                select pg_drop_replication_slot(slot_name)
                 from pg_replication_slots 
                 where slot_name like 'test_%'
                 and database = '{}';"#,

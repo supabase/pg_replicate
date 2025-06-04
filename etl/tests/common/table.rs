@@ -1,42 +1,50 @@
 use crate::common::destination::TestDestination;
-use postgres::schema::{ColumnSchema, TableId, TableName};
-use tokio_postgres::types::Type;
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use std::collections::HashMap;
 
-/// Verifies that a table's schema matches the expected configuration.
-///
-/// This function compares a table's actual schema against the expected schema,
-/// checking the table name, ID, and all column properties including name, type,
-/// modifiers, nullability, and primary key status.
+/// Asserts that a table schema in a [`TestSink`] matches the expected schema.
 ///
 /// # Panics
 ///
-/// Panics if:
-/// - The table ID is not found in the destinations's schema
-/// - The schema index is out of bounds
-/// - Any column property doesn't match the expected configuration
-pub fn assert_table_schema(
+/// Panics if the table schema at the given index doesn't match the expected schema,
+/// or if the table ID doesn't exist in the sink's schemas.
+pub fn assert_table_schema_from_destination(
     destination: &TestDestination,
     table_id: TableId,
     schema_index: usize,
     expected_table_name: TableName,
-    additional_expected_columns: &[ColumnSchema],
+    expected_columns: &[ColumnSchema],
 ) {
-    // By default, we expect the ID column since we always add it when `PgDatabase::create_table`
-    // is called.
-    let mut expected_columns = vec![ColumnSchema {
-        name: "id".to_string(),
-        typ: Type::INT8,
-        modifier: -1,
-        nullable: false,
-        primary: true,
-    }];
-    expected_columns.extend_from_slice(additional_expected_columns);
+    let table_schemas = &destination.get_table_schemas()[schema_index];
 
-    let tables_schemas = &destination.get_tables_schemas()[schema_index];
-    let table_schema = tables_schemas.get(&table_id).unwrap();
+    assert_table_schema(
+        table_schemas,
+        table_id,
+        expected_table_name,
+        expected_columns,
+    )
+}
 
-    assert_eq!(table_schema.table_id, table_id);
-    assert_eq!(table_schema.table_name, expected_table_name);
+/// Asserts that a table schema matches the expected schema.
+///
+/// Compares all aspects of the table schema including table ID, name, and column
+/// definitions. Each column's properties (name, type, modifier, nullability, and
+/// primary key status) are verified.
+///
+/// # Panics
+///
+/// Panics if the table ID doesn't exist in the provided schemas, or if any aspect
+/// of the schema doesn't match the expected values.
+pub fn assert_table_schema(
+    table_schemas: &HashMap<TableId, TableSchema>,
+    table_id: TableId,
+    expected_table_name: TableName,
+    expected_columns: &[ColumnSchema],
+) {
+    let table_schema = table_schemas.get(&table_id).unwrap();
+
+    assert_eq!(table_schema.id, table_id);
+    assert_eq!(table_schema.name, expected_table_name);
 
     let columns = &table_schema.column_schemas;
     assert_eq!(columns.len(), expected_columns.len());

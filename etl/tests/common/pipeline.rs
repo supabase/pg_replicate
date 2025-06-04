@@ -4,9 +4,10 @@ use etl::pipeline::destinations::BatchDestination;
 use etl::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
 use etl::pipeline::PipelineAction;
 use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseOptions;
+use postgres::tokio::options::PgDatabaseConfig;
 use std::time::Duration;
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 /// Defines the operational mode for a PostgreSQL replication pipeline.
 #[derive(Debug, Clone)]
@@ -22,12 +23,13 @@ pub enum PipelineMode {
     },
 }
 
-/// Generates a test-specific replication slot name.
+/// Generates a test-specific replication slot name with a random component.
 ///
 /// This function prefixes the provided slot name with "test_" to avoid conflicts
-/// with other replication slots.
+/// with other replication slots and other tests running in parallel.
 pub fn test_slot_name(slot_name: &str) -> String {
-    format!("test_{}", slot_name)
+    let uuid = Uuid::new_v4().simple().to_string();
+    format!("test_{}_{}", slot_name, uuid)
 }
 
 /// Creates a new PostgreSQL replication pipeline.
@@ -39,7 +41,7 @@ pub fn test_slot_name(slot_name: &str) -> String {
 ///
 /// Panics if the PostgreSQL source cannot be created.
 pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
-    options: &PgDatabaseOptions,
+    options: &PgDatabaseConfig,
     mode: PipelineMode,
     destination: Snk,
 ) -> BatchDataPipeline<PostgresSource, Snk> {
@@ -65,7 +67,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
             let source = PostgresSource::new(
                 options.clone(),
                 vec![],
-                Some(test_slot_name(&slot_name)),
+                Some(slot_name),
                 TableNamesFrom::Publication(publication),
             )
             .await
@@ -83,7 +85,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
 /// This function creates a pipeline and wraps it in a [`PipelineRunner`] for
 /// easier management of the pipeline lifecycle.
 pub async fn spawn_async_pg_pipeline<Dst: BatchDestination + Send + 'static>(
-    options: &PgDatabaseOptions,
+    options: &PgDatabaseConfig,
     mode: PipelineMode,
     destination: Dst,
 ) -> PipelineRunner<Dst> {

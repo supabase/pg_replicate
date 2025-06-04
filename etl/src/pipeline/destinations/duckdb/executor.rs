@@ -214,11 +214,11 @@ impl DuckDbExecutor {
         table_schemas: &HashMap<TableId, TableSchema>,
     ) -> Result<(), DuckDbExecutorError> {
         for table_schema in table_schemas.values() {
-            let schema = &table_schema.table_name.schema;
+            let schema = &table_schema.name.schema;
 
             self.client.create_schema_if_missing(schema)?;
             self.client
-                .create_table_if_missing(&table_schema.table_name, &table_schema.column_schemas)?;
+                .create_table_if_missing(&table_schema.name, &table_schema.column_schemas)?;
         }
 
         Ok(())
@@ -230,8 +230,7 @@ impl DuckDbExecutor {
         table_row: TableRow,
     ) -> Result<(), DuckDbExecutorError> {
         let table_schema = self.get_table_schema(table_id)?;
-        self.client
-            .insert_row(&table_schema.table_name, &table_row)?;
+        self.client.insert_row(&table_schema.name, &table_row)?;
         Ok(())
     }
 
@@ -270,7 +269,7 @@ impl DuckDbExecutor {
 
     fn truncate_table(&self, table_id: TableId) -> Result<(), DuckDbExecutorError> {
         let table_schema = self.get_table_schema(table_id)?;
-        self.client.truncate_table(&table_schema.table_name)?;
+        self.client.truncate_table(&table_schema.name)?;
         Ok(())
     }
 

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt;
 
 use pg_escape::quote_identifier;
@@ -10,7 +11,7 @@ pub type Oid = u32;
 ///
 /// This type represents a table identifier in PostgreSQL, which requires both a schema name
 /// and a table name. It provides methods for formatting the name in different contexts.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct TableName {
     /// The schema name containing the table
     pub schema: String,
@@ -63,6 +64,7 @@ pub struct ColumnSchema {
 /// A type alias for PostgreSQL table OIDs.
 ///
 /// Table OIDs are unique identifiers assigned to tables in PostgreSQL.
+// TODO: delete this in favor of `Oid`.
 pub type TableId = u32;
 
 /// Represents the complete schema of a PostgreSQL table.
@@ -71,19 +73,39 @@ pub type TableId = u32;
 /// and the schemas of all its columns.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TableSchema {
-    /// The fully qualified name of the table
-    pub table_name: TableName,
     /// The PostgreSQL OID of the table
-    pub table_id: TableId,
+    pub id: Oid,
+    /// The fully qualified name of the table
+    pub name: TableName,
     /// The schemas of all columns in the table
     pub column_schemas: Vec<ColumnSchema>,
 }
 
 impl TableSchema {
+    pub fn new(id: Oid, name: TableName, column_schemas: Vec<ColumnSchema>) -> Self {
+        Self {
+            id,
+            name,
+            column_schemas,
+        }
+    }
+
     /// Returns whether the table has any primary key columns.
     ///
     /// This method checks if any column in the table is marked as part of the primary key.
     pub fn has_primary_keys(&self) -> bool {
         self.column_schemas.iter().any(|cs| cs.primary)
+    }
+}
+
+impl PartialOrd for TableSchema {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TableSchema {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
     }
 }

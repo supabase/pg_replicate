@@ -8,7 +8,10 @@ use tokio::time::sleep;
 
 pub mod database;
 pub mod destination;
+pub mod destination_v2;
 pub mod pipeline;
+pub mod pipeline_v2;
+pub mod state_store;
 pub mod table;
 
 /// The maximum duration to wait for test conditions to be met.
