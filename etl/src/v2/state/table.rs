@@ -66,7 +66,7 @@ impl TableReplicationPhase {
     }
 }
 
-// TODO: we may not need as many phases as we have now. 
+// TODO: we may not need as many phases as we have now.
 // Evaluate this once the code is more mature.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TableReplicationPhaseType {
