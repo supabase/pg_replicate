@@ -225,8 +225,8 @@ impl<S, D> TableSyncWorker<S, D> {
 
 impl<S, D> Worker<TableSyncWorkerHandle, TableSyncWorkerState> for TableSyncWorker<S, D>
 where
-    S: StateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
+    S: StateStore + Clone + Send + Sync + 'static,
+    D: Destination + Clone + Send + Sync + 'static,
 {
     type Error = TableSyncWorkerError;
 

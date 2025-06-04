@@ -14,7 +14,6 @@ use super::{
     Cell,
 };
 use crate::pipeline::batching::BatchBoundaryV1;
-use crate::v2::concurrency::stream::BatchBoundary;
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {

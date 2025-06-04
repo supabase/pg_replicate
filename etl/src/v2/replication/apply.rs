@@ -271,6 +271,8 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
+    println!("MESSAGE RECEIVED {:?}", message);
+
     match message {
         LogicalReplicationMessage::Begin(message) => {
             handle_begin_message(state, message, state_store, hook).await
@@ -314,9 +316,11 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
+    // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
+    // `Commit` message.
     let final_lsn = PgLsn::from(message.final_lsn());
     state.remote_final_lsn = final_lsn;
-    
+
     Ok(())
 }
 
@@ -331,8 +335,13 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Reset the remote_final_lsn after commit
-    state.remote_final_lsn = PgLsn::from(0);
+    // We process syncing tables since we just arrived at the end of a transaction, and we want to
+    // synchronize all the workers.
+    //
+    // The `end_lsn` here refers to the LSN of the record right after the commit record.
+    let end_lsn = PgLsn::from(message.end_lsn());
+    hook.process_syncing_tables(end_lsn).await?;
+
     Ok(())
 }
 
@@ -347,8 +356,6 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Origin messages are used to track the origin of replication changes
-    // Currently no specific handling needed
     Ok(())
 }
 
@@ -363,8 +370,6 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Relation messages define the structure of tables
-    // Currently no specific handling needed
     Ok(())
 }
 
@@ -379,8 +384,6 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Type messages define custom types
-    // Currently no specific handling needed
     Ok(())
 }
 
@@ -395,8 +398,6 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Insert messages represent new rows
-    // Currently no specific handling needed
     Ok(())
 }
 
@@ -411,8 +412,6 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Update messages represent modified rows
-    // Currently no specific handling needed
     Ok(())
 }
 
@@ -427,8 +426,6 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Delete messages represent removed rows
-    // Currently no specific handling needed
     Ok(())
 }
 
@@ -443,7 +440,5 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // Truncate messages represent table truncation operations
-    // Currently no specific handling needed
     Ok(())
 }

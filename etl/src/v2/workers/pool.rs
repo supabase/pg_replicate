@@ -48,8 +48,8 @@ impl TableSyncWorkerPoolInner {
         worker: TableSyncWorker<S, D>,
     ) -> Result<bool, TableSyncWorkerError>
     where
-        S: StateStore + Clone + Send + 'static,
-        D: Destination + Clone + Send + 'static,
+        S: StateStore + Clone + Send + Sync + 'static,
+        D: Destination + Clone + Send + Sync + 'static,
     {
         let table_id = worker.table_id();
         if self.active.contains_key(&table_id) {
