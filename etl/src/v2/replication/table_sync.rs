@@ -69,19 +69,23 @@ where
 
     // In case the work for this table has been already done, we don't want to continue and we
     // successfully return.
-    if phase_type == TableReplicationPhaseType::SyncDone
-        || phase_type == TableReplicationPhaseType::Ready
-        || phase_type == TableReplicationPhaseType::Unknown
-    {
+    if matches!(
+        phase_type,
+        TableReplicationPhaseType::SyncDone
+            | TableReplicationPhaseType::Ready
+            | TableReplicationPhaseType::Unknown
+    ) {
         return Ok(TableSyncResult::SyncNotRequired);
     }
 
     // In case the phase is different from the standard phases in which a table sync worker can perform
     // table syncing, we want to return an error.
-    if !(phase_type == TableReplicationPhaseType::Init
-        || phase_type == TableReplicationPhaseType::DataSync
-        || phase_type == TableReplicationPhaseType::FinishedCopy)
-    {
+    if !matches!(
+        phase_type,
+        TableReplicationPhaseType::Init
+            | TableReplicationPhaseType::DataSync
+            | TableReplicationPhaseType::FinishedCopy
+    ) {
         return Err(TableSyncError::InvalidPhase(phase_type));
     }
 
@@ -101,100 +105,101 @@ where
     //  where we want to start the cdc stream.
     //
     // In case the phase is any other phase, we will return an error.
-    let replication_origin_state = if phase_type == TableReplicationPhaseType::Init
-        || phase_type == TableReplicationPhaseType::DataSync
-    {
-        // If we are in `DataSync` it means we failed during table copying, so we want to delete the
-        // existing slot before continuing.
-        if phase_type == TableReplicationPhaseType::DataSync {
-            if let Err(err) = replication_client.delete_slot(&slot_name).await {
-                // If the slot is not found, we are safe to continue, for any other error, we bail.
-                let PgReplicationError::SlotNotFound(_) = err else {
-                    return Err(err.into());
-                };
+    let replication_origin_state = match phase_type {
+        TableReplicationPhaseType::Init | TableReplicationPhaseType::DataSync => {
+            // If we are in `DataSync` it means we failed during table copying, so we want to delete the
+            // existing slot before continuing.
+            if phase_type == TableReplicationPhaseType::DataSync {
+                if let Err(err) = replication_client.delete_slot(&slot_name).await {
+                    // If the slot is not found, we are safe to continue, for any other error, we bail.
+                    if !matches!(err, PgReplicationError::SlotNotFound(_)) {
+                        return Err(err.into());
+                    }
+                }
             }
+
+            // We are ready to start copying table data, and we update the state accordingly.
+            {
+                let mut inner = table_sync_worker_state.get_inner().write().await;
+                inner
+                    .set_phase_with(TableReplicationPhase::DataSync, state_store.clone())
+                    .await?;
+            }
+
+            // We create the slot with a transaction, since we need to have a consistent snapshot of the database
+            // before copying the schema and tables.
+            let (transaction, slot) = replication_client
+                .create_slot_with_transaction(&slot_name)
+                .await?;
+
+            // We create and overwrite (if already present) the replication origin state, to store important
+            // information about the replication.
+            let replication_origin_state =
+                ReplicationOriginState::new(identity.id(), Some(table_id), slot.consistent_point);
+            state_store
+                .store_replication_origin_state(replication_origin_state.clone(), true)
+                .await?;
+
+            // We copy the table schema and write it both to the state store and destination.
+            //
+            // Note that we write the schema in both places:
+            // - State store -> we write here because the table schema is used across table copying and cdc
+            //  for correct decoding, thus we rely on our own state store to preserve this information.
+            // - Destination -> we write here because some consumers might want to have the schema of incoming
+            //  data.
+            let table_schema = transaction
+                .get_table_schema(table_id, Some(identity.publication_name()))
+                .await?;
+            state_store
+                .store_table_schema(identity.id(), table_schema.clone(), true)
+                .await?;
+            destination.write_table_schema(table_schema.clone()).await?;
+
+            // We create the copy table stream.
+            let table_copy_stream = transaction
+                .get_table_copy_stream(table_id, &table_schema.column_schemas)
+                .await?;
+            let table_copy_stream =
+                TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
+            let table_copy_stream = BoundedBatchStream::wrap(
+                table_copy_stream,
+                config.batch_config.clone(),
+                shutdown_rx,
+            );
+            pin!(table_copy_stream);
+
+            // We start consuming the table stream. If any error occurs, we will bail the entire copy since
+            // we want to be fully consistent.
+            while let Some(table_rows) = table_copy_stream.next().await {
+                let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
+                destination.copy_table_rows(table_id, table_rows).await?;
+            }
+
+            // We mark that we finished the copy of the table schema and data.
+            {
+                let mut inner = table_sync_worker_state.get_inner().write().await;
+                inner
+                    .set_phase_with(TableReplicationPhase::FinishedCopy, state_store.clone())
+                    .await?;
+            }
+
+            replication_origin_state
         }
-
-        // We are ready to start copying table data, and we update the state accordingly.
-        let mut inner = table_sync_worker_state.get_inner().write().await;
-        inner
-            .set_phase_with(TableReplicationPhase::DataSync, state_store.clone())
-            .await?;
-        drop(inner);
-
-        // We create the slot with a transaction, since we need to have a consistent snapshot of the database
-        // before copying the schema and tables.
-        let (transaction, slot) = replication_client
-            .create_slot_with_transaction(&slot_name)
-            .await?;
-
-        // We create and overwrite (if already present) the replication origin state, to store important
-        // information about the replication.
-        let replication_origin_state =
-            ReplicationOriginState::new(identity.id(), Some(table_id), slot.consistent_point);
-        state_store
-            .store_replication_origin_state(replication_origin_state.clone(), true)
-            .await?;
-
-        // We copy the table schema and write it both to the state store and destination.
-        //
-        // Note that we write the schema in both places:
-        // - State store -> we write here because the table schema is used across table copying and cdc
-        //  for correct decoding, thus we rely on our own state store to preserve this information.
-        // - Destination -> we write here because some consumers might want to have the schema of incoming
-        //  data.
-        let table_schema = transaction
-            .get_table_schema(table_id, Some(identity.publication_name()))
-            .await?;
-        state_store
-            .store_table_schema(identity.id(), table_schema.clone(), true)
-            .await?;
-        destination.write_table_schema(table_schema.clone()).await?;
-
-        // We create the copy table stream.
-        let table_copy_stream = transaction
-            .get_table_copy_stream(table_id, &table_schema.column_schemas)
-            .await?;
-        let table_copy_stream =
-            TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-        let table_copy_stream =
-            BoundedBatchStream::wrap(table_copy_stream, config.batch_config.clone(), shutdown_rx);
-        pin!(table_copy_stream);
-
-        // We start consuming the table stream. If any error occurs, we will bail the entire copy since
-        // we want to be fully consistent.
-        while let Some(table_rows) = table_copy_stream.next().await {
-            let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
-            destination.copy_table_rows(table_id, table_rows).await?;
-        }
-
-        // We mark that we finished the copy of the table schema and data.
-        let mut inner = table_sync_worker_state.get_inner().write().await;
-        inner
-            .set_phase_with(TableReplicationPhase::FinishedCopy, state_store.clone())
-            .await?;
-
-        replication_origin_state
-    } else if phase_type == TableReplicationPhaseType::FinishedCopy {
-        let Some(replication_origin_state) = state_store
+        TableReplicationPhaseType::FinishedCopy => state_store
             .load_replication_origin_state(identity.id(), Some(table_id))
             .await?
-        else {
-            return Err(TableSyncError::ReplicationOriginStateNotFound);
-        };
-
-        replication_origin_state
-    } else {
-        return Err(TableSyncError::InvalidPhase(phase_type));
+            .ok_or(TableSyncError::ReplicationOriginStateNotFound)?,
+        _ => unreachable!("Phase type already validated above"),
     };
 
     // We mark this worker as `SyncWait` (in memory only) to signal the apply worker that we are
     // ready to start catchup.
-    let mut inner = table_sync_worker_state.get_inner().write().await;
-    inner
-        .set_phase_with(TableReplicationPhase::SyncWait, state_store)
-        .await?;
-    drop(inner);
+    {
+        let mut inner = table_sync_worker_state.get_inner().write().await;
+        inner
+            .set_phase_with(TableReplicationPhase::SyncWait, state_store)
+            .await?;
+    }
 
     Ok(TableSyncResult::SyncCompleted {
         origin_start_lsn: replication_origin_state.remote_lsn,
