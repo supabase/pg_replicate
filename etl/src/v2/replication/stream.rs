@@ -40,6 +40,7 @@ impl<'a> Stream for TableCopyStream<'a> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match ready!(this.stream.poll_next(cx)) {
+            // TODO: allow pluggable table row conversion based on if the data is in text or binary format.
             Some(Ok(row)) => match TableRowConverter::try_from(&row, this.column_schemas) {
                 Ok(row) => Poll::Ready(Some(Ok(row))),
                 Err(err) => Poll::Ready(Some(Err(err.into()))),
