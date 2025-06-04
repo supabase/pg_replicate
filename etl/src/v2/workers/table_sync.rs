@@ -40,7 +40,10 @@ pub enum TableSyncWorkerError {
 }
 
 #[derive(Debug, Error)]
-pub enum TableSyncWorkerHookError {}
+pub enum TableSyncWorkerHookError {
+    #[error("An error occurred while updating the table sync worker state: {0}")]
+    TableSyncWorkerState(#[from] TableSyncWorkerStateError),
+}
 
 #[derive(Debug, Error)]
 pub enum TableSyncWorkerStateError {
@@ -257,7 +260,8 @@ where
                 self.identity.clone(),
                 self.config.clone(),
                 self.replication_client.clone(),
-                state_clone,
+                self.table_id,
+                state_clone.clone(),
                 self.state_store.clone(),
                 self.destination.clone(),
                 self.shutdown_rx.clone(),
@@ -280,7 +284,7 @@ where
                 }
             };
 
-            let hook = Hook::new(self.table_id);
+            let hook = Hook::new(self.table_id, state_clone, self.state_store.clone());
 
             start_apply_loop(
                 self.identity,
@@ -313,25 +317,55 @@ where
 }
 
 #[derive(Debug)]
-struct Hook {
+struct Hook<S> {
     table_id: Oid,
+    table_sync_worker_state: TableSyncWorkerState,
+    state_store: S,
 }
 
-impl Hook {
-    fn new(table_id: Oid) -> Self {
-        Self { table_id }
+impl<S> Hook<S> {
+    fn new(table_id: Oid, table_sync_worker_state: TableSyncWorkerState, state_store: S) -> Self {
+        Self {
+            table_id,
+            table_sync_worker_state,
+            state_store,
+        }
     }
 }
 
-impl ApplyLoopHook for Hook {
+impl<S> ApplyLoopHook for Hook<S>
+where
+    S: StateStore + Clone + Send + Sync + 'static,
+{
     type Error = TableSyncWorkerHookError;
 
-    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<(), Self::Error> {
+    async fn process_syncing_tables(
+        &self,
+        current_lsn: PgLsn,
+        _initial_sync: bool,
+    ) -> Result<(), Self::Error> {
         info!(
             "Processing syncing tables for table sync worker with LSN {}",
             current_lsn
         );
-        // TODO: implement.
+
+        let mut inner = self.table_sync_worker_state.get_inner().write().await;
+        if let TableReplicationPhase::Catchup { lsn } = inner.replication_phase() {
+            if current_lsn >= lsn {
+                inner
+                    .set_phase_with(
+                        TableReplicationPhase::SyncDone { lsn: current_lsn },
+                        self.state_store.clone(),
+                    )
+                    .await?;
+            }
+
+            // We drop the lock since we don't need to hold it while cleaning resources.
+            drop(inner);
+
+            // TODO: cleanup slot and replication origin.
+        }
+
         Ok(())
     }
 

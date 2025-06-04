@@ -72,6 +72,7 @@ pub trait ApplyLoopHook {
     fn process_syncing_tables(
         &self,
         current_lsn: PgLsn,
+        initial_sync: bool,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn should_apply_changes(
@@ -120,10 +121,15 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
+    // We initialize the shared state that is used throughout the loop to track progress.
     let mut state = ApplyLoopState {
         last_received: origin_start_lsn,
         remote_final_lsn: PgLsn::from(0),
     };
+
+    // We kickstart table syncing before the loop starts, so that we do not have to wait for a
+    // `COMMIT` even to kickstart table sync workers.
+    hook.process_syncing_tables(origin_start_lsn, true).await?;
 
     // We compute the slot name for the replication slot that we are going to use for the logical
     // replication. At this point we assume that the slot already exists.
@@ -340,7 +346,7 @@ where
     //
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
     let end_lsn = PgLsn::from(message.end_lsn());
-    hook.process_syncing_tables(end_lsn).await?;
+    hook.process_syncing_tables(end_lsn, false).await?;
 
     Ok(())
 }

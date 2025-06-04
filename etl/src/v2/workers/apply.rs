@@ -197,7 +197,11 @@ where
 {
     type Error = ApplyWorkerHookError;
 
-    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<(), Self::Error> {
+    async fn process_syncing_tables(
+        &self,
+        current_lsn: PgLsn,
+        initial_sync: bool,
+    ) -> Result<(), Self::Error> {
         let table_replication_states = self.state_store.load_table_replication_states().await?;
         info!(
             "Processing syncing tables for apply worker with LSN {}",
@@ -205,13 +209,15 @@ where
         );
 
         for table_replication_state in table_replication_states {
-            if let TableReplicationPhase::SyncDone { lsn } = table_replication_state.phase {
-                if current_lsn >= lsn {
-                    let table_replication_state = table_replication_state
-                        .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
-                    self.state_store
-                        .store_table_replication_state(table_replication_state, true)
-                        .await?;
+            if !initial_sync {
+                if let TableReplicationPhase::SyncDone { lsn } = table_replication_state.phase {
+                    if current_lsn >= lsn {
+                        let table_replication_state = table_replication_state
+                            .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
+                        self.state_store
+                            .store_table_replication_state(table_replication_state, true)
+                            .await?;
+                    }
                 }
             } else {
                 {
@@ -219,28 +225,30 @@ where
                     if let Some(table_sync_worker_state) =
                         pool.get_worker_state(table_replication_state.table_id)
                     {
-                        let mut catchup_started = false;
-                        let mut inner = table_sync_worker_state.get_inner().write().await;
-                        if inner.replication_phase().as_type()
-                            == TableReplicationPhaseType::SyncWait
-                        {
-                            inner
-                                .set_phase_with(
-                                    TableReplicationPhase::Catchup { lsn: current_lsn },
-                                    self.state_store.clone(),
-                                )
-                                .await?;
-                            catchup_started = true;
-                        }
-                        drop(inner);
+                        if !initial_sync {
+                            let mut catchup_started = false;
+                            let mut inner = table_sync_worker_state.get_inner().write().await;
+                            if inner.replication_phase().as_type()
+                                == TableReplicationPhaseType::SyncWait
+                            {
+                                inner
+                                    .set_phase_with(
+                                        TableReplicationPhase::Catchup { lsn: current_lsn },
+                                        self.state_store.clone(),
+                                    )
+                                    .await?;
+                                catchup_started = true;
+                            }
+                            drop(inner);
 
-                        if catchup_started {
-                            let _ = table_sync_worker_state
-                                .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
-                                .await;
-                        }
+                            if catchup_started {
+                                let _ = table_sync_worker_state
+                                    .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
+                                    .await;
+                            }
 
-                        continue;
+                            continue;
+                        }
                     }
                 }
 

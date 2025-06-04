@@ -10,6 +10,7 @@ use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use futures::StreamExt;
+use postgres::schema::Oid;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::pin;
@@ -53,6 +54,7 @@ pub async fn start_table_sync<S, D>(
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
+    table_id: Oid,
     table_sync_worker_state: TableSyncWorkerState,
     state_store: S,
     destination: D,
@@ -63,8 +65,6 @@ where
     D: Destination + Clone + Send + 'static,
 {
     let inner = table_sync_worker_state.get_inner().read().await;
-
-    let table_id = inner.table_id();
     let phase_type = inner.replication_phase().as_type();
 
     // In case the work for this table has been already done, we don't want to continue and we
