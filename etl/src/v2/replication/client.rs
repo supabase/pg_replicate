@@ -731,7 +731,7 @@ impl PgReplicationClient {
 
         // TODO: allow passing in format binary or text
         let copy_query = format!(
-            r#"COPY {} ({}) TO STDOUT WITH (FORMAT text);"#,
+            r#"copy {} ({}) to stdout with (format text);"#,
             table_name.as_quoted_identifier(),
             column_list
         );
