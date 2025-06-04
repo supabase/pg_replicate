@@ -1,5 +1,4 @@
 use postgres::schema::Oid;
-use std::borrow::Borrow;
 use std::fmt;
 use tokio_postgres::types::PgLsn;
 
@@ -32,12 +31,6 @@ impl PartialEq for TableReplicationState {
 }
 
 impl Eq for TableReplicationState {}
-
-impl Borrow<Oid> for TableReplicationState {
-    fn borrow(&self) -> &Oid {
-        &self.id
-    }
-}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TableReplicationPhase {
