@@ -8,10 +8,10 @@ use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug, Error)]
 pub enum StateStoreError {
-    #[error("Pipeline state not found in store: state does not exist")]
-    PipelineStateNotFound,
+    #[error("Replication origin state not found in store")]
+    ReplicationOriginStateNotFound,
 
-    #[error("Table replication state not found in store: state does not exist")]
+    #[error("Table replication state not found in store")]
     TableReplicationStateNotFound,
 }
 

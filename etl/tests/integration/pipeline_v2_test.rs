@@ -2,15 +2,13 @@ use crate::common::database::{spawn_database, test_table_name};
 use crate::common::destination_v2::TestDestination;
 use crate::common::pipeline_v2::spawn_pg_pipeline;
 use crate::common::state_store::{
-    FaultConfig, FaultInjectingStateStore, FaultType, TestStateStore,
+    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
 };
 use etl::conversions::Cell;
 use etl::v2::state::table::TableReplicationPhaseType;
 use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{PgDatabase, TableModification};
-use std::time::Duration;
-use tokio::time::timeout;
 use tokio_postgres::types::Type;
 
 #[derive(Debug)]
@@ -162,7 +160,6 @@ async fn test_pipeline_with_apply_worker_panic() {
         destination.clone(),
     );
 
-    // We start the pipeline.
     pipeline.start().await.unwrap();
 
     // We stop and inspect errors.
@@ -191,7 +188,6 @@ async fn test_pipeline_with_apply_worker_error() {
         destination.clone(),
     );
 
-    // We start the pipeline.
     pipeline.start().await.unwrap();
 
     // We stop and inspect errors.
@@ -242,7 +238,6 @@ async fn test_pipeline_with_table_sync_worker_panic() {
         )
         .await;
 
-    // We start the pipeline.
     pipeline.start().await.unwrap();
 
     users_state_notify.notified().await;
@@ -294,7 +289,6 @@ async fn test_pipeline_with_table_sync_worker_error() {
         )
         .await;
 
-    // We start the pipeline.
     pipeline.start().await.unwrap();
 
     users_state_notify.notified().await;
@@ -314,7 +308,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_table_schema_copy_with_retry() {
+async fn test_table_schema_copy_with_finished_copy_retry() {
     let database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
@@ -349,7 +343,6 @@ async fn test_table_schema_copy_with_retry() {
         )
         .await;
 
-    // We start the pipeline.
     pipeline.start().await.unwrap();
 
     schemas_notify.notified().await;
@@ -407,9 +400,7 @@ async fn test_table_schema_copy_with_retry() {
             primary: false,
         });
 
-    let destination = TestDestination::new();
-
-    // We recreate a pipeline, assuming the other one was stopped, using the same state.
+    // We recreate a pipeline, assuming the other one was stopped, using the same state and destination.
     let mut pipeline = spawn_pg_pipeline(
         &database_schema.publication_name,
         &database.options,
@@ -417,27 +408,24 @@ async fn test_table_schema_copy_with_retry() {
         destination.clone(),
     );
 
-    // We wait for two table schemas to be received.
-    let schemas_notify = destination.wait_for_n_schemas(2).await;
+    // We wait for the load replication origin state method to be called, since that is called in the
+    // branch where the copy was already finished.
+    let load_state_notify = state_store
+        .notify_on_method_call(StateStoreMethod::LoadReplicationOriginState)
+        .await;
 
-    // We start the pipeline.
     pipeline.start().await.unwrap();
 
-    schemas_notify.notified().await;
+    load_state_notify.notified().await;
 
-    // pipeline.shutdown_and_wait().await.unwrap();
-    timeout(Duration::from_secs(5), pipeline.shutdown_and_wait())
-        .await
-        .unwrap()
-        .unwrap();
+    pipeline.shutdown_and_wait().await.unwrap();
 
-    // We check that the table schema for orders has changed and for users has not.
-    let mut second_table_schemas = destination.get_table_schemas().await;
-    second_table_schemas.sort();
-    assert_eq!(second_table_schemas.len(), 2);
-    assert_eq!(second_table_schemas[0], extended_orders_table_schema);
-    assert_ne!(first_table_schemas[0], second_table_schemas[0]);
-    assert_eq!(second_table_schemas[1], database_schema.users_table_schema);
+    // We check that the table schemas haven't changed.
+    let mut first_table_schemas = destination.get_table_schemas().await;
+    first_table_schemas.sort();
+    assert_eq!(first_table_schemas.len(), 2);
+    assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
+    assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -483,7 +471,6 @@ async fn test_table_copy() {
         )
         .await;
 
-    // Start the pipeline
     pipeline.start().await.unwrap();
 
     // Wait for notifications with timeout
@@ -492,7 +479,7 @@ async fn test_table_copy() {
 
     pipeline.shutdown_and_wait().await.unwrap();
 
-    // Get all CDC events
+    // Get all table rows
     let table_rows = destination.get_table_rows().await;
     let users_table_rows = table_rows
         .get(&database_schema.users_table_schema.id)

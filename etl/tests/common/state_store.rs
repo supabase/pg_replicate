@@ -11,11 +11,24 @@ use tokio::sync::{Notify, RwLock};
 
 type TableStateCondition = Box<dyn Fn(&TableReplicationState) -> bool + Send + Sync>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StateStoreMethod {
+    LoadReplicationOriginState,
+    StoreReplicationOriginState,
+    LoadTableReplicationState,
+    LoadTableReplicationStates,
+    StoreTableReplicationState,
+    LoadTableSchemas,
+    LoadTableSchema,
+    StoreTableSchema,
+}
+
 struct Inner {
     replication_origin_states: HashMap<(PipelineId, Option<Oid>), ReplicationOriginState>,
     table_replication_states: HashMap<(PipelineId, Oid), TableReplicationState>,
     table_schemas: HashMap<(PipelineId, Oid), TableSchema>,
     table_state_conditions: Vec<((PipelineId, Oid), TableStateCondition, Arc<Notify>)>,
+    method_call_notifiers: HashMap<StateStoreMethod, Vec<Arc<Notify>>>,
 }
 
 #[derive(Clone)]
@@ -30,6 +43,7 @@ impl TestStateStore {
             table_replication_states: HashMap::new(),
             table_schemas: HashMap::new(),
             table_state_conditions: Vec::new(),
+            method_call_notifiers: HashMap::new(),
         };
 
         Self {
@@ -75,6 +89,18 @@ impl TestStateStore {
         .await
     }
 
+    pub async fn notify_on_method_call(&self, method: StateStoreMethod) -> Arc<Notify> {
+        let notify = Arc::new(Notify::new());
+        let mut inner = self.inner.write().await;
+        inner
+            .method_call_notifiers
+            .entry(method)
+            .or_insert_with(Vec::new)
+            .push(notify.clone());
+
+        notify
+    }
+
     async fn check_conditions(&self) {
         let mut inner = self.inner.write().await;
 
@@ -94,6 +120,15 @@ impl TestStateStore {
                 }
             });
     }
+
+    async fn dispatch_method_notification(&self, method: StateStoreMethod) {
+        let inner = self.inner.read().await;
+        if let Some(notifiers) = inner.method_call_notifiers.get(&method) {
+            for notifier in notifiers {
+                notifier.notify_one();
+            }
+        }
+    }
 }
 
 impl Default for TestStateStore {
@@ -109,10 +144,14 @@ impl StateStore for TestStateStore {
         table_id: Option<Oid>,
     ) -> Result<Option<ReplicationOriginState>, StateStoreError> {
         let inner = self.inner.read().await;
-        Ok(inner
+        let result = Ok(inner
             .replication_origin_states
             .get(&(pipeline_id, table_id))
-            .cloned())
+            .cloned());
+
+        self.dispatch_method_notification(StateStoreMethod::LoadReplicationOriginState)
+            .await;
+        result
     }
 
     async fn store_replication_origin_state(
@@ -128,6 +167,10 @@ impl StateStore for TestStateStore {
         }
 
         inner.replication_origin_states.insert(key, state);
+        drop(inner);
+
+        self.dispatch_method_notification(StateStoreMethod::StoreReplicationOriginState)
+            .await;
         Ok(true)
     }
 
@@ -137,19 +180,25 @@ impl StateStore for TestStateStore {
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
-
-        Ok(inner
+        let result = Ok(inner
             .table_replication_states
             .get(&(pipeline_id, table_id))
-            .cloned())
+            .cloned());
+
+        self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
+            .await;
+        result
     }
 
     async fn load_table_replication_states(
         &self,
     ) -> Result<Vec<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
+        let result = Ok(inner.table_replication_states.values().cloned().collect());
 
-        Ok(inner.table_replication_states.values().cloned().collect())
+        self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
+            .await;
+        result
     }
 
     async fn store_table_replication_state(
@@ -168,6 +217,8 @@ impl StateStore for TestStateStore {
         drop(inner); // Release the write lock before checking conditions
 
         self.check_conditions().await;
+        self.dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
+            .await;
 
         Ok(true)
     }
@@ -177,12 +228,16 @@ impl StateStore for TestStateStore {
         pipeline_id: PipelineId,
     ) -> Result<Vec<TableSchema>, StateStoreError> {
         let inner = self.inner.read().await;
-        Ok(inner
+        let result = Ok(inner
             .table_schemas
             .iter()
             .filter(|((pid, _), _)| pid == &pipeline_id)
             .map(|(_, schema)| schema.clone())
-            .collect())
+            .collect());
+
+        self.dispatch_method_notification(StateStoreMethod::LoadTableSchemas)
+            .await;
+        result
     }
 
     async fn load_table_schema(
@@ -191,8 +246,11 @@ impl StateStore for TestStateStore {
         table_id: Oid,
     ) -> Result<Option<TableSchema>, StateStoreError> {
         let inner = self.inner.read().await;
+        let result = Ok(inner.table_schemas.get(&(pipeline_id, table_id)).cloned());
 
-        Ok(inner.table_schemas.get(&(pipeline_id, table_id)).cloned())
+        self.dispatch_method_notification(StateStoreMethod::LoadTableSchema)
+            .await;
+        result
     }
 
     async fn store_table_schema(
@@ -209,7 +267,10 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_schemas.insert(key, table_schema);
+        drop(inner);
 
+        self.dispatch_method_notification(StateStoreMethod::StoreTableSchema)
+            .await;
         Ok(true)
     }
 }
@@ -277,7 +338,7 @@ where
             match fault_type {
                 FaultType::Panic => panic!("Fault injection: panic triggered"),
                 // We trigger a random error.
-                FaultType::Error => return Err(StateStoreError::PipelineStateNotFound),
+                FaultType::Error => return Err(StateStoreError::ReplicationOriginStateNotFound),
             }
         }
         Ok(())

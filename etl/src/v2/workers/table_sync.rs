@@ -49,7 +49,6 @@ pub enum TableSyncWorkerStateError {
 
 #[derive(Debug)]
 pub struct TableSyncWorkerStateInner {
-    identity: PipelineIdentity,
     table_replication_state: TableReplicationState,
     phase_change: Arc<Notify>,
 }
@@ -108,9 +107,8 @@ pub struct TableSyncWorkerState {
 }
 
 impl TableSyncWorkerState {
-    fn new(identity: PipelineIdentity, table_replication_state: TableReplicationState) -> Self {
+    fn new(table_replication_state: TableReplicationState) -> Self {
         let inner = TableSyncWorkerStateInner {
-            identity,
             table_replication_state,
             phase_change: Arc::new(Notify::new()),
         };
@@ -249,7 +247,7 @@ where
             return Err(TableSyncWorkerError::ReplicationStateMissing(self.table_id));
         };
 
-        let state = TableSyncWorkerState::new(self.identity.clone(), relation_subscription_state);
+        let state = TableSyncWorkerState::new(relation_subscription_state);
 
         let state_clone = state.clone();
         let table_sync_worker = async move {
@@ -273,7 +271,9 @@ where
                             // In this case, we early return and exit the worker.
                             return Ok(());
                         }
-                        TableSyncResult::SyncCompleted { consistent_point } => consistent_point,
+                        TableSyncResult::SyncCompleted {
+                            origin_start_lsn: consistent_point,
+                        } => consistent_point,
                     }
                 }
                 Err(err) => {
