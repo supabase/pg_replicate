@@ -74,12 +74,6 @@ pub enum PgReplicationError {
     PublicationNotFound(String),
 
     /// Errors related to data type handling
-    #[error("Invalid OID value in column: expected u32 but got invalid value")]
-    InvalidOid,
-
-    #[error("Invalid type modifier value: expected i32 but got invalid value")]
-    InvalidTypeModifier,
-
     #[error("Unsupported column type '{0}' (OID: {1}) in table '{2}': type is not supported for replication")]
     UnsupportedColumnType(String, u32, String),
 
@@ -656,42 +650,14 @@ impl PgReplicationClient {
 
         for message in self.inner.client.simple_query(&column_info_query).await? {
             if let SimpleQueryMessage::Row(row) = message {
-                let name = Self::get_row_value::<String>(&row, "attname", "pg_attribute")
-                    .await
-                    .map_err(|_| {
-                        PgReplicationError::ColumnNotFound(
-                            "attname".to_string(),
-                            "pg_attribute".to_string(),
-                        )
-                    })?;
-
-                let type_oid = Self::get_row_value::<u32>(&row, "atttypid", "pg_attribute")
-                    .await
-                    .map_err(|_| PgReplicationError::InvalidOid)?;
-
-                let modifier = Self::get_row_value::<i32>(&row, "atttypmod", "pg_attribute")
-                    .await
-                    .map_err(|_| PgReplicationError::InvalidTypeModifier)?;
-
-                let nullable = Self::get_row_value::<String>(&row, "attnotnull", "pg_attribute")
-                    .await
-                    .map_err(|_| {
-                        PgReplicationError::ColumnNotFound(
-                            "attnotnull".to_string(),
-                            "pg_attribute".to_string(),
-                        )
-                    })?
-                    == "f";
-
-                let primary = Self::get_row_value::<String>(&row, "primary", "pg_index")
-                    .await
-                    .map_err(|_| {
-                        PgReplicationError::ColumnNotFound(
-                            "primary".to_string(),
-                            "pg_index".to_string(),
-                        )
-                    })?
-                    == "t";
+                let name = Self::get_row_value::<String>(&row, "attname", "pg_attribute").await?;
+                let type_oid = Self::get_row_value::<u32>(&row, "atttypid", "pg_attribute").await?;
+                let modifier =
+                    Self::get_row_value::<i32>(&row, "atttypmod", "pg_attribute").await?;
+                let nullable =
+                    Self::get_row_value::<String>(&row, "attnotnull", "pg_attribute").await? == "f";
+                let primary =
+                    Self::get_row_value::<String>(&row, "primary", "pg_index").await? == "t";
 
                 let typ = Type::from_oid(type_oid).unwrap_or(Type::new(
                     format!("unnamed(oid: {type_oid})"),
