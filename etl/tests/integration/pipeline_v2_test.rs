@@ -1,15 +1,16 @@
-use crate::common::database::{spawn_database, test_table_name};
-use crate::common::destination_v2::TestDestination;
-use crate::common::pipeline_v2::spawn_pg_pipeline;
-use crate::common::state_store::{
-    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
-};
 use etl::conversions::Cell;
 use etl::v2::state::table::TableReplicationPhaseType;
 use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{PgDatabase, TableModification};
 use tokio_postgres::types::Type;
+
+use crate::common::database::{spawn_database, test_table_name};
+use crate::common::destination_v2::TestDestination;
+use crate::common::pipeline_v2::spawn_pg_pipeline;
+use crate::common::state_store::{
+    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
+};
 
 #[derive(Debug)]
 struct DatabaseSchema {
@@ -305,6 +306,129 @@ async fn test_pipeline_with_table_sync_worker_error() {
         errors[1],
         WorkerWaitError::TableSyncWorkerPropagated(_)
     ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_table_schema_copy_with_data_sync_retry() {
+    let database = spawn_database().await;
+    let database_schema = setup_database(&database).await;
+
+    let state_store = TestStateStore::new();
+    let destination = TestDestination::new();
+
+    // We start the pipeline from scratch with a faulty state store in order to have a failure during
+    // data sync.
+    let fault_config = FaultConfig {
+        store_table_schema: Some(FaultType::Error),
+        ..Default::default()
+    };
+    let failing_state_store = FaultInjectingStateStore::wrap(state_store.clone(), fault_config);
+    let mut pipeline = spawn_pg_pipeline(
+        &database_schema.publication_name,
+        &database.options,
+        failing_state_store.clone(),
+        destination.clone(),
+    );
+    let pipeline_id = pipeline.identity().id();
+
+    // We register the interest in waiting for both table syncs to have started.
+    let users_state_notify = failing_state_store
+        .get_inner()
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.users_table_schema.id,
+            TableReplicationPhaseType::DataSync,
+        )
+        .await;
+    let orders_state_notify = failing_state_store
+        .get_inner()
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.orders_table_schema.id,
+            TableReplicationPhaseType::DataSync,
+        )
+        .await;
+
+    pipeline.start().await.unwrap();
+
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
+
+    // We stop and inspect errors.
+    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
+    assert_eq!(errors.len(), 2);
+    assert!(matches!(
+        errors[0],
+        WorkerWaitError::TableSyncWorkerPropagated(_)
+    ));
+    assert!(matches!(
+        errors[1],
+        WorkerWaitError::TableSyncWorkerPropagated(_)
+    ));
+
+    // We recreate a pipeline, assuming the other one was stopped, using a non-failing state and
+    // the same destination.
+    let mut pipeline = spawn_pg_pipeline(
+        &database_schema.publication_name,
+        &database.options,
+        state_store.clone(),
+        destination.clone(),
+    );
+    let pipeline_id = pipeline.identity().id();
+
+    // We wait for two table schemas to be received.
+    let schemas_notify = destination.wait_for_n_schemas(2).await;
+    // We wait for both table states to be in finished done (sync wait is only memory and not
+    // available on the store).
+    let users_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.users_table_schema.id,
+            TableReplicationPhaseType::FinishedCopy,
+        )
+        .await;
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.orders_table_schema.id,
+            TableReplicationPhaseType::FinishedCopy,
+        )
+        .await;
+
+    pipeline.start().await.unwrap();
+
+    schemas_notify.notified().await;
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
+
+    pipeline.shutdown_and_wait().await.unwrap();
+
+    // We check that the states are correctly set.
+    let table_replication_states = state_store.get_table_replication_states().await;
+    assert_eq!(table_replication_states.len(), 2);
+    assert_eq!(
+        table_replication_states
+            .get(&(pipeline_id, database_schema.users_table_schema.id))
+            .unwrap()
+            .phase
+            .as_type(),
+        TableReplicationPhaseType::FinishedCopy
+    );
+    assert_eq!(
+        table_replication_states
+            .get(&(pipeline_id, database_schema.orders_table_schema.id))
+            .unwrap()
+            .phase
+            .as_type(),
+        TableReplicationPhaseType::FinishedCopy
+    );
+
+    // We check that the table schemas have been stored.
+    let mut first_table_schemas = destination.get_table_schemas().await;
+    first_table_schemas.sort();
+    assert_eq!(first_table_schemas.len(), 2);
+    assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
+    assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
 }
 
 #[tokio::test(flavor = "multi_thread")]
