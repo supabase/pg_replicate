@@ -22,7 +22,7 @@ use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum ApplyWorkerError {
-    #[error("An error occurred while interacting with the pipeline state store: {0}")]
+    #[error("An error occurred while interacting with the state store: {0}")]
     StateStoreError(#[from] StateStoreError),
 
     #[error("An error occurred in the apply loop: {0}")]
@@ -31,7 +31,7 @@ pub enum ApplyWorkerError {
 
 #[derive(Debug, Error)]
 pub enum ApplyWorkerHookError {
-    #[error("An error occurred while interacting with the pipeline state store: {0}")]
+    #[error("An error occurred while interacting with the state store: {0}")]
     StateStoreError(#[from] StateStoreError),
 
     #[error("An error occurred while interacting with the table sync worker state: {0}")]

@@ -25,7 +25,7 @@ pub enum PipelineError {
     #[error("Apply worker failed to start in the pipeline: {0}")]
     ApplyWorker(#[from] ApplyWorkerError),
 
-    #[error("An error happened in the pipeline state store: {0}")]
+    #[error("An error happened in the state store: {0}")]
     StateStore(#[from] StateStoreError),
 }
 

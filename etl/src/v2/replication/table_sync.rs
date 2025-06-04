@@ -33,7 +33,7 @@ pub enum TableSyncError {
     #[error("An error occurred while writing to the destination: {0}")]
     Destination(#[from] DestinationError),
 
-    #[error("An error happened in the pipeline state store: {0}")]
+    #[error("An error happened in the state store: {0}")]
     StateStore(#[from] StateStoreError),
 
     #[error("An error happened in the table copy stream")]

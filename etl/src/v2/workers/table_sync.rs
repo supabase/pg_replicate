@@ -32,7 +32,7 @@ pub enum TableSyncWorkerError {
     #[error("The replication state is missing for table {0}")]
     ReplicationStateMissing(Oid),
 
-    #[error("An error occurred while interacting with the pipeline state store: {0}")]
+    #[error("An error occurred while interacting with the state store: {0}")]
     StateStoreError(#[from] StateStoreError),
 
     #[error("An error occurred in the apply loop: {0}")]
@@ -44,7 +44,7 @@ pub enum TableSyncWorkerHookError {}
 
 #[derive(Debug, Error)]
 pub enum TableSyncWorkerStateError {
-    #[error("An error occurred while interacting with the pipeline state store: {0}")]
+    #[error("An error occurred while interacting with the state store: {0}")]
     StateStoreError(#[from] StateStoreError),
 }
 
