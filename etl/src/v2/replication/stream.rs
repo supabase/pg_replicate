@@ -10,7 +10,7 @@ use tokio_postgres::CopyOutStream;
 #[derive(Debug, Error)]
 pub enum TableCopyStreamError {
     #[error("An error occurred when copying table data from the stream: {0}")]
-    TokioPostgres(#[from] tokio_postgres::Error),
+    TableCopyFailed(#[from] tokio_postgres::Error),
 
     #[error("An error occurred while converting a table row during table copy: {0}")]
     Conversion(#[from] TableRowConversionError),

@@ -3,6 +3,7 @@ use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
 use crate::v2::replication::client::PgReplicationClient;
+use crate::v2::replication::slot::{get_slot_name, SlotUsage};
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
@@ -123,10 +124,8 @@ where
                 }
             };
 
-            // We start the applying loop by starting from the last LSN that we know was applied
-            // by the destination.
             let hook = Hook::new(
-                self.identity,
+                self.identity.clone(),
                 self.config.clone(),
                 self.replication_client.clone(),
                 self.pool,
@@ -134,13 +133,15 @@ where
                 self.destination.clone(),
                 self.shutdown_rx.clone(),
             );
+
             start_apply_loop(
-                hook,
+                self.identity,
+                replication_origin_state.remote_lsn,
                 self.config,
                 self.replication_client,
-                replication_origin_state.remote_lsn,
                 self.state_store,
                 self.destination,
+                hook,
                 self.shutdown_rx,
             )
             .await?;
@@ -293,5 +294,9 @@ where
             TableReplicationPhase::SyncDone { lsn } => lsn <= remote_final_lsn,
             _ => false,
         }
+    }
+
+    fn slot_usage(&self) -> SlotUsage {
+        SlotUsage::ApplyWorker
     }
 }

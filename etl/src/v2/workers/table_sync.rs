@@ -13,6 +13,7 @@ use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
 use crate::v2::replication::client::PgReplicationClient;
+use crate::v2::replication::slot::SlotUsage;
 use crate::v2::replication::table_sync::{start_table_sync, TableSyncError, TableSyncResult};
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{
@@ -264,16 +265,14 @@ where
             .await;
 
             // We handle the result of the table sync operation gracefully.
-            let consistent_point = match result {
+            let origin_start_lsn = match result {
                 Ok(result) => {
                     match result {
                         TableSyncResult::SyncNotRequired => {
                             // In this case, we early return and exit the worker.
                             return Ok(());
                         }
-                        TableSyncResult::SyncCompleted {
-                            origin_start_lsn: consistent_point,
-                        } => consistent_point,
+                        TableSyncResult::SyncCompleted { origin_start_lsn } => origin_start_lsn,
                     }
                 }
                 Err(err) => {
@@ -281,16 +280,16 @@ where
                 }
             };
 
-            // If we succeed syncing the table, we want to start the same apply loop as in the apply
-            // worker with the consistent point as the starting point.
             let hook = Hook::new(self.table_id);
+
             start_apply_loop(
-                hook,
+                self.identity,
+                origin_start_lsn,
                 self.config,
                 self.replication_client,
-                consistent_point,
                 self.state_store,
                 self.destination,
+                hook,
                 self.shutdown_rx,
             )
             .await?;
@@ -346,5 +345,11 @@ impl ApplyLoopHook for Hook {
         }
 
         should_apply
+    }
+
+    fn slot_usage(&self) -> SlotUsage {
+        SlotUsage::TableSyncWorker {
+            table_id: self.table_id,
+        }
     }
 }
