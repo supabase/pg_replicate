@@ -1,22 +1,29 @@
+use crate::v2::pipeline::PipelineId;
 use postgres::schema::Oid;
 use std::fmt;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Clone)]
 pub struct TableReplicationState {
-    /// The table (relation) OID to which this subscription refers.
-    pub id: Oid,
+    /// The pipeline id to which this state refers.
+    pub pipeline_id: PipelineId,
+    /// The table (relation) OID to which this state refers.
+    pub table_id: Oid,
     /// The phase of replication of the table.
     pub phase: TableReplicationPhase,
 }
 
 impl TableReplicationState {
-    pub fn new(id: Oid, phase: TableReplicationPhase) -> Self {
-        Self { id, phase }
+    pub fn new(pipeline_id: PipelineId, table_id: Oid, phase: TableReplicationPhase) -> Self {
+        Self {
+            pipeline_id,
+            table_id,
+            phase,
+        }
     }
 
-    pub fn init(id: Oid) -> Self {
-        Self::new(id, TableReplicationPhase::Init)
+    pub fn init(pipeline_id: PipelineId, table_id: Oid) -> Self {
+        Self::new(pipeline_id, table_id, TableReplicationPhase::Init)
     }
 
     pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {
@@ -26,7 +33,7 @@ impl TableReplicationState {
 
 impl PartialEq for TableReplicationState {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.table_id == other.table_id
     }
 }
 

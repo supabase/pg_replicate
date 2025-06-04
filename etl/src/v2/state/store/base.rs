@@ -3,7 +3,7 @@ use std::future::Future;
 use thiserror::Error;
 
 use crate::v2::pipeline::PipelineId;
-use crate::v2::state::pipeline::PipelineState;
+use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug, Error)]
@@ -16,14 +16,15 @@ pub enum StateStoreError {
 }
 
 pub trait StateStore {
-    fn load_pipeline_state(
+    fn load_replication_origin_state(
         &self,
         pipeline_id: PipelineId,
-    ) -> impl Future<Output = Result<PipelineState, StateStoreError>> + Send;
+        table_id: Option<Oid>,
+    ) -> impl Future<Output = Result<Option<ReplicationOriginState>, StateStoreError>> + Send;
 
-    fn store_pipeline_state(
+    fn store_replication_origin_state(
         &self,
-        state: PipelineState,
+        state: ReplicationOriginState,
         overwrite: bool,
     ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;
 
@@ -39,7 +40,6 @@ pub trait StateStore {
 
     fn store_table_replication_state(
         &self,
-        pipeline_id: PipelineId,
         state: TableReplicationState,
         overwrite: bool,
     ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;

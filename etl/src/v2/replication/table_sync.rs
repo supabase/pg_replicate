@@ -136,7 +136,6 @@ where
         .get_table_copy_stream(table_id, &table_schema.column_schemas)
         .await?;
     let table_copy_stream = TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-    // TODO: supply the actual pipeline config.
     let table_copy_stream =
         BoundedBatchStream::wrap(table_copy_stream, config.batch_config.clone(), shutdown_rx);
     pin!(table_copy_stream);

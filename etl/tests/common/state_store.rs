@@ -1,5 +1,5 @@
 use etl::v2::pipeline::PipelineId;
-use etl::v2::state::pipeline::PipelineState;
+use etl::v2::state::origin::ReplicationOriginState;
 use etl::v2::state::store::base::{StateStore, StateStoreError};
 use etl::v2::state::table::{TableReplicationPhaseType, TableReplicationState};
 use postgres::schema::{Oid, TableSchema};
@@ -12,7 +12,7 @@ use tokio::sync::{Notify, RwLock};
 type TableStateCondition = Box<dyn Fn(&TableReplicationState) -> bool + Send + Sync>;
 
 struct Inner {
-    pipeline_states: HashMap<PipelineId, PipelineState>,
+    replication_origin_states: HashMap<(PipelineId, Option<Oid>), ReplicationOriginState>,
     table_replication_states: HashMap<(PipelineId, Oid), TableReplicationState>,
     table_schemas: HashMap<(PipelineId, Oid), TableSchema>,
     table_state_conditions: Vec<((PipelineId, Oid), TableStateCondition, Arc<Notify>)>,
@@ -26,7 +26,7 @@ pub struct TestStateStore {
 impl TestStateStore {
     pub fn new() -> Self {
         let inner = Inner {
-            pipeline_states: HashMap::new(),
+            replication_origin_states: HashMap::new(),
             table_replication_states: HashMap::new(),
             table_schemas: HashMap::new(),
             table_state_conditions: Vec::new(),
@@ -103,32 +103,31 @@ impl Default for TestStateStore {
 }
 
 impl StateStore for TestStateStore {
-    async fn load_pipeline_state(
+    async fn load_replication_origin_state(
         &self,
         pipeline_id: PipelineId,
-    ) -> Result<PipelineState, StateStoreError> {
+        table_id: Option<Oid>,
+    ) -> Result<Option<ReplicationOriginState>, StateStoreError> {
         let inner = self.inner.read().await;
-        inner
-            .pipeline_states
-            .get(&pipeline_id)
-            .cloned()
-            .ok_or(StateStoreError::PipelineStateNotFound)
+        Ok(inner
+            .replication_origin_states
+            .get(&(pipeline_id, table_id))
+            .cloned())
     }
 
-    async fn store_pipeline_state(
+    async fn store_replication_origin_state(
         &self,
-        state: PipelineState,
+        state: ReplicationOriginState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
         let mut inner = self.inner.write().await;
-        let pipeline_id = state.id;
+        let key = (state.pipeline_id, state.table_id);
 
-        if !overwrite && inner.pipeline_states.contains_key(&pipeline_id) {
+        if !overwrite && inner.replication_origin_states.contains_key(&key) {
             return Ok(false);
         }
 
-        inner.pipeline_states.insert(pipeline_id, state);
-
+        inner.replication_origin_states.insert(key, state);
         Ok(true)
     }
 
@@ -155,12 +154,11 @@ impl StateStore for TestStateStore {
 
     async fn store_table_replication_state(
         &self,
-        pipeline_id: PipelineId,
         state: TableReplicationState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
         let mut inner = self.inner.write().await;
-        let key = (pipeline_id, state.id);
+        let key = (state.pipeline_id, state.table_id);
 
         if !overwrite && inner.table_replication_states.contains_key(&key) {
             return Ok(false);
@@ -222,7 +220,10 @@ impl fmt::Debug for TestStateStore {
             Handle::current().block_on(async move { self.inner.read().await })
         });
         f.debug_struct("TestStateStore")
-            .field("pipeline_states", &inner.pipeline_states)
+            .field(
+                "replication_origin_states",
+                &inner.replication_origin_states,
+            )
             .field("table_replication_states", &inner.table_replication_states)
             .field("table_schemas", &inner.table_schemas)
             .finish()
@@ -237,8 +238,8 @@ pub enum FaultType {
 
 #[derive(Debug, Clone, Default)]
 pub struct FaultConfig {
-    pub load_pipeline_state: Option<FaultType>,
-    pub store_pipeline_state: Option<FaultType>,
+    pub load_replication_origin_state: Option<FaultType>,
+    pub store_replication_origin_state: Option<FaultType>,
     pub load_table_replication_state: Option<FaultType>,
     pub load_table_replication_states: Option<FaultType>,
     pub store_table_replication_state: Option<FaultType>,
@@ -287,21 +288,26 @@ impl<S> StateStore for FaultInjectingStateStore<S>
 where
     S: StateStore + Clone + Send + Sync + 'static,
 {
-    async fn load_pipeline_state(
+    async fn load_replication_origin_state(
         &self,
         pipeline_id: PipelineId,
-    ) -> Result<PipelineState, StateStoreError> {
-        self.check_fault(&self.config.load_pipeline_state)?;
-        self.inner.load_pipeline_state(pipeline_id).await
+        table_id: Option<Oid>,
+    ) -> Result<Option<ReplicationOriginState>, StateStoreError> {
+        self.check_fault(&self.config.load_replication_origin_state)?;
+        self.inner
+            .load_replication_origin_state(pipeline_id, table_id)
+            .await
     }
 
-    async fn store_pipeline_state(
+    async fn store_replication_origin_state(
         &self,
-        state: PipelineState,
+        state: ReplicationOriginState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
-        self.check_fault(&self.config.store_pipeline_state)?;
-        self.inner.store_pipeline_state(state, overwrite).await
+        self.check_fault(&self.config.store_replication_origin_state)?;
+        self.inner
+            .store_replication_origin_state(state, overwrite)
+            .await
     }
 
     async fn load_table_replication_state(
@@ -324,13 +330,12 @@ where
 
     async fn store_table_replication_state(
         &self,
-        pipeline_id: PipelineId,
         state: TableReplicationState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
         self.check_fault(&self.config.store_table_replication_state)?;
         self.inner
-            .store_table_replication_state(pipeline_id, state, overwrite)
+            .store_table_replication_state(state, overwrite)
             .await
     }
 

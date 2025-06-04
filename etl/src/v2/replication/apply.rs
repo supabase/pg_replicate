@@ -58,7 +58,7 @@ pub async fn start_apply_loop<S, D, T>(
     hook: T,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
-    last_received: PgLsn,
+    origin_start_lsn: PgLsn,
     state_store: S,
     destination: D,
     mut shutdown_rx: watch::Receiver<()>,
@@ -75,7 +75,7 @@ where
             _ = shutdown_rx.changed() => {
                 return Ok(ApplyLoopResult::ApplyCompleted);
             }
-            result = inner_apply_loop(&hook, config.clone(), replication_client.clone(), last_received, state_store.clone(), destination.clone()) => {
+            result = inner_apply_loop(&hook, config.clone(), replication_client.clone(), origin_start_lsn, state_store.clone(), destination.clone()) => {
                 result?;
             }
         }
@@ -86,7 +86,7 @@ async fn inner_apply_loop<S, D, T>(
     hook: &T,
     _config: Arc<PipelineConfig>,
     _replication_client: PgReplicationClient,
-    _last_received: PgLsn,
+    _origin_start_lsn: PgLsn,
     _state_store: S,
     _destination: D,
 ) -> Result<ApplyLoopResult, ApplyLoopError>

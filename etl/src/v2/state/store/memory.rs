@@ -4,15 +4,15 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::v2::pipeline::PipelineId;
-use crate::v2::state::pipeline::PipelineState;
+use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug)]
 struct Inner {
-    pipeline_states: HashMap<PipelineId, PipelineState>,
     table_replication_states: HashMap<(PipelineId, Oid), TableReplicationState>,
     table_schemas: HashMap<(PipelineId, Oid), TableSchema>,
+    replication_origin_states: HashMap<(PipelineId, Option<Oid>), ReplicationOriginState>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,9 +23,9 @@ pub struct MemoryStateStore {
 impl MemoryStateStore {
     pub fn new() -> Self {
         let inner = Inner {
-            pipeline_states: HashMap::new(),
             table_replication_states: HashMap::new(),
             table_schemas: HashMap::new(),
+            replication_origin_states: HashMap::new(),
         };
 
         Self {
@@ -41,32 +41,31 @@ impl Default for MemoryStateStore {
 }
 
 impl StateStore for MemoryStateStore {
-    async fn load_pipeline_state(
+    async fn load_replication_origin_state(
         &self,
         pipeline_id: PipelineId,
-    ) -> Result<PipelineState, StateStoreError> {
+        table_id: Option<Oid>,
+    ) -> Result<Option<ReplicationOriginState>, StateStoreError> {
         let inner = self.inner.read().await;
-        inner
-            .pipeline_states
-            .get(&pipeline_id)
-            .cloned()
-            .ok_or(StateStoreError::PipelineStateNotFound)
+        Ok(inner
+            .replication_origin_states
+            .get(&(pipeline_id, table_id))
+            .cloned())
     }
 
-    async fn store_pipeline_state(
+    async fn store_replication_origin_state(
         &self,
-        state: PipelineState,
+        state: ReplicationOriginState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
         let mut inner = self.inner.write().await;
-        let pipeline_id = state.id;
+        let key = (state.pipeline_id, state.table_id);
 
-        if !overwrite && inner.pipeline_states.contains_key(&pipeline_id) {
+        if !overwrite && inner.replication_origin_states.contains_key(&key) {
             return Ok(false);
         }
 
-        inner.pipeline_states.insert(pipeline_id, state);
-
+        inner.replication_origin_states.insert(key, state);
         Ok(true)
     }
 
@@ -93,12 +92,11 @@ impl StateStore for MemoryStateStore {
 
     async fn store_table_replication_state(
         &self,
-        pipeline_id: PipelineId,
         state: TableReplicationState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
         let mut inner = self.inner.write().await;
-        let key = (pipeline_id, state.id);
+        let key = (state.pipeline_id, state.table_id);
 
         if !overwrite && inner.table_replication_states.contains_key(&key) {
             return Ok(false);

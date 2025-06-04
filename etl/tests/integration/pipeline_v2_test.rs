@@ -148,7 +148,7 @@ async fn test_pipeline_with_apply_worker_panic() {
     let database_schema = setup_database(&database).await;
 
     let fault_config = FaultConfig {
-        load_pipeline_state: Some(FaultType::Panic),
+        load_replication_origin_state: Some(FaultType::Panic),
         ..Default::default()
     };
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
@@ -177,7 +177,7 @@ async fn test_pipeline_with_apply_worker_error() {
     let database_schema = setup_database(&database).await;
 
     let fault_config = FaultConfig {
-        load_pipeline_state: Some(FaultType::Error),
+        load_replication_origin_state: Some(FaultType::Error),
         ..Default::default()
     };
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);

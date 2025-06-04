@@ -58,7 +58,7 @@ impl TableSyncWorkerStateInner {
     fn set_phase(&mut self, phase: TableReplicationPhase) {
         info!(
             "Table {} phase changing from {:?} to {:?}",
-            self.table_replication_state.id, self.table_replication_state.phase, phase
+            self.table_replication_state.table_id, self.table_replication_state.phase, phase
         );
 
         self.table_replication_state.phase = phase;
@@ -80,17 +80,13 @@ impl TableSyncWorkerStateInner {
         if phase.as_type().should_store() {
             info!(
                 "Storing phase change for table {} to {:?}",
-                self.table_replication_state.id, phase
+                self.table_replication_state.table_id, phase
             );
 
             let new_table_replication_state =
                 self.table_replication_state.clone().with_phase(phase);
             state_store
-                .store_table_replication_state(
-                    self.identity.id(),
-                    new_table_replication_state,
-                    true,
-                )
+                .store_table_replication_state(new_table_replication_state, true)
                 .await?;
         }
 
@@ -98,7 +94,7 @@ impl TableSyncWorkerStateInner {
     }
 
     pub fn table_id(&self) -> Oid {
-        self.table_replication_state.id
+        self.table_replication_state.table_id
     }
 
     pub fn replication_phase(&self) -> TableReplicationPhase {

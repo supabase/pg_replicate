@@ -3,6 +3,7 @@ use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
 use crate::v2::replication::client::PgReplicationClient;
+use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
@@ -102,11 +103,25 @@ where
         info!("Starting apply worker");
 
         let apply_worker = async move {
-            // We load the initial state that will be used for the apply worker.
-            let pipeline_state = self
+            // TODO: get the slot of the main apply worker or create it if needed.
+            // We load or initialize the initial state that will be used for the apply worker.
+            let replication_origin_state = match self
                 .state_store
-                .load_pipeline_state(self.identity.id())
-                .await?;
+                .load_replication_origin_state(self.identity.id(), None)
+                .await?
+            {
+                Some(replication_origin_state) => replication_origin_state,
+                None => {
+                    // TODO: use the consistent point from the slot during creation here.
+                    let replication_origin_state =
+                        ReplicationOriginState::new(self.identity.id(), None, PgLsn::from(0));
+                    self.state_store
+                        .store_replication_origin_state(replication_origin_state.clone(), true)
+                        .await?;
+
+                    replication_origin_state
+                }
+            };
 
             // We start the applying loop by starting from the last LSN that we know was applied
             // by the destination.
@@ -123,7 +138,7 @@ where
                 hook,
                 self.config,
                 self.replication_client,
-                pipeline_state.last_lsn,
+                replication_origin_state.remote_lsn,
                 self.state_store,
                 self.destination,
                 self.shutdown_rx,
@@ -194,18 +209,14 @@ where
                     let table_replication_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
                     self.state_store
-                        .store_table_replication_state(
-                            self.identity.id(),
-                            table_replication_state,
-                            true,
-                        )
+                        .store_table_replication_state(table_replication_state, true)
                         .await?;
                 }
             } else {
                 {
                     let pool = self.pool.read().await;
                     if let Some(table_sync_worker_state) =
-                        pool.get_worker_state(table_replication_state.id)
+                        pool.get_worker_state(table_replication_state.table_id)
                     {
                         let mut catchup_started = false;
                         let mut inner = table_sync_worker_state.get_inner().write().await;
@@ -234,7 +245,7 @@ where
 
                 info!(
                     "Creating new sync worker for table {}",
-                    table_replication_state.id
+                    table_replication_state.table_id
                 );
 
                 match self.replication_client.duplicate().await {
@@ -244,7 +255,7 @@ where
                             self.config.clone(),
                             duplicate_replication_client,
                             self.pool.clone(),
-                            table_replication_state.id,
+                            table_replication_state.table_id,
                             self.state_store.clone(),
                             self.destination.clone(),
                             self.shutdown_rx.clone(),

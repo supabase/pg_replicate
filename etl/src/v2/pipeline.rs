@@ -8,7 +8,6 @@ use tracing::{error, info};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
-use crate::v2::state::pipeline::PipelineState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
@@ -114,9 +113,6 @@ where
             self.identity.publication_name()
         );
 
-        // We initialize the pipeline state, if needed.
-        self.prepare_pipeline_state().await?;
-
         // We create the first connection to Postgres. Note that other connections will be created
         // by duplicating this first one.
         let replication_client = self.connect().await?;
@@ -148,14 +144,6 @@ where
         Ok(())
     }
 
-    async fn prepare_pipeline_state(&self) -> Result<(), PipelineError> {
-        // We store the init state only if it's not already present.
-        let state = PipelineState::init(self.identity.id);
-        self.state_store.store_pipeline_state(state, false).await?;
-
-        Ok(())
-    }
-
     async fn sync_relation_subscription_states(
         &self,
         replication_client: &PgReplicationClient,
@@ -167,10 +155,10 @@ where
             .get_publication_table_ids(self.identity.publication_name())
             .await?;
         for table_id in table_ids {
-            let state = TableReplicationState::init(table_id);
+            let state = TableReplicationState::init(self.identity.id, table_id);
             // We store the init state only if it's not already present.
             self.state_store
-                .store_table_replication_state(self.identity.id, state, false)
+                .store_table_replication_state(state, false)
                 .await?;
         }
 
