@@ -161,12 +161,11 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> 
             }
         }
 
-        if !this.items.is_empty() {
+        if let Some(last_item) = this.items.last() {
             if let Some(deadline) = this.deadline.as_pin_mut() {
                 ready!(deadline.poll(cx));
             }
 
-            let last_item = this.items.last().expect("missing last item");
             if last_item.is_on_boundary() {
                 *this.reset_timer = true;
                 return Poll::Ready(Some(std::mem::take(this.items)));
