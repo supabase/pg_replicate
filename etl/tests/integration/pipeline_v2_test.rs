@@ -97,8 +97,8 @@ async fn setup_database<G: GenericClient>(database: &PgDatabase<G>) -> DatabaseS
 
 async fn insert_mock_data<G: GenericClient>(
     database: &PgDatabase<G>,
-    users_table_name: TableName,
-    orders_table_name: TableName,
+    users_table_name: &TableName,
+    orders_table_name: &TableName,
     n: usize,
 ) {
     // Insert users with deterministic data
@@ -564,8 +564,8 @@ async fn test_table_copy() {
     let rows_inserted = 10;
     insert_mock_data(
         &database,
-        database_schema.users_table_schema.name,
-        database_schema.orders_table_schema.name,
+        &database_schema.users_table_schema.name,
+        &database_schema.orders_table_schema.name,
         rows_inserted,
     )
     .await;
@@ -631,8 +631,8 @@ async fn test_table_copy_and_sync() {
     let rows_inserted = 10;
     insert_mock_data(
         &database,
-        database_schema.users_table_schema.name,
-        database_schema.orders_table_schema.name,
+        &database_schema.users_table_schema.name,
+        &database_schema.orders_table_schema.name,
         rows_inserted,
     )
     .await;
@@ -666,6 +666,14 @@ async fn test_table_copy_and_sync() {
         .await;
 
     pipeline.start().await.unwrap();
+
+    insert_mock_data(
+        &database,
+        &database_schema.users_table_schema.name,
+        &database_schema.orders_table_schema.name,
+        10,
+    )
+    .await;
 
     // Wait for notifications with timeout
     // users_state_notify.notified().await;

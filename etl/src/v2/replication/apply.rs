@@ -14,9 +14,7 @@ use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::{PipelineId, PipelineIdentity};
-use crate::v2::replication::client::{
-    GetOrCreateSlotResult, PgReplicationClient, PgReplicationError,
-};
+use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::replication::stream::{EventsStream, EventsStreamError};
 use crate::v2::state::origin::ReplicationOriginState;
@@ -71,10 +69,11 @@ pub enum ApplyLoopResult {
 pub trait ApplyLoopHook {
     type Error: Into<ApplyLoopError>;
 
+    fn initialize(&self) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
     fn process_syncing_tables(
         &self,
         current_lsn: PgLsn,
-        initial_sync: bool,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn should_apply_changes(
@@ -174,15 +173,12 @@ where
         last_status_update: None,
     };
 
+    // We initialize the apply loop which is based on the hook implementation.
+    hook.initialize().await?;
+
     // We compute the slot name for the replication slot that we are going to use for the logical
     // replication. At this point we assume that the slot already exists.
     let slot_name = get_slot_name(&identity, hook.slot_usage())?;
-
-    // We kickstart table syncing before the loop starts, so that we do not have to wait for a
-    // boundary event to do it.
-    // TODO: not super happy about this implementation, maybe we can find a way to do initialize
-    //  table syncing separately.
-    hook.process_syncing_tables(origin_start_lsn, true).await?;
 
     // We start the logical replication stream with the supplied parameters at a given lsn. That
     // lsn is the last lsn from which we need to start fetching events.
@@ -405,7 +401,7 @@ where
     //
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
     let end_lsn = PgLsn::from(message.end_lsn());
-    hook.process_syncing_tables(end_lsn, false).await?;
+    hook.process_syncing_tables(end_lsn).await?;
 
     Ok(())
 }

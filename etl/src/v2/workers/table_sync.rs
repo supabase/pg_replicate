@@ -1,4 +1,5 @@
 use postgres::schema::Oid;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -255,7 +256,6 @@ where
 
         let state_clone = state.clone();
         let table_sync_worker = async move {
-            // We first start syncing the table.
             let result = start_table_sync(
                 self.identity.clone(),
                 self.config.clone(),
@@ -268,20 +268,10 @@ where
             )
             .await;
 
-            // We handle the result of the table sync operation gracefully.
             let origin_start_lsn = match result {
-                Ok(result) => {
-                    match result {
-                        TableSyncResult::SyncNotRequired => {
-                            // In this case, we early return and exit the worker.
-                            return Ok(());
-                        }
-                        TableSyncResult::SyncCompleted { origin_start_lsn } => origin_start_lsn,
-                    }
-                }
-                Err(err) => {
-                    return Err(err.into());
-                }
+                Ok(TableSyncResult::SyncNotRequired) => return Ok(()),
+                Ok(TableSyncResult::SyncCompleted { origin_start_lsn }) => origin_start_lsn,
+                Err(err) => return Err(err.into()),
             };
 
             start_apply_loop(
@@ -337,11 +327,11 @@ where
 {
     type Error = TableSyncWorkerHookError;
 
-    async fn process_syncing_tables(
-        &self,
-        current_lsn: PgLsn,
-        _initial_sync: bool,
-    ) -> Result<(), Self::Error> {
+    async fn initialize(&self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<(), Self::Error> {
         info!(
             "Processing syncing tables for table sync worker with LSN {}",
             current_lsn
