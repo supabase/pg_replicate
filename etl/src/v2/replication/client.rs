@@ -330,10 +330,10 @@ impl PgReplicationClient {
     /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.
     pub async fn delete_slot(&self, slot_name: &str) -> PgReplicationResult<()> {
         // Do not convert the query or the options to lowercase, see comment in `create_slot_internal`.
-        // TODO: drop the slot with WAIT option to ensure that the server waits for the slot to be
-        // become inactive before dropping it instead of returning an error if the slot is still active.
-        // This is what Postgres does in its replication implementation.
-        let query = format!(r#"DROP_REPLICATION_SLOT {};"#, quote_identifier(slot_name));
+        let query = format!(
+            r#"DROP_REPLICATION_SLOT {} WAIT;"#,
+            quote_identifier(slot_name)
+        );
 
         match self.inner.client.simple_query(&query).await {
             Ok(_) => Ok(()),

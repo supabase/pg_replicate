@@ -147,14 +147,16 @@ where
 
                     // If we didn't find any replication origin state but the slot was there, the
                     // apply worker might have crashed between creating a slot and storing the
-                    // replication origin state.
+                    // replication origin state. In this case, we optimistically delete the slot and
+                    // start from scratch.
                     let Some(replication_origin_state) = replication_origin_state else {
+                        self.replication_client.delete_slot(&slot_name).await?;
                         continue;
                     };
 
                     replication_origin_state.remote_lsn
                 };
-                
+
                 break origin_start_lsn;
             };
 
