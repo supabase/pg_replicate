@@ -242,9 +242,11 @@ where
                             drop(inner);
 
                             if catchup_started {
+                                println!("WAITING FOR SYNC DONE");
                                 let _ = table_sync_worker_state
                                     .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
                                     .await;
+                                println!("SYNC DONE RECEIVED");
                             }
 
                             continue;

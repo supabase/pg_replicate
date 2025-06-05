@@ -206,9 +206,11 @@ where
     }
 
     // We also wait to be signaled to catchup with the main apply worker up to a specific lsn.
+    println!("WAITING FOR CATCHUP");
     let _ = table_sync_worker_state
         .wait_for_phase_type(TableReplicationPhaseType::Catchup)
         .await;
+    println!("CATCHUP RECEIVED");
 
     Ok(TableSyncResult::SyncCompleted {
         origin_start_lsn: replication_origin_state.remote_lsn,

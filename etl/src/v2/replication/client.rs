@@ -91,6 +91,12 @@ pub struct GetSlotResult {
     pub confirmed_flush_lsn: PgLsn,
 }
 
+#[derive(Debug, Clone)]
+pub enum GetOrCreateSlotResult {
+    CreateSlot(CreateSlotResult),
+    GetSlot(GetSlotResult),
+}
+
 /// A transaction that operates within the context of a replication slot.
 ///
 /// This type ensures that the parent connection remains active for the duration of any
@@ -308,17 +314,12 @@ impl PgReplicationClient {
     pub async fn get_or_create_slot(
         &self,
         slot_name: &str,
-    ) -> PgReplicationResult<(bool, GetSlotResult)> {
+    ) -> PgReplicationResult<GetOrCreateSlotResult> {
         match self.get_slot(slot_name).await {
-            Ok(slot) => Ok((false, slot)),
+            Ok(slot) => Ok(GetOrCreateSlotResult::GetSlot(slot)),
             Err(PgReplicationError::SlotNotFound(_)) => {
                 let create_result = self.create_slot_internal(slot_name, false).await?;
-                Ok((
-                    true,
-                    GetSlotResult {
-                        confirmed_flush_lsn: create_result.consistent_point,
-                    },
-                ))
+                Ok(GetOrCreateSlotResult::CreateSlot(create_result))
             }
             Err(e) => Err(e),
         }
