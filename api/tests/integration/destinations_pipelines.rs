@@ -2,8 +2,8 @@ use reqwest::StatusCode;
 
 use crate::{
     common::test_app::{
-        spawn_test_app, CreateDestinationPipelineResponse, DestinationResponse, PipelineResponse,
-        PostDestinationPipelineRequest,
+        spawn_test_app, CreateDestinationPipelineResponse, CreatePipelineRequest,
+        DestinationResponse, PipelineResponse, PostDestinationPipelineRequest,
     },
     integration::destination_test::{
         create_destination, new_destination_config, new_name, updated_destination_config,
@@ -400,7 +400,7 @@ async fn duplicate_destination_pipeline_with_same_source_cant_be_created() {
     let first_destination_id = response.destination_id;
 
     // Act - Try to create another pipeline with same source and the first destination
-    let pipeline_request = crate::common::test_app::CreatePipelineRequest {
+    let pipeline_request = CreatePipelineRequest {
         source_id,
         destination_id: first_destination_id,
         publication_name: "different_publication".to_string(),

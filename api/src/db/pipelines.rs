@@ -247,8 +247,7 @@ pub fn is_duplicate_pipeline_error(err: &sqlx::Error) -> bool {
             // Check for our unique constraint name defined
             // in the migrations/20250605064229_add_unique_constraint_pipelines_source_destination.sql file
             db_err.code().as_deref() == Some("23505")
-                && db_err.constraint().as_deref()
-                    == Some("pipelines_tenant_source_destination_unique")
+                && db_err.constraint() == Some("pipelines_tenant_source_destination_unique")
         }
         _ => false,
     }
