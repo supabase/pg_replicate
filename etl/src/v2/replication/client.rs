@@ -296,6 +296,34 @@ impl PgReplicationClient {
         Err(PgReplicationError::SlotNotFound(slot_name.to_string()))
     }
 
+    /// Gets an existing replication slot or creates a new one if it doesn't exist.
+    ///
+    /// This method first attempts to get the slot by name. If the slot doesn't exist,
+    /// it creates a new one.
+    ///
+    /// Returns a tuple containing:
+    /// - A boolean indicating whether the slot was created (true) or already existed (false)
+    /// - The slot result containing either the confirmed_flush_lsn (for existing slots)
+    ///   or the consistent_point (for newly created slots)
+    pub async fn get_or_create_slot(
+        &self,
+        slot_name: &str,
+    ) -> PgReplicationResult<(bool, GetSlotResult)> {
+        match self.get_slot(slot_name).await {
+            Ok(slot) => Ok((false, slot)),
+            Err(PgReplicationError::SlotNotFound(_)) => {
+                let create_result = self.create_slot_internal(slot_name, false).await?;
+                Ok((
+                    true,
+                    GetSlotResult {
+                        confirmed_flush_lsn: create_result.consistent_point,
+                    },
+                ))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Deletes a replication slot with the specified name.
     ///
     /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.

@@ -175,6 +175,10 @@ where
                 destination.copy_table_rows(table_id, table_rows).await?;
             }
 
+            // We commit the transaction before starting the apply loop, otherwise it will fail
+            // since no transactions can be running while replication is started.
+            transaction.commit().await?;
+
             // We mark that we finished the copy of the table schema and data.
             {
                 let mut inner = table_sync_worker_state.get_inner().write().await;
@@ -200,6 +204,11 @@ where
             .set_phase_with(TableReplicationPhase::SyncWait, state_store)
             .await?;
     }
+
+    // We also wait to be signaled to catchup with the main apply worker up to a specific lsn.
+    let _ = table_sync_worker_state
+        .wait_for_phase_type(TableReplicationPhaseType::Catchup)
+        .await;
 
     Ok(TableSyncResult::SyncCompleted {
         origin_start_lsn: replication_origin_state.remote_lsn,

@@ -219,19 +219,6 @@ impl<G: GenericClient> PgDatabase<G> {
         let rows = self.client.as_ref().unwrap().query(&query, &[]).await?;
         Ok(rows.iter().map(|row| row.get(0)).collect())
     }
-
-    /// Returns a [`ColumnSchema`] representing a non-nullable, primary key column
-    /// named "id" of type `INT8` which is added by default to all tables created within
-    /// [`PgDatabase`].
-    pub fn id_column_schema() -> ColumnSchema {
-        ColumnSchema {
-            name: "id".to_string(),
-            typ: Type::INT8,
-            modifier: -1,
-            nullable: false,
-            primary: true,
-        }
-    }
 }
 
 impl PgDatabase<Client> {
@@ -277,6 +264,19 @@ impl<G> Drop for PgDatabase<G> {
                 Handle::current().block_on(async move { drop_pg_database(&self.options).await });
             });
         }
+    }
+}
+
+/// Returns a [`ColumnSchema`] representing a non-nullable, primary key column
+/// named "id" of type `INT8` which is added by default to all tables created within
+/// [`PgDatabase`].
+pub fn id_column_schema() -> ColumnSchema {
+    ColumnSchema {
+        name: "id".to_string(),
+        typ: Type::INT8,
+        modifier: -1,
+        nullable: false,
+        primary: true,
     }
 }
 

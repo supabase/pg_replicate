@@ -135,10 +135,13 @@ where
     // replication. At this point we assume that the slot already exists.
     let slot_name = get_slot_name(&identity, hook.slot_usage())?;
 
+    // We get or create the replication slot used by the apply worker.
+    replication_client.get_or_create_slot(&slot_name).await?;
+
     // We start the logical replication stream with the supplied parameters at a given lsn. That
     // lsn is the last lsn from which we need to start fetching events.
     let logical_replication_stream = replication_client
-        .start_logical_replication(&slot_name, identity.publication_name(), origin_start_lsn)
+        .start_logical_replication(identity.publication_name(), &slot_name, origin_start_lsn)
         .await?;
     let logical_replication_stream = EventsStream::wrap(logical_replication_stream);
     let logical_replication_stream = BoundedBatchStream::wrap(

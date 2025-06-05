@@ -1,12 +1,12 @@
 use etl::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use futures::StreamExt;
 use postgres::schema::ColumnSchema;
-use postgres::tokio::test_utils::{PgDatabase, TableModification};
+use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
 use postgres_replication::LogicalReplicationStream;
 use tokio::pin;
 use tokio_postgres::types::{ToSql, Type};
-use tokio_postgres::CopyOutStream;
+use tokio_postgres::{Client, CopyOutStream};
 
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::pipeline::test_slot_name;
@@ -188,7 +188,7 @@ async fn test_table_schema_copy_is_consistent() {
         &table_1_schema,
         table_1_id,
         test_table_name("table_1"),
-        &[PgDatabase::id_column_schema(), age_schema.clone()],
+        &[id_column_schema(), age_schema.clone()],
     );
 }
 
@@ -237,7 +237,7 @@ async fn test_table_schema_copy_across_multiple_connections() {
         &table_1_schema,
         table_1_id,
         test_table_name("table_1"),
-        &[PgDatabase::id_column_schema(), age_schema.clone()],
+        &[id_column_schema(), age_schema.clone()],
     );
 
     // We create a new table in the database and update the schema of the old one.
@@ -276,17 +276,13 @@ async fn test_table_schema_copy_across_multiple_connections() {
         &table_1_schema,
         table_1_id,
         test_table_name("table_1"),
-        &[
-            PgDatabase::id_column_schema(),
-            age_schema.clone(),
-            year_schema.clone(),
-        ],
+        &[id_column_schema(), age_schema.clone(), year_schema.clone()],
     );
     assert_table_schema(
         &table_2_schema,
         table_2_id,
         test_table_name("table_2"),
-        &[PgDatabase::id_column_schema(), year_schema],
+        &[id_column_schema(), year_schema],
     );
 }
 

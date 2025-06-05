@@ -1,8 +1,10 @@
+use std::time::Duration;
+use tokio::time::sleep;
 use etl::conversions::Cell;
 use etl::v2::state::table::TableReplicationPhaseType;
 use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
-use postgres::tokio::test_utils::{PgDatabase, TableModification};
+use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
 use tokio_postgres::types::Type;
 use tokio_postgres::GenericClient;
 
@@ -53,7 +55,7 @@ async fn setup_database<G: GenericClient>(database: &PgDatabase<G>) -> DatabaseS
         users_table_id,
         users_table_name,
         vec![
-            PgDatabase::id_column_schema(),
+            id_column_schema(),
             ColumnSchema {
                 name: "name".to_string(),
                 typ: Type::TEXT,
@@ -75,7 +77,7 @@ async fn setup_database<G: GenericClient>(database: &PgDatabase<G>) -> DatabaseS
         orders_table_id,
         orders_table_name,
         vec![
-            PgDatabase::id_column_schema(),
+            id_column_schema(),
             ColumnSchema {
                 name: "description".to_string(),
                 typ: Type::TEXT,
@@ -669,6 +671,7 @@ async fn test_table_copy_and_sync() {
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
+    sleep(Duration::from_secs(1)).await;
     pipeline.shutdown_and_wait().await.unwrap();
 
     // Get all table rows
