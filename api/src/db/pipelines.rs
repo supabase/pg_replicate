@@ -238,3 +238,18 @@ pub async fn read_all_pipelines(
         })
         .collect())
 }
+
+/// Helper function to check if an sqlx error is a duplicate pipeline constraint violation
+pub fn is_duplicate_pipeline_error(err: &sqlx::Error) -> bool {
+    match err {
+        sqlx::Error::Database(ref db_err) => {
+            // 23505 is PostgreSQL's unique constraint violation code
+            // Check for our unique constraint name defined
+            // in the migrations/20250605064229_add_unique_constraint_pipelines_source_destination.sql file
+            db_err.code().as_deref() == Some("23505")
+                && db_err.constraint().as_deref()
+                    == Some("pipelines_tenant_source_destination_unique")
+        }
+        _ => false,
+    }
+}

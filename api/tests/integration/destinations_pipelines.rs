@@ -372,3 +372,42 @@ async fn destination_and_pipeline_with_another_tenants_pipeline_cant_be_updated(
     // Assert
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn duplicate_destination_pipeline_with_same_source_cant_be_created() {
+    // Arrange
+    let app = spawn_test_app().await;
+    create_default_image(&app).await;
+    let tenant_id = &create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
+
+    // Create first destination and pipeline
+    let destination_pipeline = PostDestinationPipelineRequest {
+        destination_name: new_name(),
+        destination_config: new_destination_config(),
+        source_id,
+        publication_name: "publication".to_string(),
+        pipeline_config: new_pipeline_config(),
+    };
+    let response = app
+        .create_destination_pipeline(tenant_id, &destination_pipeline)
+        .await;
+    assert!(response.status().is_success());
+    let response: CreateDestinationPipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let first_destination_id = response.destination_id;
+
+    // Act - Try to create another pipeline with same source and the first destination
+    let pipeline_request = crate::common::test_app::CreatePipelineRequest {
+        source_id,
+        destination_id: first_destination_id,
+        publication_name: "different_publication".to_string(),
+        config: updated_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant_id, &pipeline_request).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+}
