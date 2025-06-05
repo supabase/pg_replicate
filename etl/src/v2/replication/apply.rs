@@ -14,7 +14,9 @@ use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::{PipelineId, PipelineIdentity};
-use crate::v2::replication::client::{GetOrCreateSlotResult, PgReplicationClient, PgReplicationError};
+use crate::v2::replication::client::{
+    GetOrCreateSlotResult, PgReplicationClient, PgReplicationError,
+};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::replication::stream::{EventsStream, EventsStreamError};
 use crate::v2::state::origin::ReplicationOriginState;
@@ -124,14 +126,14 @@ impl ApplyLoopState {
 
         self.last_received > last_status_update.last_received
     }
-    
+
     fn status_update_sent(&mut self) {
         // This method takes a snapshot of the current state, so it must be called after the status
         // update and before any further state change.
         let last_status_update = LastStatusUpdate {
             last_received: self.last_received,
         };
-        
+
         self.last_status_update = Some(last_status_update);
     }
 }
@@ -150,7 +152,7 @@ impl From<ApplyLoopState> for ReplicationOriginState {
 
 pub async fn start_apply_loop<S, D, T>(
     identity: PipelineIdentity,
-    mut origin_start_lsn: PgLsn,
+    origin_start_lsn: PgLsn,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     state_store: S,
@@ -175,14 +177,6 @@ where
     // We compute the slot name for the replication slot that we are going to use for the logical
     // replication. At this point we assume that the slot already exists.
     let slot_name = get_slot_name(&identity, hook.slot_usage())?;
-
-    // We get or create the replication slot used by the apply worker.
-    let slot = replication_client.get_or_create_slot(&slot_name).await?;
-    // If we just created the slot, we want to use the consistent point of the slot as starting point
-    // for logical replication.
-    if let GetOrCreateSlotResult::CreateSlot(slot) = slot {
-        origin_start_lsn = slot.consistent_point;
-    }
 
     // We kickstart table syncing before the loop starts, so that we do not have to wait for a
     // boundary event to do it.

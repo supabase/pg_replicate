@@ -2,8 +2,10 @@ use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
-use crate::v2::replication::client::PgReplicationClient;
-use crate::v2::replication::slot::SlotUsage;
+use crate::v2::replication::client::{
+    GetOrCreateSlotResult, PgReplicationClient, PgReplicationError,
+};
+use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
@@ -23,10 +25,21 @@ use tracing::{error, info};
 #[derive(Debug, Error)]
 pub enum ApplyWorkerError {
     #[error("An error occurred while interacting with the state store: {0}")]
-    StateStoreError(#[from] StateStoreError),
+    StateStore(#[from] StateStoreError),
 
     #[error("An error occurred in the apply loop: {0}")]
     ApplyLoop(#[from] ApplyLoopError),
+
+    #[error("A Postgres replication error occurred in the apply loop: {0}")]
+    PgReplication(#[from] PgReplicationError),
+
+    #[error("Could not generate slot name in the apply loop: {0}")]
+    Slot(#[from] SlotError),
+
+    #[error(
+        "The replication origin for the apply worker was not found even though the slot was active"
+    )]
+    ReplicationOriginMissing,
 }
 
 #[derive(Debug, Error)]
@@ -104,24 +117,45 @@ where
         info!("Starting apply worker");
 
         let apply_worker = async move {
-            // TODO: get the slot of the main apply worker or create it if needed.
-            // We load or initialize the initial state that will be used for the apply worker.
-            let replication_origin_state = match self
-                .state_store
-                .load_replication_origin_state(self.identity.id(), None)
-                .await?
-            {
-                Some(replication_origin_state) => replication_origin_state,
-                None => {
-                    // TODO: use the consistent point from the slot during creation here.
-                    let replication_origin_state =
-                        ReplicationOriginState::new(self.identity.id(), None, PgLsn::from(0));
+            let origin_start_lsn = loop {
+                // We get or create the slot name for the apply worker.
+                let slot_name = get_slot_name(&self.identity, SlotUsage::ApplyWorker)?;
+                let slot = self
+                    .replication_client
+                    .get_or_create_slot(&slot_name)
+                    .await?;
+
+                // If we just created a slot, we will use its consistent point to start the apply loop,
+                // otherwise we will load from the replication origin.
+                let origin_start_lsn = if let GetOrCreateSlotResult::CreateSlot(slot) = slot {
+                    let replication_origin_state = ReplicationOriginState::new(
+                        self.identity.id(),
+                        None,
+                        slot.consistent_point,
+                    );
+
                     self.state_store
-                        .store_replication_origin_state(replication_origin_state.clone(), true)
+                        .store_replication_origin_state(replication_origin_state, true)
                         .await?;
 
-                    replication_origin_state
-                }
+                    slot.consistent_point
+                } else {
+                    let replication_origin_state = self
+                        .state_store
+                        .load_replication_origin_state(self.identity.id(), None)
+                        .await?;
+
+                    // If we didn't find any replication origin state but the slot was there, the
+                    // apply worker might have crashed between creating a slot and storing the
+                    // replication origin state.
+                    let Some(replication_origin_state) = replication_origin_state else {
+                        continue;
+                    };
+
+                    replication_origin_state.remote_lsn
+                };
+                
+                break origin_start_lsn;
             };
 
             let hook = Hook::new(
@@ -136,7 +170,7 @@ where
 
             start_apply_loop(
                 self.identity,
-                replication_origin_state.remote_lsn,
+                origin_start_lsn,
                 self.config,
                 self.replication_client,
                 self.state_store,
