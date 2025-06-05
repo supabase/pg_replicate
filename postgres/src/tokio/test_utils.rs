@@ -360,15 +360,14 @@ pub async fn drop_pg_database(options: &PgDatabaseConfig) {
         .await
         .expect("Failed to terminate database connections");
 
-    // Drop any test replication slots
+    // Drop any replication slots on this database
     client
         .execute(
             &format!(
                 r#"
                 select pg_drop_replication_slot(slot_name)
-                from pg_replication_slots 
-                where slot_name like 'test_%'
-                and database = '{}';"#,
+                from pg_replication_slots
+                where database = '{}';"#,
                 options.name
             ),
             &[],

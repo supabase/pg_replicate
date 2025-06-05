@@ -8,9 +8,7 @@ use crate::v2::replication::client::{
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::state::table::{
-    TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
-};
+use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::{
@@ -47,13 +45,16 @@ pub enum ApplyWorkerError {
 #[derive(Debug, Error)]
 pub enum ApplyWorkerHookError {
     #[error("An error occurred while interacting with the state store: {0}")]
-    StateStoreError(#[from] StateStoreError),
+    StateStore(#[from] StateStoreError),
 
     #[error("An error occurred while interacting with the table sync worker state: {0}")]
     TableSyncWorkerState(#[from] TableSyncWorkerStateError),
 
     #[error("An error occurred while trying to start the table sync worker: {0}")]
     TableSyncWorkerStartedFailed(#[from] TableSyncWorkerError),
+
+    #[error("A Postgres replication error occurred in the apply worker: {0}")]
+    PgReplication(#[from] PgReplicationError),
 }
 
 #[derive(Debug)]
@@ -253,33 +254,31 @@ where
     D: Destination + Clone + Send + Sync + 'static,
 {
     async fn start_table_sync_worker(&self, table_id: Oid) -> Result<(), ApplyWorkerHookError> {
-        match self.replication_client.duplicate().await {
-            Ok(duplicate_replication_client) => {
-                let worker = TableSyncWorker::new(
-                    self.identity.clone(),
-                    self.config.clone(),
-                    duplicate_replication_client,
-                    self.pool.clone(),
-                    table_id,
-                    self.state_store.clone(),
-                    self.destination.clone(),
-                    self.shutdown_rx.clone(),
-                );
+        // TODO: switch to a connection pool which hands out connections.
+        let replication_client = self.replication_client.duplicate().await?;
+        let worker = TableSyncWorker::new(
+            self.identity.clone(),
+            self.config.clone(),
+            replication_client,
+            self.pool.clone(),
+            table_id,
+            self.state_store.clone(),
+            self.destination.clone(),
+            self.shutdown_rx.clone(),
+        );
 
-                let mut pool = self.pool.write().await;
-                if let Err(err) = pool.start_worker(worker).await {
-                    // TODO: check if we want to build a backoff mechanism for retrying the
-                    //  spawning of new table sync workers.
-                    error!(
-                        "Failed to start table sync worker, retrying in next loop: {}",
-                        err
-                    );
-                }
-            }
-            Err(err) => {
-                error!("Failed to create new sync worker because the replication client couldn't be duplicated: {}", err);
-            }
+        let mut pool = self.pool.write().await;
+        if let Err(err) = pool.start_worker(worker).await {
+            // TODO: check if we want to build a backoff mechanism for retrying the
+            //  spawning of new table sync workers.
+            error!(
+                "Failed to start table sync worker: {}",
+                err
+            );
+
+            return Err(err.into());
         }
+
         Ok(())
     }
 
@@ -289,15 +288,17 @@ where
         current_lsn: PgLsn,
     ) -> Result<(), ApplyWorkerHookError> {
         let pool = self.pool.read().await;
+        let table_sync_worker_state = pool.get_worker_state(table_id);
+        drop(pool);
 
-        if let Some(table_sync_worker_state) = pool.get_worker_state(table_id) {
-            return self
-                .handle_existing_worker(table_id, table_sync_worker_state, current_lsn)
-                .await;
-        }
+        let Some(table_sync_worker_state) = table_sync_worker_state else {
+            info!("Creating new sync worker for table {}", table_id);
+            self.start_table_sync_worker(table_id).await?;
+            return Ok(());
+        };
 
-        info!("Creating new sync worker for table {}", table_id);
-        self.start_table_sync_worker(table_id).await
+        self.handle_existing_worker(table_id, table_sync_worker_state, current_lsn)
+            .await
     }
 
     async fn handle_existing_worker(
@@ -321,11 +322,13 @@ where
         }
 
         if catchup_started {
+            println!("WAITING FOR SYNC DONE");
             info!("Waiting for sync completion for table {}", table_id);
             let _ = table_sync_worker_state
                 .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
                 .await;
             info!("Sync completed for table {}", table_id);
+            println!("SYNC DONE READY")
         }
 
         Ok(())
@@ -343,13 +346,20 @@ where
         let table_replication_states = self.state_store.load_table_replication_states().await?;
 
         for table_replication_state in table_replication_states {
+            let table_id = table_replication_state.table_id;
+            
             let pool = self.pool.read().await;
-            if pool
-                .get_worker_state(table_replication_state.table_id)
-                .is_none()
-            {
-                self.start_table_sync_worker(table_replication_state.table_id)
-                    .await?;
+            let table_sync_worker_state = pool
+                .get_worker_state(table_replication_state.table_id);
+            drop(pool);
+            
+            if table_sync_worker_state.is_none() {
+                if let Err(err) = self
+                    .start_table_sync_worker(table_replication_state.table_id)
+                    .await
+                {
+                    error!("Error handling syncing table {}: {}", table_id, err);
+                }
             }
         }
 
@@ -364,8 +374,11 @@ where
         );
 
         for table_replication_state in table_replication_states {
+            // We read the state store state first, if we don't find `SyncDone` we will attempt to
+            // read the shared state which can contain also non-persisted states.
             match table_replication_state.phase {
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
+                    println!("SYNC DONE, MOVING TO READY");
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
                     self.state_store

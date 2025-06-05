@@ -667,35 +667,58 @@ async fn test_table_copy_and_sync() {
 
     pipeline.start().await.unwrap();
 
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
+
+    // Insert some data to have it the stream
     insert_mock_data(
         &database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
-        10,
+        1,
     )
     .await;
 
-    // Wait for notifications with timeout
-    // users_state_notify.notified().await;
-    // orders_state_notify.notified().await;
+    // We wait for both tables to be in sync done
+    let users_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.users_table_schema.id,
+            TableReplicationPhaseType::SyncDone,
+        )
+        .await;
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.orders_table_schema.id,
+            TableReplicationPhaseType::SyncDone,
+        )
+        .await;
 
-    sleep(Duration::from_secs(1)).await;
-    timeout(Duration::from_secs(2), pipeline.shutdown_and_wait())
-        .await
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
+
+    pipeline.shutdown_and_wait().await.unwrap();
+
+    // sleep(Duration::from_secs(5)).await;
+    // timeout(Duration::from_secs(1), pipeline.shutdown_and_wait())
+    //     .await
+    //     .unwrap();
+
+    // Get all table rows for table syncing
+    let table_rows = destination.get_table_rows().await;
+    let users_table_rows = table_rows
+        .get(&database_schema.users_table_schema.id)
         .unwrap();
-
-    // Get all table rows
-    // let table_rows = destination.get_table_rows().await;
-    // let users_table_rows = table_rows
-    //     .get(&database_schema.users_table_schema.id)
-    //     .unwrap();
-    // let orders_table_rows = table_rows
-    //     .get(&database_schema.orders_table_schema.id)
-    //     .unwrap();
-    // assert_eq!(users_table_rows.len(), rows_inserted);
-    // assert_eq!(orders_table_rows.len(), rows_inserted);
-    // let expected_age_sum = get_n_integers_sum(rows_inserted);
-    // let age_sum =
-    //     get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
-    // assert_eq!(age_sum, expected_age_sum);
+    let orders_table_rows = table_rows
+        .get(&database_schema.orders_table_schema.id)
+        .unwrap();
+    assert_eq!(users_table_rows.len(), rows_inserted);
+    assert_eq!(orders_table_rows.len(), rows_inserted);
+    let expected_age_sum = get_n_integers_sum(rows_inserted);
+    let age_sum =
+        get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
+    assert_eq!(age_sum, expected_age_sum);
+    
+    // Check the cdc events that were applied afterwards
 }

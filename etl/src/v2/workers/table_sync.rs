@@ -1,5 +1,4 @@
 use postgres::schema::Oid;
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -34,7 +33,7 @@ pub enum TableSyncWorkerError {
     ReplicationStateMissing(Oid),
 
     #[error("An error occurred while interacting with the state store: {0}")]
-    StateStoreError(#[from] StateStoreError),
+    StateStore(#[from] StateStoreError),
 
     #[error("An error occurred in the apply loop: {0}")]
     ApplyLoop(#[from] ApplyLoopError),
@@ -49,7 +48,7 @@ pub enum TableSyncWorkerHookError {
 #[derive(Debug, Error)]
 pub enum TableSyncWorkerStateError {
     #[error("An error occurred while interacting with the state store: {0}")]
-    StateStoreError(#[from] StateStoreError),
+    StateStore(#[from] StateStoreError),
 }
 
 #[derive(Debug)]
@@ -242,13 +241,13 @@ where
         let Some(relation_subscription_state) = self
             .state_store
             .load_table_replication_state(self.identity.id(), self.table_id)
-            .await
-            .map_err(TableSyncWorkerError::StateStoreError)?
+            .await?
         else {
             warn!(
                 "No replication state found for table {}, cannot start sync worker",
                 self.table_id
             );
+
             return Err(TableSyncWorkerError::ReplicationStateMissing(self.table_id));
         };
 

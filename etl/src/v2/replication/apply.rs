@@ -276,6 +276,8 @@ where
             if end_lsn > state.last_received {
                 state.last_received = end_lsn;
             }
+            
+            print!("\n\n MESSAGE \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?} \n\n", message.wal_start(), message.wal_end(), message.data());
 
             handle_logical_replication_message(
                 state,
@@ -332,8 +334,6 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    println!("MESSAGE RECEIVED {:?}", message);
-
     match message {
         LogicalReplicationMessage::Begin(message) => {
             handle_begin_message(state, message, state_store, hook).await

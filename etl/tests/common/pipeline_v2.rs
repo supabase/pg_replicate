@@ -1,3 +1,4 @@
+use std::time::Duration;
 use etl::v2::config::batch::BatchConfig;
 use etl::v2::config::pipeline::PipelineConfig;
 use etl::v2::config::retry::RetryConfig;
@@ -19,7 +20,10 @@ where
     let identify = PipelineIdentity::new(0, publication_name);
     let config = PipelineConfig {
         pg_database_config: pg_database_config.clone(),
-        batch_config: BatchConfig::default(),
+        batch_config: BatchConfig {
+            max_batch_size: 1,
+            max_batch_fill_time: Duration::from_secs(1),
+        },
         retry_config: RetryConfig::default(),
     };
 
