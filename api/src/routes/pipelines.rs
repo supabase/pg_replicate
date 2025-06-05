@@ -38,7 +38,7 @@ pub struct Secrets {
 #[derive(Debug, Error)]
 enum PipelineError {
     #[error("database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
+    DatabaseError(sqlx::Error),
 
     #[error("pipeline with id {0} not found")]
     PipelineNotFound(i64),
@@ -75,6 +75,18 @@ enum PipelineError {
 
     #[error("trusted root certs config not found")]
     TrustedRootCertsConfigMissing,
+
+    #[error("a pipeline already exists for this source and destination combination")]
+    DuplicatePipeline,
+}
+
+impl From<sqlx::Error> for PipelineError {
+    fn from(e: sqlx::Error) -> Self {
+        if db::pipelines::is_duplicate_pipeline_error(&e) {
+            return PipelineError::DuplicatePipeline;
+        }
+        PipelineError::DatabaseError(e)
+    }
 }
 
 impl PipelineError {
@@ -104,6 +116,7 @@ impl ResponseError for PipelineError {
             PipelineError::TenantId(_)
             | PipelineError::SourceNotFound(_)
             | PipelineError::DestinationNotFound(_) => StatusCode::BAD_REQUEST,
+            PipelineError::DuplicatePipeline => StatusCode::CONFLICT,
         }
     }
 

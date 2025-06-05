@@ -44,7 +44,7 @@ pub struct PostDestinationPipelineRequest {
 #[derive(Debug, Error)]
 enum DestinationPipelineError {
     #[error("database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
+    DatabaseError(sqlx::Error),
 
     #[error("no default image found")]
     NoDefaultImageFound,
@@ -66,6 +66,19 @@ enum DestinationPipelineError {
 
     #[error("destinations and pipelines db error: {0}")]
     DestinationPipelineDb(#[from] DestinationPipelineDbError),
+
+    #[error("a pipeline already exists for this source and destination combination")]
+    DuplicatePipeline,
+}
+
+impl From<sqlx::Error> for DestinationPipelineError {
+    fn from(e: sqlx::Error) -> Self {
+        if db::pipelines::is_duplicate_pipeline_error(&e) {
+            DestinationPipelineError::DuplicatePipeline
+        } else {
+            DestinationPipelineError::DatabaseError(e)
+        }
+    }
 }
 
 impl DestinationPipelineError {
@@ -95,6 +108,7 @@ impl ResponseError for DestinationPipelineError {
             | DestinationPipelineError::SourceNotFound(_)
             | DestinationPipelineError::DestinationNotFound(_)
             | DestinationPipelineError::PipelineNotFound(_) => StatusCode::BAD_REQUEST,
+            DestinationPipelineError::DuplicatePipeline => StatusCode::CONFLICT,
         }
     }
 
