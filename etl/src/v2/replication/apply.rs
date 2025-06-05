@@ -1,3 +1,17 @@
+use crate::conversions::cdc_event::CdcEventConverter;
+use crate::pipeline::sources::postgres::CdcStreamError::CdcEventConversion;
+use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
+use crate::v2::config::pipeline::PipelineConfig;
+use crate::v2::conversions::event::EventConverter;
+use crate::v2::destination::base::Destination;
+use crate::v2::pipeline::{PipelineId, PipelineIdentity};
+use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
+use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
+use crate::v2::replication::stream::{EventsStream, EventsStreamError};
+use crate::v2::state::origin::ReplicationOriginState;
+use crate::v2::state::store::base::{StateStore, StateStoreError};
+use crate::v2::workers::apply::ApplyWorkerHookError;
+use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 use futures::StreamExt;
 use postgres::schema::Oid;
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
@@ -9,18 +23,6 @@ use thiserror::Error;
 use tokio::pin;
 use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
-
-use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
-use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::destination::base::Destination;
-use crate::v2::pipeline::{PipelineId, PipelineIdentity};
-use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
-use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
-use crate::v2::replication::stream::{EventsStream, EventsStreamError};
-use crate::v2::state::origin::ReplicationOriginState;
-use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::workers::apply::ApplyWorkerHookError;
-use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 
 /// The amount of seconds that pass between syncing via the hook in case nothing else is going on
 /// in the system (e.g., no data from the stream and no shutdown signal).
@@ -193,6 +195,10 @@ where
     );
     pin!(logical_replication_stream);
 
+    // We build the event converter, which will convert all the messages from the logical replication
+    // protocol to events that are usable by the downstream destination.
+    let event_converter = EventConverter::new(identity.id(), state_store.clone());
+
     loop {
         tokio::select! {
             biased;
@@ -201,11 +207,11 @@ where
                 return Ok(ApplyLoopResult::ApplyStopped);
             }
             // TODO: figure out if the logical replication stream is cancellation safe.
-            Some(events) = logical_replication_stream.next() => {
+            Some(messages_batch) = logical_replication_stream.next() => {
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
 
-                handle_replication_message_batch(&mut state, events_stream, events, &state_store, &destination, &hook).await?;
+                handle_replication_message_batch(&mut state, events_stream, messages_batch, &event_converter, &state_store, &destination, &hook).await?;
             }
             _ = tokio::time::sleep(SYNCING_FREQUENCY_SECONDS) => {
                 // TODO: this is a great place to perform cleanup operations.
@@ -224,7 +230,8 @@ where
 async fn handle_replication_message_batch<S, D, T>(
     state: &mut ApplyLoopState,
     mut stream: Pin<&mut EventsStream>,
-    batch: Vec<Result<ReplicationMessage<LogicalReplicationMessage>, EventsStreamError>>,
+    messages_batch: Vec<Result<ReplicationMessage<LogicalReplicationMessage>, EventsStreamError>>,
+    event_converter: &EventConverter<S>,
     state_store: &S,
     destination: &D,
     hook: &T,
@@ -235,12 +242,13 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    for message in batch {
+    for message in messages_batch {
         let message = message?;
         handle_replication_message(
             state,
             stream.as_mut(),
             message,
+            event_converter,
             state_store,
             destination,
             hook,
@@ -255,6 +263,7 @@ async fn handle_replication_message<S, D, T>(
     state: &mut ApplyLoopState,
     events_stream: Pin<&mut EventsStream>,
     message: ReplicationMessage<LogicalReplicationMessage>,
+    event_converter: &EventConverter<S>,
     state_store: &S,
     destination: &D,
     hook: &T,
@@ -276,8 +285,13 @@ where
             if end_lsn > state.last_received {
                 state.last_received = end_lsn;
             }
-            
-            print!("\n\n MESSAGE \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?} \n\n", message.wal_start(), message.wal_end(), message.data());
+
+            print!(
+                "\n\n MESSAGE \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?} \n\n",
+                message.wal_start(),
+                message.wal_end(),
+                message.data()
+            );
 
             handle_logical_replication_message(
                 state,

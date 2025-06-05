@@ -271,10 +271,7 @@ where
         if let Err(err) = pool.start_worker(worker).await {
             // TODO: check if we want to build a backoff mechanism for retrying the
             //  spawning of new table sync workers.
-            error!(
-                "Failed to start table sync worker: {}",
-                err
-            );
+            error!("Failed to start table sync worker: {}", err);
 
             return Err(err.into());
         }
@@ -347,12 +344,11 @@ where
 
         for table_replication_state in table_replication_states {
             let table_id = table_replication_state.table_id;
-            
+
             let pool = self.pool.read().await;
-            let table_sync_worker_state = pool
-                .get_worker_state(table_replication_state.table_id);
+            let table_sync_worker_state = pool.get_worker_state(table_replication_state.table_id);
             drop(pool);
-            
+
             if table_sync_worker_state.is_none() {
                 if let Err(err) = self
                     .start_table_sync_worker(table_replication_state.table_id)

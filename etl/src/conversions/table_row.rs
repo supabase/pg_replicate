@@ -23,7 +23,8 @@ impl BatchBoundaryV1 for TableRow {
 
 impl BatchBoundary for TableRow {
     fn is_on_boundary(&self) -> bool {
-        // A table row is always considered a boundary element.
+        // A table row is always considered a boundary element since it's received when performing
+        // table copy.
         true
     }
 }
