@@ -117,67 +117,30 @@ where
         info!("Starting apply worker");
 
         let apply_worker = async move {
-            let origin_start_lsn = loop {
-                // We get or create the slot name for the apply worker.
-                let slot_name = get_slot_name(&self.identity, SlotUsage::ApplyWorker)?;
-                let slot = self
-                    .replication_client
-                    .get_or_create_slot(&slot_name)
-                    .await?;
-
-                // If we just created a slot, we will use its consistent point to start the apply loop,
-                // otherwise we will load from the replication origin.
-                let origin_start_lsn = if let GetOrCreateSlotResult::CreateSlot(slot) = slot {
-                    let replication_origin_state = ReplicationOriginState::new(
-                        self.identity.id(),
-                        None,
-                        slot.consistent_point,
-                    );
-
-                    self.state_store
-                        .store_replication_origin_state(replication_origin_state, true)
-                        .await?;
-
-                    slot.consistent_point
-                } else {
-                    let replication_origin_state = self
-                        .state_store
-                        .load_replication_origin_state(self.identity.id(), None)
-                        .await?;
-
-                    // If we didn't find any replication origin state but the slot was there, the
-                    // apply worker might have crashed between creating a slot and storing the
-                    // replication origin state. In this case, we optimistically delete the slot and
-                    // start from scratch.
-                    let Some(replication_origin_state) = replication_origin_state else {
-                        self.replication_client.delete_slot(&slot_name).await?;
-                        continue;
-                    };
-
-                    replication_origin_state.remote_lsn
-                };
-
-                break origin_start_lsn;
-            };
-
-            let hook = Hook::new(
-                self.identity.clone(),
-                self.config.clone(),
-                self.replication_client.clone(),
-                self.pool,
-                self.state_store.clone(),
-                self.destination.clone(),
-                self.shutdown_rx.clone(),
-            );
+            let origin_start_lsn = initialize_apply_loop(
+                &self.identity,
+                &self.config,
+                &self.replication_client,
+                &self.state_store,
+            )
+            .await?;
 
             start_apply_loop(
-                self.identity,
+                self.identity.clone(),
                 origin_start_lsn,
-                self.config,
-                self.replication_client,
-                self.state_store,
-                self.destination,
-                hook,
+                self.config.clone(),
+                self.replication_client.clone(),
+                self.state_store.clone(),
+                self.destination.clone(),
+                Hook::new(
+                    self.identity,
+                    self.config,
+                    self.replication_client,
+                    self.pool,
+                    self.state_store,
+                    self.destination,
+                    self.shutdown_rx.clone(),
+                ),
                 self.shutdown_rx,
             )
             .await?;
@@ -190,6 +153,62 @@ where
         Ok(ApplyWorkerHandle {
             handle: Some(handle),
         })
+    }
+}
+
+async fn initialize_apply_loop<S>(
+    identity: &PipelineIdentity,
+    config: &Arc<PipelineConfig>,
+    replication_client: &PgReplicationClient,
+    state_store: &S,
+) -> Result<PgLsn, ApplyWorkerError>
+where
+    S: StateStore + Clone + Send + Sync + 'static,
+{
+    let mut attempt = 0;
+    loop {
+        // We get or create the slot name for the apply worker.
+        let slot_name = get_slot_name(identity, SlotUsage::ApplyWorker)?;
+        let slot = replication_client.get_or_create_slot(&slot_name).await?;
+
+        // If we just created a slot, we will use its consistent point to start the apply loop,
+        // otherwise we will load from the replication origin.
+        let origin_start_lsn = if let GetOrCreateSlotResult::CreateSlot(slot) = slot {
+            let replication_origin_state =
+                ReplicationOriginState::new(identity.id(), None, slot.consistent_point);
+
+            state_store
+                .store_replication_origin_state(replication_origin_state, true)
+                .await?;
+
+            slot.consistent_point
+        } else {
+            let replication_origin_state = state_store
+                .load_replication_origin_state(identity.id(), None)
+                .await?;
+
+            // If we didn't find any replication origin state but the slot was there, the
+            // apply worker might have crashed between creating a slot and storing the
+            // replication origin state. In this case, we optimistically delete the slot and
+            // start from scratch.
+            let Some(replication_origin_state) = replication_origin_state else {
+                replication_client.delete_slot(&slot_name).await?;
+                attempt += 1;
+
+                if attempt >= config.retry_config.max_attempts {
+                    return Err(ApplyWorkerError::ReplicationOriginMissing);
+                }
+
+                let delay = config.retry_config.calculate_delay(attempt);
+                tokio::time::sleep(delay).await;
+
+                continue;
+            };
+
+            replication_origin_state.remote_lsn
+        };
+
+        return Ok(origin_start_lsn);
     }
 }
 

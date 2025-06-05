@@ -284,16 +284,14 @@ where
                 }
             };
 
-            let hook = Hook::new(self.table_id, state_clone, self.state_store.clone());
-
             start_apply_loop(
                 self.identity,
                 origin_start_lsn,
                 self.config,
                 self.replication_client,
-                self.state_store,
+                self.state_store.clone(),
                 self.destination,
-                hook,
+                Hook::new(self.table_id, state_clone, self.state_store),
                 self.shutdown_rx,
             )
             .await?;

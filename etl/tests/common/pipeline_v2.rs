@@ -1,5 +1,6 @@
 use etl::v2::config::batch::BatchConfig;
 use etl::v2::config::pipeline::PipelineConfig;
+use etl::v2::config::retry::RetryConfig;
 use etl::v2::destination::base::Destination;
 use etl::v2::pipeline::{Pipeline, PipelineIdentity};
 use etl::v2::state::store::base::StateStore;
@@ -19,6 +20,7 @@ where
     let config = PipelineConfig {
         pg_database_config: pg_database_config.clone(),
         batch_config: BatchConfig::default(),
+        retry_config: RetryConfig::default(),
     };
 
     Pipeline::new(identify, config, vec![], state_store, destination)
