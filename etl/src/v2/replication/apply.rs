@@ -124,6 +124,16 @@ impl ApplyLoopState {
 
         self.last_received > last_status_update.last_received
     }
+    
+    fn status_update_sent(&mut self) {
+        // This method takes a snapshot of the current state, so it must be called after the status
+        // update and before any further state change.
+        let last_status_update = LastStatusUpdate {
+            last_received: self.last_received,
+        };
+        
+        self.last_status_update = Some(last_status_update);
+    }
 }
 
 impl From<ApplyLoopState> for ReplicationOriginState {
@@ -211,9 +221,10 @@ where
                 // TODO: this is a great place to perform cleanup operations.
                let logical_replication_stream = logical_replication_stream.as_mut();
                let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
-               
+
                if state.should_send_status_update() {
                     events_stream.send_status_update(state.last_received).await?;
+                    state.status_update_sent();
                }
             }
         }
@@ -304,11 +315,12 @@ where
             state_store
                 .store_replication_origin_state(state.clone().into(), true)
                 .await?;
-            
+
             if state.should_send_status_update() {
                 events_stream
                     .send_status_update(state.last_received)
                     .await?;
+                state.status_update_sent();
             }
         }
         _ => {}
