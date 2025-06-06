@@ -262,11 +262,11 @@ where
 
             let table_copy_stream =
                 TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-            // let table_copy_stream = BoundedBatchStream::wrap(
-            //     table_copy_stream,
-            //     config.batch_config.clone(),
-            //     shutdown_rx,
-            // );
+            let table_copy_stream = BoundedBatchStream::wrap(
+                table_copy_stream,
+                config.batch_config.clone(),
+                shutdown_rx,
+            );
             pin!(table_copy_stream);
 
             log_to_file(
@@ -277,19 +277,15 @@ where
 
             let mut total_rows_count = 0;
             while let Some(table_rows) = table_copy_stream.next().await {
-                // let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
-                // let current_table_rows = table_rows.len();
-                // total_rows_count += table_rows.len();
-                // destination.copy_table_rows(table_id, table_rows).await?;
+                let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
+                let current_table_rows = table_rows.len();
+                total_rows_count += table_rows.len();
+                destination.copy_table_rows(table_id, table_rows).await?;
                 log_to_file(
                     table_id,
                     "REPLICATION",
                     &format!("Successfully copied batch of rows, total rows so far: {}", total_rows_count),
                 ).await;
-
-                if shutdown_rx.has_changed().unwrap_or(false) {
-                    break;
-                }
             }
 
             log_to_file(
