@@ -271,59 +271,59 @@ pub async fn create_pg_database(options: &PgDatabaseConfig) -> Client {
 /// to the target database, and drops the database if it exists. Useful for cleaning
 /// up test databases. Takes a reference to [`PgDatabaseConfig`] specifying the database
 /// to drop. Panics if any operation fails.
-pub async fn drop_pg_database(options: &PgDatabaseConfig) {
-    // Connect to the default database
-    let (client, connection) = options
-        .without_db()
-        .connect(NoTls)
-        .await
-        .expect("Failed to connect to Postgres");
+pub async fn drop_pg_database(_options: &PgDatabaseConfig) {
+    // // Connect to the default database
+    // let (client, connection) = options
+    //     .without_db()
+    //     .connect(NoTls)
+    //     .await
+    //     .expect("Failed to connect to Postgres");
 
-    // Spawn the connection on a new task
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("connection error: {}", e);
-        }
-    });
+    // // Spawn the connection on a new task
+    // tokio::spawn(async move {
+    //     if let Err(e) = connection.await {
+    //         eprintln!("connection error: {}", e);
+    //     }
+    // });
 
-    // Forcefully terminate any remaining connections to the database
-    client
-        .execute(
-            &format!(
-                r#"
-                select pg_terminate_backend(pg_stat_activity.pid)
-                from pg_stat_activity
-                where pg_stat_activity.datname = '{}'
-                and pid <> pg_backend_pid();"#,
-                options.name
-            ),
-            &[],
-        )
-        .await
-        .expect("Failed to terminate database connections");
+    // // Forcefully terminate any remaining connections to the database
+    // client
+    //     .execute(
+    //         &format!(
+    //             r#"
+    //             select pg_terminate_backend(pg_stat_activity.pid)
+    //             from pg_stat_activity
+    //             where pg_stat_activity.datname = '{}'
+    //             and pid <> pg_backend_pid();"#,
+    //             options.name
+    //         ),
+    //         &[],
+    //     )
+    //     .await
+    //     .expect("Failed to terminate database connections");
 
-    // Drop any test replication slots
-    client
-        .execute(
-            &format!(
-                r#"
-                select pg_drop_replication_slot(slot_name)
-                from pg_replication_slots 
-                where slot_name like 'test_%'
-                and database = '{}';"#,
-                options.name
-            ),
-            &[],
-        )
-        .await
-        .expect("Failed to drop test replication slots");
+    // // Drop any test replication slots
+    // client
+    //     .execute(
+    //         &format!(
+    //             r#"
+    //             select pg_drop_replication_slot(slot_name)
+    //             from pg_replication_slots
+    //             where slot_name like 'test_%'
+    //             and database = '{}';"#,
+    //             options.name
+    //         ),
+    //         &[],
+    //     )
+    //     .await
+    //     .expect("Failed to drop test replication slots");
 
-    // Drop the database
-    client
-        .execute(
-            &format!(r#"drop database if exists "{}";"#, options.name),
-            &[],
-        )
-        .await
-        .expect("Failed to destroy database");
+    // // Drop the database
+    // client
+    //     .execute(
+    //         &format!(r#"drop database if exists "{}";"#, options.name),
+    //         &[],
+    //     )
+    //     .await
+    //     .expect("Failed to destroy database");
 }

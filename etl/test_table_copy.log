@@ -1,0 +1,52 @@
+Running test_table_copy
+Spawned database
+Setup database schema
+Inserted mock data
+Spawned pg pipeline
+Registered state notifications
+Pipeline started
+State notifications received
+Pipeline shutdown
+Got table rows
+Retrieved users and orders table rows
+Asserted rows count
+Calculated age sum: 55
+Asserted age sum
+============================================
+Running test_table_copy
+Spawned database
+Setup database schema
+Inserted mock data
+Spawned pg pipeline
+Registered state notifications
+Pipeline started
+State notifications received
+Pipeline shutdown
+Got table rows
+Retrieved users and orders table rows
+Asserted rows count
+Calculated age sum: 55
+Asserted age sum
+============================================
+Running test_table_copy
+Spawned database
+Setup database schema
+Inserted mock data
+Spawned pg pipeline
+Registered state notifications
+Pipeline started
+State notifications received
+Pipeline shutdown
+Got table rows
+Retrieved users and orders table rows
+Asserted rows count
+Calculated age sum: 55
+Asserted age sum
+============================================
+Running test_table_copy
+Spawned database
+Setup database schema
+Inserted mock data
+Spawned pg pipeline
+Registered state notifications
+Pipeline started

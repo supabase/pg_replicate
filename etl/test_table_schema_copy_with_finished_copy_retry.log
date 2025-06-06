@@ -1,0 +1,82 @@
+Running test_table_schema_copy_with_finished_copy_retry
+Spawned database
+Setup database schema
+Spawned pg pipeline
+Waited for schemas
+Registered state notifications
+Pipeline started
+State notifications received
+Pipeline shutdown
+Got table replication states
+Asserted table replication states
+Got table schemas
+Sorted table schemas
+Asserted table schemas
+Altered orders table schema to add date column
+Extended orders table schema with date column
+Recreated pg pipeline
+Registered load state notification
+Pipeline started again
+Load state notification received
+Pipeline shutdown again
+Got table schemas again
+Sorted table schemas again
+Asserted table schemas again
+============================================
+Running test_table_schema_copy_with_finished_copy_retry
+Spawned database
+Setup database schema
+Spawned pg pipeline
+Waited for schemas
+Registered state notifications
+Pipeline started
+State notifications received
+Pipeline shutdown
+Got table replication states
+Asserted table replication states
+Got table schemas
+Sorted table schemas
+Asserted table schemas
+Altered orders table schema to add date column
+Extended orders table schema with date column
+Recreated pg pipeline
+Registered load state notification
+Pipeline started again
+Load state notification received
+Pipeline shutdown again
+Got table schemas again
+Sorted table schemas again
+Asserted table schemas again
+============================================
+Running test_table_schema_copy_with_finished_copy_retry
+Spawned database
+Setup database schema
+Spawned pg pipeline
+Waited for schemas
+Registered state notifications
+Pipeline started
+State notifications received
+Pipeline shutdown
+Got table replication states
+Asserted table replication states
+Got table schemas
+Sorted table schemas
+Asserted table schemas
+Altered orders table schema to add date column
+Extended orders table schema with date column
+Recreated pg pipeline
+Registered load state notification
+Pipeline started again
+Load state notification received
+Pipeline shutdown again
+Got table schemas again
+Sorted table schemas again
+Asserted table schemas again
+============================================
+Running test_table_schema_copy_with_finished_copy_retry
+Spawned database
+Setup database schema
+Spawned pg pipeline
+Waited for schemas
+Registered state notifications
+Pipeline started

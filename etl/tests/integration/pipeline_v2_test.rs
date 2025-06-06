@@ -11,6 +11,8 @@ use crate::common::pipeline_v2::spawn_pg_pipeline;
 use crate::common::state_store::{
     FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
 };
+use std::fs::OpenOptions;
+use std::io::Write;
 
 #[derive(Debug)]
 struct DatabaseSchema {
@@ -308,16 +310,33 @@ async fn test_pipeline_with_table_sync_worker_error() {
     ));
 }
 
+async fn log_to_file(test_name: &str, message: &str) {
+    let file_path = format!("{}.log", test_name);
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+        .unwrap();
+    writeln!(file, "{}", message).unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_data_sync_retry() {
+    let test_name = "test_table_schema_copy_with_data_sync_retry";
+    log_to_file(test_name, "============================================").await;
+    log_to_file(
+        test_name,
+        "Running test_table_schema_copy_with_data_sync_retry",
+    )
+    .await;
     let database = spawn_database().await;
+    log_to_file(test_name, "Spawned database").await;
     let database_schema = setup_database(&database).await;
+    log_to_file(test_name, "Setup database schema").await;
 
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
-    // We start the pipeline from scratch with a faulty state store in order to have a failure during
-    // data sync.
     let fault_config = FaultConfig {
         store_table_schema: Some(FaultType::Error),
         ..Default::default()
@@ -330,8 +349,8 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         destination.clone(),
     );
     let pipeline_id = pipeline.identity().id();
+    log_to_file(test_name, "Spaned pg pipeline").await;
 
-    // We register the interest in waiting for both table syncs to have started.
     let users_state_notify = failing_state_store
         .get_inner()
         .notify_on_replication_phase(
@@ -348,14 +367,17 @@ async fn test_table_schema_copy_with_data_sync_retry() {
             TableReplicationPhaseType::DataSync,
         )
         .await;
+    log_to_file(test_name, "Registered state notifications").await;
 
     pipeline.start().await.unwrap();
+    log_to_file(test_name, "Pipeline started").await;
 
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
+    log_to_file(test_name, "State notifications received").await;
 
-    // We stop and inspect errors.
     let errors = pipeline.shutdown_and_wait().await.err().unwrap();
+    log_to_file(test_name, "Pipeline shutdown and errors received").await;
     assert_eq!(errors.len(), 2);
     assert!(matches!(
         errors[0],
@@ -365,9 +387,8 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         errors[1],
         WorkerWaitError::TableSyncWorkerPropagated(_)
     ));
+    log_to_file(test_name, "Asserted errors").await;
 
-    // We recreate a pipeline, assuming the other one was stopped, using a non-failing state and
-    // the same destination.
     let mut pipeline = spawn_pg_pipeline(
         &database_schema.publication_name,
         &database.options,
@@ -375,11 +396,11 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         destination.clone(),
     );
     let pipeline_id = pipeline.identity().id();
+    log_to_file(test_name, "Recreated pg pipeline").await;
 
-    // We wait for two table schemas to be received.
     let schemas_notify = destination.wait_for_n_schemas(2).await;
-    // We wait for both table states to be in finished done (sync wait is only memory and not
-    // available on the store).
+    log_to_file(test_name, "Waited for schemas").await;
+
     let users_state_notify = state_store
         .notify_on_replication_phase(
             pipeline_id,
@@ -394,17 +415,21 @@ async fn test_table_schema_copy_with_data_sync_retry() {
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
+    log_to_file(test_name, "Registered final state notifications").await;
 
     pipeline.start().await.unwrap();
+    log_to_file(test_name, "Pipeline started again").await;
 
     schemas_notify.notified().await;
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
+    log_to_file(test_name, "State notifications received again").await;
 
     pipeline.shutdown_and_wait().await.unwrap();
+    log_to_file(test_name, "Pipeline shutdown again").await;
 
-    // We check that the states are correctly set.
     let table_replication_states = state_store.get_table_replication_states().await;
+    log_to_file(test_name, "Got table replication states").await;
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
@@ -422,24 +447,35 @@ async fn test_table_schema_copy_with_data_sync_retry() {
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );
+    log_to_file(test_name, "Asserted table replication states").await;
 
-    // We check that the table schemas have been stored.
     let mut first_table_schemas = destination.get_table_schemas().await;
+    log_to_file(test_name, "Got table schemas").await;
     first_table_schemas.sort();
+    log_to_file(test_name, "Sorted table schemas").await;
     assert_eq!(first_table_schemas.len(), 2);
     assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
     assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
+    log_to_file(test_name, "Asserted table schemas").await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_finished_copy_retry() {
+    let test_name = "test_table_schema_copy_with_finished_copy_retry";
+    log_to_file(test_name, "============================================").await;
+    log_to_file(
+        test_name,
+        "Running test_table_schema_copy_with_finished_copy_retry",
+    )
+    .await;
     let database = spawn_database().await;
+    log_to_file(test_name, "Spawned database").await;
     let database_schema = setup_database(&database).await;
+    log_to_file(test_name, "Setup database schema").await;
 
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
-    // We start the pipeline from scratch.
     let mut pipeline = spawn_pg_pipeline(
         &database_schema.publication_name,
         &database.options,
@@ -447,11 +483,11 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
         destination.clone(),
     );
     let pipeline_id = pipeline.identity().id();
+    log_to_file(test_name, "Spawned pg pipeline").await;
 
-    // We wait for two table schemas to be received.
     let schemas_notify = destination.wait_for_n_schemas(2).await;
-    // We wait for both table states to be in finished done (sync wait is only memory and not
-    // available on the store).
+    log_to_file(test_name, "Waited for schemas").await;
+
     let users_state_notify = state_store
         .notify_on_replication_phase(
             pipeline_id,
@@ -466,17 +502,22 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
+    log_to_file(test_name, "Registered state notifications").await;
 
     pipeline.start().await.unwrap();
+    log_to_file(test_name, "Pipeline started").await;
 
     schemas_notify.notified().await;
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
+    log_to_file(test_name, "State notifications received").await;
 
     pipeline.shutdown_and_wait().await.unwrap();
+    log_to_file(test_name, "Pipeline shutdown").await;
 
-    // We check that the states are correctly set.
     let table_replication_states = state_store.get_table_replication_states().await;
+    log_to_file(test_name, "Got table replication states").await;
+
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
@@ -494,15 +535,18 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );
+    log_to_file(test_name, "Asserted table replication states").await;
 
-    // We check that the table schemas have been stored.
     let mut first_table_schemas = destination.get_table_schemas().await;
+    log_to_file(test_name, "Got table schemas").await;
     first_table_schemas.sort();
+    log_to_file(test_name, "Sorted table schemas").await;
+
     assert_eq!(first_table_schemas.len(), 2);
     assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
     assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
+    log_to_file(test_name, "Asserted table schemas").await;
 
-    // We assume now that the schema of a table changes before sync done is performed.
     database
         .alter_table(
             database_schema.orders_table_schema.name.clone(),
@@ -513,6 +557,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
         )
         .await
         .unwrap();
+    log_to_file(test_name, "Altered orders table schema to add date column").await;
     let mut extended_orders_table_schema = database_schema.orders_table_schema.clone();
     extended_orders_table_schema
         .column_schemas
@@ -523,41 +568,50 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
             nullable: true,
             primary: false,
         });
+    log_to_file(test_name, "Extended orders table schema with date column").await;
 
-    // We recreate a pipeline, assuming the other one was stopped, using the same state and destination.
     let mut pipeline = spawn_pg_pipeline(
         &database_schema.publication_name,
         &database.options,
         state_store.clone(),
         destination.clone(),
     );
+    log_to_file(test_name, "Recreated pg pipeline").await;
 
-    // We wait for the load replication origin state method to be called, since that is called in the
-    // branch where the copy was already finished.
     let load_state_notify = state_store
         .notify_on_method_call(StateStoreMethod::LoadReplicationOriginState)
         .await;
+    log_to_file(test_name, "Registered load state notification").await;
 
     pipeline.start().await.unwrap();
+    log_to_file(test_name, "Pipeline started again").await;
 
     load_state_notify.notified().await;
+    log_to_file(test_name, "Load state notification received").await;
 
     pipeline.shutdown_and_wait().await.unwrap();
+    log_to_file(test_name, "Pipeline shutdown again").await;
 
-    // We check that the table schemas haven't changed.
     let mut first_table_schemas = destination.get_table_schemas().await;
+    log_to_file(test_name, "Got table schemas again").await;
     first_table_schemas.sort();
+    log_to_file(test_name, "Sorted table schemas again").await;
     assert_eq!(first_table_schemas.len(), 2);
     assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
     assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
+    log_to_file(test_name, "Asserted table schemas again").await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy() {
+    let test_name = "test_table_copy";
+    log_to_file(test_name, "============================================").await;
+    log_to_file(test_name, "Running test_table_copy").await;
     let database = spawn_database().await;
+    log_to_file(test_name, "Spawned database").await;
     let database_schema = setup_database(&database).await;
+    log_to_file(test_name, "Setup database schema").await;
 
-    // Insert test data
     let rows_inserted = 10;
     insert_mock_data(
         &database,
@@ -566,11 +620,11 @@ async fn test_table_copy() {
         rows_inserted,
     )
     .await;
+    log_to_file(test_name, "Inserted mock data").await;
 
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
-    // Start the pipeline from scratch
     let mut pipeline = spawn_pg_pipeline(
         &database_schema.publication_name,
         &database.options,
@@ -578,8 +632,8 @@ async fn test_table_copy() {
         destination.clone(),
     );
     let pipeline_id = pipeline.identity().id();
+    log_to_file(test_name, "Spawned pg pipeline").await;
 
-    // Wait for both table states to be in finished copy
     let users_state_notify = state_store
         .notify_on_replication_phase(
             pipeline_id,
@@ -594,27 +648,34 @@ async fn test_table_copy() {
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
+    log_to_file(test_name, "Registered state notifications").await;
 
     pipeline.start().await.unwrap();
+    log_to_file(test_name, "Pipeline started").await;
 
-    // Wait for notifications with timeout
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
+    log_to_file(test_name, "State notifications received").await;
 
     pipeline.shutdown_and_wait().await.unwrap();
+    log_to_file(test_name, "Pipeline shutdown").await;
 
-    // Get all table rows
     let table_rows = destination.get_table_rows().await;
+    log_to_file(test_name, "Got table rows").await;
     let users_table_rows = table_rows
         .get(&database_schema.users_table_schema.id)
         .unwrap();
     let orders_table_rows = table_rows
         .get(&database_schema.orders_table_schema.id)
         .unwrap();
+    log_to_file(test_name, "Retrieved users and orders table rows").await;
     assert_eq!(users_table_rows.len(), rows_inserted);
     assert_eq!(orders_table_rows.len(), rows_inserted);
+    log_to_file(test_name, "Asserted rows count").await;
     let expected_age_sum = get_n_integers_sum(rows_inserted);
     let age_sum =
         get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
+    log_to_file(test_name, &format!("Calculated age sum: {}", age_sum)).await;
     assert_eq!(age_sum, expected_age_sum);
+    log_to_file(test_name, "Asserted age sum").await;
 }

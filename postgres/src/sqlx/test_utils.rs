@@ -28,28 +28,28 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> PgPool {
 /// to the target database, and drops the database if it exists. Useful for cleaning
 /// up test databases. Takes a reference to [`PgDatabaseOptions`] specifying the database
 /// to drop. Panics if any operation fails.
-pub async fn drop_pg_database(options: &PgDatabaseOptions) {
-    // Connect to the default database.
-    let mut connection = PgConnection::connect_with(&options.without_db())
-        .await
-        .expect("Failed to connect to Postgres");
+pub async fn drop_pg_database(_options: &PgDatabaseOptions) {
+    // // Connect to the default database.
+    // let mut connection = PgConnection::connect_with(&options.without_db())
+    //     .await
+    //     .expect("Failed to connect to Postgres");
 
-    // Forcefully terminate any remaining connections to the database.
-    connection
-        .execute(&*format!(
-            r#"
-            select pg_terminate_backend(pg_stat_activity.pid)
-            from pg_stat_activity
-            where pg_stat_activity.datname = '{}'
-            and pid <> pg_backend_pid();"#,
-            options.name
-        ))
-        .await
-        .expect("Failed to terminate database connections");
+    // // Forcefully terminate any remaining connections to the database.
+    // connection
+    //     .execute(&*format!(
+    //         r#"
+    //         select pg_terminate_backend(pg_stat_activity.pid)
+    //         from pg_stat_activity
+    //         where pg_stat_activity.datname = '{}'
+    //         and pid <> pg_backend_pid();"#,
+    //         options.name
+    //     ))
+    //     .await
+    //     .expect("Failed to terminate database connections");
 
-    // Drop the database.
-    connection
-        .execute(&*format!(r#"drop database if exists "{}";"#, options.name))
-        .await
-        .expect("Failed to destroy database");
+    // // Drop the database.
+    // connection
+    //     .execute(&*format!(r#"drop database if exists "{}";"#, options.name))
+    //     .await
+    //     .expect("Failed to destroy database");
 }
