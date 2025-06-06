@@ -60,12 +60,13 @@ then
     fi
 
     # Complete the docker run command
+    # Increased PostgreSQL settings for logical replication for tests to run smoothly
     DOCKER_RUN_CMD="${DOCKER_RUN_CMD} \
         --name "postgres_$(date '+%s')" \
         postgres:15 -N 1000 \
         -c wal_level=logical \
-        -c max_wal_senders=100"
-        # Increased maximum number of connections for testing purposes
+        -c max_wal_senders=100 \
+        -c max_replication_slots=100"
 
     # Start the container
     eval "${DOCKER_RUN_CMD}"
