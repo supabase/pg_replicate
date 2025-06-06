@@ -66,6 +66,7 @@ impl StateStore for MemoryStateStore {
         }
 
         inner.replication_origin_states.insert(key, state);
+
         Ok(true)
     }
 

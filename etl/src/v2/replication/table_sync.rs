@@ -10,6 +10,7 @@ use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use futures::StreamExt;
+use postgres::schema::Oid;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::pin;
@@ -33,7 +34,7 @@ pub enum TableSyncError {
     #[error("An error occurred while writing to the destination: {0}")]
     Destination(#[from] DestinationError),
 
-    #[error("An error happened in the pipeline state store: {0}")]
+    #[error("An error happened in the state store: {0}")]
     StateStore(#[from] StateStoreError),
 
     #[error("An error happened in the table copy stream")]
@@ -53,6 +54,7 @@ pub async fn start_table_sync<S, D>(
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
+    table_id: Oid,
     table_sync_worker_state: TableSyncWorkerState,
     state_store: S,
     destination: D,
@@ -63,8 +65,6 @@ where
     D: Destination + Clone + Send + 'static,
 {
     let inner = table_sync_worker_state.get_inner().read().await;
-
-    let table_id = inner.table_id();
     let phase_type = inner.replication_phase().as_type();
 
     // In case the work for this table has been already done, we don't want to continue and we
@@ -175,6 +175,10 @@ where
                 destination.copy_table_rows(table_id, table_rows).await?;
             }
 
+            // We commit the transaction before starting the apply loop, otherwise it will fail
+            // since no transactions can be running while replication is started.
+            transaction.commit().await?;
+
             // We mark that we finished the copy of the table schema and data.
             {
                 let mut inner = table_sync_worker_state.get_inner().write().await;
@@ -200,6 +204,11 @@ where
             .set_phase_with(TableReplicationPhase::SyncWait, state_store)
             .await?;
     }
+
+    // We also wait to be signaled to catchup with the main apply worker up to a specific lsn.
+    let _ = table_sync_worker_state
+        .wait_for_phase_type(TableReplicationPhaseType::Catchup)
+        .await;
 
     Ok(TableSyncResult::SyncCompleted {
         origin_start_lsn: replication_origin_state.remote_lsn,

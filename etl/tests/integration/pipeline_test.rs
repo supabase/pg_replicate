@@ -8,15 +8,16 @@ use crate::common::wait_for_condition;
 use etl::conversions::cdc_event::CdcEvent;
 use etl::conversions::Cell;
 use postgres::schema::{ColumnSchema, TableId};
-use postgres::tokio::test_utils::PgDatabase;
+use postgres::tokio::test_utils::{id_column_schema, PgDatabase};
 use std::ops::Range;
 use tokio_postgres::types::Type;
+use tokio_postgres::GenericClient;
 
 fn get_expected_ages_sum(num_users: usize) -> i32 {
     ((num_users * (num_users + 1)) / 2) as i32
 }
 
-async fn create_users_table(database: &PgDatabase) -> TableId {
+async fn create_users_table<G: GenericClient>(database: &PgDatabase<G>) -> TableId {
     let table_id = database
         .create_table(test_table_name("users"), &[("age", "integer")])
         .await
@@ -25,8 +26,8 @@ async fn create_users_table(database: &PgDatabase) -> TableId {
     table_id
 }
 
-async fn create_users_table_with_publication(
-    database: &PgDatabase,
+async fn create_users_table_with_publication<G: GenericClient>(
+    database: &PgDatabase<G>,
     publication_name: &str,
 ) -> TableId {
     let table_id = create_users_table(database).await;
@@ -39,7 +40,7 @@ async fn create_users_table_with_publication(
     table_id
 }
 
-async fn fill_users(database: &PgDatabase, num_users: usize) {
+async fn fill_users<G: GenericClient>(database: &PgDatabase<G>, num_users: usize) {
     for i in 0..num_users {
         let age = i as i32 + 1;
         database
@@ -49,7 +50,7 @@ async fn fill_users(database: &PgDatabase, num_users: usize) {
     }
 }
 
-async fn double_users_ages(database: &PgDatabase) {
+async fn double_users_ages<G: GenericClient>(database: &PgDatabase<G>) {
     database
         .update_values(test_table_name("users"), &["age"], &["age * 2"])
         .await
@@ -62,7 +63,7 @@ fn assert_users_table_schema(
     schema_index: usize,
 ) {
     let expected_columns = vec![
-        PgDatabase::id_column_schema(),
+        id_column_schema(),
         ColumnSchema {
             name: "age".to_string(),
             typ: Type::INT4,
