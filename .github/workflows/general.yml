@@ -65,7 +65,8 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h localhost -p 5430 -U postgres \
             -c "ALTER SYSTEM SET wal_level = 'logical';" \
-            -c "ALTER SYSTEM SET max_wal_senders = 100;"
+            -c "ALTER SYSTEM SET max_wal_senders = 100;" \
+            -c "ALTER SYSTEM SET max_replication_slots = 100;"
 
       - name: Restart Postgres service container
         run: |
