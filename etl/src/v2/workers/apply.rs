@@ -218,26 +218,25 @@ where
                     if let Some(table_sync_worker_state) =
                         pool.get_worker_state(table_replication_state.table_id)
                     {
+                        drop(pool);
                         let mut catchup_started = false;
                         let mut inner = table_sync_worker_state.get_inner().write().await;
                         if inner.replication_phase().as_type()
                             == TableReplicationPhaseType::SyncWait
                         {
                             inner
-                                .set_phase_with(
-                                    TableReplicationPhase::Catchup { lsn: current_lsn },
-                                    self.state_store.clone(),
-                                )
-                                .await?;
+                                .set_phase(
+                                    TableReplicationPhase::Catchup { lsn: current_lsn }
+                                );
                             catchup_started = true;
                         }
                         drop(inner);
 
-                        if catchup_started {
-                            let _ = table_sync_worker_state
-                                .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
-                                .await;
-                        }
+                        // if catchup_started {
+                        //     let _ = table_sync_worker_state
+                        //         .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
+                        //         .await;
+                        // }
 
                         continue;
                     }

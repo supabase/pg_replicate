@@ -22,3 +22,5 @@ Cargo.lock
 
 # macOS system files
 .DS_Store
+
+*.log

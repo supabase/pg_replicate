@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::{watch, Notify, RwLock, RwLockReadGuard};
-use tokio::task::JoinHandle;
+use tokio::task::{yield_now, JoinHandle};
 use tokio_postgres::types::PgLsn;
 use tracing::{info, warn};
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
@@ -57,7 +57,12 @@ pub struct TableSyncWorkerStateInner {
 }
 
 async fn log_to_file(table_id: Oid, component: &str, message: &str) {
-    let file_path = format!("table_sync_worker_{}.log", table_id);
+    let logs_dir = Path::new("./logs");
+    if !logs_dir.exists() {
+        let _ = fs::create_dir_all(logs_dir);
+    }
+    
+    let file_path = format!("./logs/table_sync_worker_{}.log", table_id);
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
@@ -68,7 +73,7 @@ async fn log_to_file(table_id: Oid, component: &str, message: &str) {
 }
 
 impl TableSyncWorkerStateInner {
-    fn set_phase(&mut self, phase: TableReplicationPhase) {
+    pub fn set_phase(&mut self, phase: TableReplicationPhase) {
         let table_id = self.table_replication_state.table_id;
         
         info!(
@@ -337,26 +342,28 @@ where
                 }
             };
 
-            let hook = Hook::new(self.table_id);
-            start_apply_loop(
-                hook,
-                self.config,
-                self.replication_client,
-                consistent_point,
-                self.state_store,
-                self.destination,
-                self.shutdown_rx,
-            )
-            .await?;
+            // let hook = Hook::new(self.table_id);
+            // start_apply_loop(
+            //     hook,
+            //     self.config,
+            //     self.replication_client,
+            //     consistent_point,
+            //     self.state_store,
+            //     self.destination,
+            //     self.shutdown_rx,
+            // )
+            // .await?;
 
             Ok(())
         };
 
-        let handle = tokio::spawn(ReactiveFuture::new(
-            table_sync_worker,
-            self.table_id,
-            self.pool.workers(),
-        ));
+        // let handle = tokio::spawn(ReactiveFuture::new(
+        //     table_sync_worker,
+        //     self.table_id,
+        //     self.pool.workers(),
+        // ));
+        
+        let handle = tokio::spawn(table_sync_worker);
 
         Ok(TableSyncWorkerHandle {
             state,
@@ -384,6 +391,7 @@ impl ApplyLoopHook for Hook {
             "Processing syncing tables for table sync worker with LSN {}",
             current_lsn
         );
+        yield_now().await;
         // TODO: implement.
         Ok(())
     }

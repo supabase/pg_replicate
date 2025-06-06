@@ -100,31 +100,38 @@ impl TableSyncWorkerPoolInner {
         // This is done since if we wait on active workers, there will be a deadlock because the
         // worker within the `ReactiveFuture` will not be able to hold the lock onto the pool to
         // mark itself as finished.
-        if !self.active.is_empty() {
-            let notify = Arc::new(Notify::new());
-            self.waiting = Some(notify.clone());
-            return Ok(Some(notify));
-        }
+        // if !self.active.is_empty() {
+        //     let notify = Arc::new(Notify::new());
+        //     self.waiting = Some(notify.clone());
+        //     return Ok(Some(notify));
+        // }
 
         let mut errors = Vec::new();
-        for (_, workers) in mem::take(&mut self.inactive) {
-            for (finish, worker) in workers {
-                // If there is an error while waiting for the task, we can assume that there was un
-                // uncaught panic or a propagated error.
-                if let Err(err) = worker.wait().await {
-                    errors.push(err);
-                    continue;
-                }
-
-                // If we arrive here, it means that the worker task did fail but silently, since
-                // the error we see here was reported by the `ReactiveFuture` and swallowed.
-                // This should not happen since right now the `ReactiveFuture` is configured to
-                // re-propagate the error after marking a table sync worker as finished.
-                if let TableSyncWorkerInactiveReason::Errored(err) = finish {
-                    errors.push(WorkerWaitError::TaskSilentlyFailed(err));
-                }
+        for (_, worker) in mem::take(&mut self.active) {
+            if let Err(err) = worker.wait().await {
+                errors.push(err);
             }
         }
+
+ 
+        // for (_, workers) in mem::take(&mut self.inactive) {
+        //     for (finish, worker) in workers {
+        //         // If there is an error while waiting for the task, we can assume that there was un
+        //         // uncaught panic or a propagated error.
+        //         if let Err(err) = worker.wait().await {
+        //             errors.push(err);
+        //             continue;
+        //         }
+        // 
+        //         // If we arrive here, it means that the worker task did fail but silently, since
+        //         // the error we see here was reported by the `ReactiveFuture` and swallowed.
+        //         // This should not happen since right now the `ReactiveFuture` is configured to
+        //         // re-propagate the error after marking a table sync worker as finished.
+        //         if let TableSyncWorkerInactiveReason::Errored(err) = finish {
+        //             errors.push(WorkerWaitError::TaskSilentlyFailed(err));
+        //         }
+        //     }
+        // }
 
         info!("All workers completed");
 

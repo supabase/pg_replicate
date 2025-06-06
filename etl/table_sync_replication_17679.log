@@ -1,6 +1,0 @@
-[REPLICATION] Starting table sync for table 17679 with phase Init
-[REPLICATION] Creating slot supabase_etl_table_sync_0_users_orders_pub_17679 for table 17679
-[REPLICATION] Stored replication origin state for table 17679 with LSN 0/EB33F00
-[REPLICATION] Starting table sync for table 17679 with phase DataSync
-[REPLICATION] Deleting existing slot supabase_etl_table_sync_0_users_orders_pub_17679 for table 17679
-[REPLICATION] Creating slot supabase_etl_table_sync_0_users_orders_pub_17679 for table 17679
