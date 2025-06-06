@@ -148,6 +148,7 @@ impl StateStore for TestStateStore {
             .replication_origin_states
             .get(&(pipeline_id, table_id))
             .cloned());
+        drop(inner);
 
         self.dispatch_method_notification(StateStoreMethod::LoadReplicationOriginState)
             .await;
@@ -184,6 +185,7 @@ impl StateStore for TestStateStore {
             .table_replication_states
             .get(&(pipeline_id, table_id))
             .cloned());
+        drop(inner);
 
         self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
             .await;
@@ -195,6 +197,7 @@ impl StateStore for TestStateStore {
     ) -> Result<Vec<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_replication_states.values().cloned().collect());
+        drop(inner);
 
         self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
             .await;
@@ -214,7 +217,7 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_replication_states.insert(key, state);
-        drop(inner); // Release the write lock before checking conditions
+        drop(inner);
 
         self.check_conditions().await;
         self.dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
@@ -234,6 +237,7 @@ impl StateStore for TestStateStore {
             .filter(|((pid, _), _)| pid == &pipeline_id)
             .map(|(_, schema)| schema.clone())
             .collect());
+        drop(inner);
 
         self.dispatch_method_notification(StateStoreMethod::LoadTableSchemas)
             .await;
@@ -247,6 +251,7 @@ impl StateStore for TestStateStore {
     ) -> Result<Option<TableSchema>, StateStoreError> {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_schemas.get(&(pipeline_id, table_id)).cloned());
+        drop(inner);
 
         self.dispatch_method_notification(StateStoreMethod::LoadTableSchema)
             .await;

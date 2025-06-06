@@ -308,7 +308,6 @@ async fn test_pipeline_with_table_sync_worker_error() {
     ));
 }
 
-#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_data_sync_retry() {
     let database = spawn_database().await;
@@ -432,7 +431,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
 }
 
-#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_finished_copy_retry() {
     let database = spawn_database().await;
@@ -554,7 +552,6 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
 }
 
-#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy() {
     let database = spawn_database().await;
