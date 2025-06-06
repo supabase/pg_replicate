@@ -1,3 +1,7 @@
+use std::io::Write;
+use std::fs;
+use std::fs::OpenOptions;
+use std::path::Path;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
@@ -92,6 +96,22 @@ impl<S, D> ApplyWorker<S, D> {
     }
 }
 
+async fn log_to_file(component: &str, message: &str) {
+    let logs_dir = Path::new("./logs");
+    if !logs_dir.exists() {
+        let _ = fs::create_dir_all(logs_dir);
+    }
+
+    let file_path = format!("./logs/apply_worker.log");
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+    {
+        let _ = writeln!(file, "[{}] {}", component, message);
+    }
+}
+
 impl<S, D> Worker<ApplyWorkerHandle, ()> for ApplyWorker<S, D>
 where
     S: StateStore + Clone + Send + Sync + 'static,
@@ -146,6 +166,15 @@ where
             .await?;
 
             Ok(())
+        };
+        
+        let apply_worker = async move {
+            let result: Result<(), ApplyWorkerError> = apply_worker.await;
+            if let Err(error) = &result {
+                log_to_file("APPLY WORKER", &error.to_string()).await;
+            } 
+            
+            result
         };
 
         let handle = tokio::spawn(apply_worker);
@@ -247,33 +276,20 @@ where
                     table_replication_state.table_id
                 );
 
-                match self.replication_client.duplicate().await {
-                    Ok(duplicate_replication_client) => {
-                        let worker = TableSyncWorker::new(
-                            self.identity.clone(),
-                            self.config.clone(),
-                            duplicate_replication_client,
-                            self.pool.clone(),
-                            table_replication_state.table_id,
-                            self.state_store.clone(),
-                            self.destination.clone(),
-                            self.shutdown_rx.clone(),
-                        );
+                let replication_client = self.replication_client.duplicate().await.unwrap();
+                let worker = TableSyncWorker::new(
+                    self.identity.clone(),
+                    self.config.clone(),
+                    replication_client,
+                    self.pool.clone(),
+                    table_replication_state.table_id,
+                    self.state_store.clone(),
+                    self.destination.clone(),
+                    self.shutdown_rx.clone(),
+                );
 
-                        let mut pool = self.pool.write().await;
-                        if let Err(err) = pool.start_worker(worker).await {
-                            // TODO: check if we want to build a backoff mechanism for retrying the
-                            //  spawning of new table sync workers.
-                            error!(
-                                "Failed to start table sync worker, retrying in next loop: {}",
-                                err
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        error!("Failed to create new sync worker because the replication client couldn't be duplicated: {}", err);
-                    }
-                }
+                let mut pool = self.pool.write().await;
+                pool.start_worker(worker).await?;
             }
         }
 

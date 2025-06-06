@@ -8,10 +8,6 @@ use std::fmt;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::Path;
-use chrono::Local;
 
 type TableStateCondition = Box<dyn Fn(&TableReplicationState) -> bool + Send + Sync>;
 
@@ -141,34 +137,12 @@ impl Default for TestStateStore {
     }
 }
 
-async fn log_to_file(component: &str, message: &str) {
-    let logs_dir = Path::new("./logs");
-    if !logs_dir.exists() {
-        let _ = fs::create_dir_all(logs_dir);
-    }
-    
-    let file_path = "./logs/state_store.log";
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file_path)
-    {
-        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let _ = writeln!(file, "[{}] [{}] {}", timestamp, component, message);
-    }
-}
-
 impl StateStore for TestStateStore {
     async fn load_replication_origin_state(
         &self,
         pipeline_id: PipelineId,
         table_id: Option<Oid>,
     ) -> Result<Option<ReplicationOriginState>, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            &format!("Loading replication origin state for pipeline {} and table {:?}", pipeline_id, table_id),
-        ).await;
-
         let inner = self.inner.read().await;
         let result = Ok(inner
             .replication_origin_states
@@ -178,11 +152,6 @@ impl StateStore for TestStateStore {
         self.dispatch_method_notification(StateStoreMethod::LoadReplicationOriginState)
             .await;
 
-        log_to_file(
-            "STATE_STORE",
-            &format!("Successfully loaded replication origin state for pipeline {} and table {:?}", pipeline_id, table_id),
-        ).await;
-
         result
     }
 
@@ -191,32 +160,18 @@ impl StateStore for TestStateStore {
         state: ReplicationOriginState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            &format!("Storing replication origin state for pipeline {} and table {:?}", state.pipeline_id, state.table_id),
-        ).await;
-
         let mut inner = self.inner.write().await;
         let key = (state.pipeline_id, state.table_id);
 
         if !overwrite && inner.replication_origin_states.contains_key(&key) {
-            log_to_file(
-                "STATE_STORE",
-                &format!("State already exists and overwrite is false for pipeline {} and table {:?}", state.pipeline_id, state.table_id),
-            ).await;
             return Ok(false);
         }
-        
+
         inner.replication_origin_states.insert(key, state.clone());
         drop(inner);
 
         self.dispatch_method_notification(StateStoreMethod::StoreReplicationOriginState)
             .await;
-
-        log_to_file(
-            "STATE_STORE",
-            &format!("Successfully stored replication origin state for pipeline {} and table {:?}", state.pipeline_id, state.table_id),
-        ).await;
 
         Ok(true)
     }
@@ -226,11 +181,6 @@ impl StateStore for TestStateStore {
         pipeline_id: PipelineId,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            &format!("Loading table replication state for pipeline {} and table {}", pipeline_id, table_id),
-        ).await;
-
         let inner = self.inner.read().await;
         let result = Ok(inner
             .table_replication_states
@@ -240,32 +190,17 @@ impl StateStore for TestStateStore {
         self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
             .await;
 
-        log_to_file(
-            "STATE_STORE",
-            &format!("Successfully loaded table replication state for pipeline {} and table {}", pipeline_id, table_id),
-        ).await;
-
         result
     }
 
     async fn load_table_replication_states(
         &self,
     ) -> Result<Vec<TableReplicationState>, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            "Loading all table replication states",
-        ).await;
-
         let inner = self.inner.read().await;
         let result = Ok(inner.table_replication_states.values().cloned().collect());
 
         self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
             .await;
-
-        log_to_file(
-            "STATE_STORE",
-            "Successfully loaded all table replication states",
-        ).await;
 
         result
     }
@@ -275,19 +210,10 @@ impl StateStore for TestStateStore {
         state: TableReplicationState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            &format!("Storing table replication state for pipeline {} and table {}", state.pipeline_id, state.table_id),
-        ).await;
-
         let mut inner = self.inner.write().await;
         let key = (state.pipeline_id, state.table_id);
 
         if !overwrite && inner.table_replication_states.contains_key(&key) {
-            log_to_file(
-                "STATE_STORE",
-                &format!("State already exists and overwrite is false for pipeline {} and table {}", state.pipeline_id, state.table_id),
-            ).await;
             return Ok(false);
         }
 
@@ -298,11 +224,6 @@ impl StateStore for TestStateStore {
         self.dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
             .await;
 
-        log_to_file(
-            "STATE_STORE",
-            &format!("Successfully stored table replication state for pipeline {} and table {}", state.pipeline_id, state.table_id),
-        ).await;
-
         Ok(true)
     }
 
@@ -310,11 +231,6 @@ impl StateStore for TestStateStore {
         &self,
         pipeline_id: PipelineId,
     ) -> Result<Vec<TableSchema>, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            &format!("Loading table schemas for pipeline {}", pipeline_id),
-        ).await;
-
         let inner = self.inner.read().await;
         let result = Ok(inner
             .table_schemas
@@ -326,11 +242,6 @@ impl StateStore for TestStateStore {
         self.dispatch_method_notification(StateStoreMethod::LoadTableSchemas)
             .await;
 
-        log_to_file(
-            "STATE_STORE",
-            &format!("Successfully loaded table schemas for pipeline {}", pipeline_id),
-        ).await;
-
         result
     }
 
@@ -339,21 +250,11 @@ impl StateStore for TestStateStore {
         pipeline_id: PipelineId,
         table_id: Oid,
     ) -> Result<Option<TableSchema>, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            &format!("Loading table schema for pipeline {} and table {}", pipeline_id, table_id),
-        ).await;
-
         let inner = self.inner.read().await;
         let result = Ok(inner.table_schemas.get(&(pipeline_id, table_id)).cloned());
 
         self.dispatch_method_notification(StateStoreMethod::LoadTableSchema)
             .await;
-
-        log_to_file(
-            "STATE_STORE",
-            &format!("Successfully loaded table schema for pipeline {} and table {}", pipeline_id, table_id),
-        ).await;
 
         result
     }
@@ -364,19 +265,10 @@ impl StateStore for TestStateStore {
         table_schema: TableSchema,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
-        log_to_file(
-            "STATE_STORE",
-            &format!("Storing table schema for pipeline {} and table {}", pipeline_id, table_schema.id),
-        ).await;
-
         let mut inner = self.inner.write().await;
         let key = (pipeline_id, table_schema.id);
 
         if !overwrite && inner.table_schemas.contains_key(&key) {
-            log_to_file(
-                "STATE_STORE",
-                &format!("Schema already exists and overwrite is false for pipeline {} and table {}", pipeline_id, table_schema.id),
-            ).await;
             return Ok(false);
         }
 
@@ -385,11 +277,6 @@ impl StateStore for TestStateStore {
 
         self.dispatch_method_notification(StateStoreMethod::StoreTableSchema)
             .await;
-
-        log_to_file(
-            "STATE_STORE",
-            &format!("Successfully stored table schema for pipeline {} and table {}", pipeline_id, table_schema.id),
-        ).await;
 
         Ok(true)
     }
