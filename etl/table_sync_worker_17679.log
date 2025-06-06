@@ -1,0 +1,5 @@
+[WORKER] Starting table sync worker for table 17679
+[WORKER] Storing phase change for table 17679 to DataSync
+[WORKER] ERROR: Sync failed for table 17679: An error happened in the pipeline state store: Replication origin state not found in store
+[WORKER] Starting table sync worker for table 17679
+[WORKER] Storing phase change for table 17679 to DataSync

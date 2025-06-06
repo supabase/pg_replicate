@@ -15,6 +15,9 @@ use thiserror::Error;
 use tokio::pin;
 use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
+use std::fs::OpenOptions;
+use std::io::Write;
+use postgres::schema::Oid;
 
 #[derive(Debug, Error)]
 pub enum TableSyncError {
@@ -49,6 +52,17 @@ pub enum TableSyncResult {
     SyncCompleted { origin_start_lsn: PgLsn },
 }
 
+async fn log_to_file(table_id: Oid, component: &str, message: &str) {
+    let file_path = format!("table_sync_replication_{}.log", table_id);
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+    {
+        let _ = writeln!(file, "[{}] {}", component, message);
+    }
+}
+
 pub async fn start_table_sync<S, D>(
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
@@ -67,58 +81,73 @@ where
     let table_id = inner.table_id();
     let phase_type = inner.replication_phase().as_type();
 
-    // In case the work for this table has been already done, we don't want to continue and we
-    // successfully return.
+    log_to_file(
+        table_id,
+        "REPLICATION",
+        &format!("Starting table sync for table {} with phase {:?}", table_id, phase_type),
+    )
+    .await;
+
     if matches!(
         phase_type,
         TableReplicationPhaseType::SyncDone
             | TableReplicationPhaseType::Ready
             | TableReplicationPhaseType::Unknown
     ) {
+        log_to_file(
+            table_id,
+            "REPLICATION",
+            &format!("Sync not required for table {} as phase is {:?}", table_id, phase_type),
+        )
+        .await;
         return Ok(TableSyncResult::SyncNotRequired);
     }
 
-    // In case the phase is different from the standard phases in which a table sync worker can perform
-    // table syncing, we want to return an error.
     if !matches!(
         phase_type,
         TableReplicationPhaseType::Init
             | TableReplicationPhaseType::DataSync
             | TableReplicationPhaseType::FinishedCopy
     ) {
+        log_to_file(
+            table_id,
+            "REPLICATION",
+            &format!("ERROR: Invalid phase {:?} for table {}", phase_type, table_id),
+        )
+        .await;
         return Err(TableSyncError::InvalidPhase(phase_type));
     }
 
-    // We are safe to unlock the state here, since we know that the state will be changed by the
-    // apply worker only if `SyncWait` is set, which is not the case if we arrive here, so we are
-    // good to reduce the length of the critical section.
     drop(inner);
 
     let slot_name = get_slot_name(&identity, SlotUsage::TableSyncWorker { table_id })?;
 
-    // There are three phases in which the table can be in:
-    // - `Init` -> this means that the table sync was never done, so we just perform it.
-    // - `DataSync` -> this means that there was a failure during data sync, and we have to restart
-    //  copying all the table data and delete the slot.
-    // - `FinishedCopy` -> this means that the table was successfully copied, but we didn't manage to
-    //  complete the table sync function, so we just want to load the state from the origin to know
-    //  where we want to start the cdc stream.
-    //
-    // In case the phase is any other phase, we will return an error.
     let replication_origin_state = match phase_type {
         TableReplicationPhaseType::Init | TableReplicationPhaseType::DataSync => {
-            // If we are in `DataSync` it means we failed during table copying, so we want to delete the
-            // existing slot before continuing.
             if phase_type == TableReplicationPhaseType::DataSync {
+                log_to_file(
+                    table_id,
+                    "REPLICATION",
+                    &format!("Deleting existing slot {} for table {}", slot_name, table_id),
+                )
+                .await;
+
                 if let Err(err) = replication_client.delete_slot(&slot_name).await {
-                    // If the slot is not found, we are safe to continue, for any other error, we bail.
                     if !matches!(err, PgReplicationError::SlotNotFound(_)) {
+                        log_to_file(
+                            table_id,
+                            "REPLICATION",
+                            &format!(
+                                "ERROR: Failed to delete slot {} for table {}: {}",
+                                slot_name, table_id, err
+                            ),
+                        )
+                        .await;
                         return Err(err.into());
                     }
                 }
             }
 
-            // We are ready to start copying table data, and we update the state accordingly.
             {
                 let mut inner = table_sync_worker_state.get_inner().write().await;
                 inner
@@ -126,27 +155,33 @@ where
                     .await?;
             }
 
-            // We create the slot with a transaction, since we need to have a consistent snapshot of the database
-            // before copying the schema and tables.
+            log_to_file(
+                table_id,
+                "REPLICATION",
+                &format!("Creating slot {} for table {}", slot_name, table_id),
+            )
+            .await;
+
             let (transaction, slot) = replication_client
                 .create_slot_with_transaction(&slot_name)
                 .await?;
 
-            // We create and overwrite (if already present) the replication origin state, to store important
-            // information about the replication.
             let replication_origin_state =
                 ReplicationOriginState::new(identity.id(), Some(table_id), slot.consistent_point);
             state_store
                 .store_replication_origin_state(replication_origin_state.clone(), true)
                 .await?;
 
-            // We copy the table schema and write it both to the state store and destination.
-            //
-            // Note that we write the schema in both places:
-            // - State store -> we write here because the table schema is used across table copying and cdc
-            //  for correct decoding, thus we rely on our own state store to preserve this information.
-            // - Destination -> we write here because some consumers might want to have the schema of incoming
-            //  data.
+            log_to_file(
+                table_id,
+                "REPLICATION",
+                &format!(
+                    "Stored replication origin state for table {} with LSN {}",
+                    table_id, slot.consistent_point
+                ),
+            )
+            .await;
+
             let table_schema = transaction
                 .get_table_schema(table_id, Some(identity.publication_name()))
                 .await?;
@@ -155,7 +190,13 @@ where
                 .await?;
             destination.write_table_schema(table_schema.clone()).await?;
 
-            // We create the copy table stream.
+            log_to_file(
+                table_id,
+                "REPLICATION",
+                &format!("Stored table schema for table {}", table_id),
+            )
+            .await;
+
             let table_copy_stream = transaction
                 .get_table_copy_stream(table_id, &table_schema.column_schemas)
                 .await?;
@@ -168,14 +209,25 @@ where
             );
             pin!(table_copy_stream);
 
-            // We start consuming the table stream. If any error occurs, we will bail the entire copy since
-            // we want to be fully consistent.
+            log_to_file(
+                table_id,
+                "REPLICATION",
+                &format!("Starting table copy for table {}", table_id),
+            )
+            .await;
+
             while let Some(table_rows) = table_copy_stream.next().await {
                 let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
                 destination.copy_table_rows(table_id, table_rows).await?;
             }
 
-            // We mark that we finished the copy of the table schema and data.
+            log_to_file(
+                table_id,
+                "REPLICATION",
+                &format!("Completed table copy for table {}", table_id),
+            )
+            .await;
+
             {
                 let mut inner = table_sync_worker_state.get_inner().write().await;
                 inner
@@ -185,21 +237,38 @@ where
 
             replication_origin_state
         }
-        TableReplicationPhaseType::FinishedCopy => state_store
-            .load_replication_origin_state(identity.id(), Some(table_id))
-            .await?
-            .ok_or(TableSyncError::ReplicationOriginStateNotFound)?,
+        TableReplicationPhaseType::FinishedCopy => {
+            log_to_file(
+                table_id,
+                "REPLICATION",
+                &format!("Loading replication origin state for table {}", table_id),
+            )
+            .await;
+
+            state_store
+                .load_replication_origin_state(identity.id(), Some(table_id))
+                .await?
+                .ok_or(TableSyncError::ReplicationOriginStateNotFound)?
+        }
         _ => unreachable!("Phase type already validated above"),
     };
 
-    // We mark this worker as `SyncWait` (in memory only) to signal the apply worker that we are
-    // ready to start catchup.
     {
         let mut inner = table_sync_worker_state.get_inner().write().await;
         inner
             .set_phase_with(TableReplicationPhase::SyncWait, state_store)
             .await?;
     }
+
+    log_to_file(
+        table_id,
+        "REPLICATION",
+        &format!(
+            "Table sync completed for table {} with consistent point {}",
+            table_id, replication_origin_state.remote_lsn
+        ),
+    )
+    .await;
 
     Ok(TableSyncResult::SyncCompleted {
         origin_start_lsn: replication_origin_state.remote_lsn,

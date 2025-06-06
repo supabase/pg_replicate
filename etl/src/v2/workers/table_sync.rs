@@ -6,6 +6,9 @@ use tokio::sync::{watch, Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 use tracing::{info, warn};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
 
 use crate::v2::concurrency::future::ReactiveFuture;
 use crate::v2::config::pipeline::PipelineConfig;
@@ -53,18 +56,27 @@ pub struct TableSyncWorkerStateInner {
     phase_change: Arc<Notify>,
 }
 
+async fn log_to_file(table_id: Oid, component: &str, message: &str) {
+    let file_path = format!("table_sync_worker_{}.log", table_id);
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+    {
+        let _ = writeln!(file, "[{}] {}", component, message);
+    }
+}
+
 impl TableSyncWorkerStateInner {
     fn set_phase(&mut self, phase: TableReplicationPhase) {
+        let table_id = self.table_replication_state.table_id;
+        
         info!(
             "Table {} phase changing from {:?} to {:?}",
-            self.table_replication_state.table_id, self.table_replication_state.phase, phase
+            table_id, self.table_replication_state.phase, phase
         );
 
         self.table_replication_state.phase = phase;
-        // We want to notify all waiters that there was a phase change.
-        //
-        // Note that this notify will not wake up waiters that will be coming in the future since
-        // no permit is stored, only active listeners will be notified.
         self.phase_change.notify_waiters();
     }
 
@@ -73,14 +85,22 @@ impl TableSyncWorkerStateInner {
         phase: TableReplicationPhase,
         state_store: S,
     ) -> Result<(), TableSyncWorkerStateError> {
+        let table_id = self.table_replication_state.table_id;
+        
         self.set_phase(phase);
 
-        // If we should store this phase change, we want to do it via the supplied state store.
         if phase.as_type().should_store() {
             info!(
                 "Storing phase change for table {} to {:?}",
-                self.table_replication_state.table_id, phase
+                table_id, phase
             );
+
+            log_to_file(
+                table_id,
+                "WORKER",
+                &format!("Storing phase change for table {} to {:?}", table_id, phase),
+            )
+            .await;
 
             let new_table_replication_state =
                 self.table_replication_state.clone().with_phase(phase);
@@ -231,9 +251,14 @@ where
 
     async fn start(self) -> Result<TableSyncWorkerHandle, Self::Error> {
         info!("Starting table sync worker for table {}", self.table_id);
+        
+        log_to_file(
+            self.table_id,
+            "WORKER",
+            &format!("Starting table sync worker for table {}", self.table_id),
+        )
+        .await;
 
-        // TODO: maybe we can optimize the performance by doing this loading within the task and
-        //  implementing a mechanism for table sync state to be updated after the fact.
         let Some(relation_subscription_state) = self
             .state_store
             .load_table_replication_state(self.identity.id(), self.table_id)
@@ -244,6 +269,17 @@ where
                 "No replication state found for table {}, cannot start sync worker",
                 self.table_id
             );
+            
+            log_to_file(
+                self.table_id,
+                "WORKER",
+                &format!(
+                    "ERROR: No replication state found for table {}, cannot start sync worker",
+                    self.table_id
+                ),
+            )
+            .await;
+            
             return Err(TableSyncWorkerError::ReplicationStateMissing(self.table_id));
         };
 
@@ -251,7 +287,6 @@ where
 
         let state_clone = state.clone();
         let table_sync_worker = async move {
-            // We first start syncing the table.
             let result = start_table_sync(
                 self.identity.clone(),
                 self.config.clone(),
@@ -263,26 +298,45 @@ where
             )
             .await;
 
-            // We handle the result of the table sync operation gracefully.
             let consistent_point = match result {
                 Ok(result) => {
                     match result {
                         TableSyncResult::SyncNotRequired => {
-                            // In this case, we early return and exit the worker.
+                            log_to_file(
+                                self.table_id,
+                                "WORKER",
+                                &format!("Sync not required for table {}", self.table_id),
+                            )
+                            .await;
                             return Ok(());
                         }
                         TableSyncResult::SyncCompleted {
                             origin_start_lsn: consistent_point,
-                        } => consistent_point,
+                        } => {
+                            log_to_file(
+                                self.table_id,
+                                "WORKER",
+                                &format!(
+                                    "Sync completed for table {} with consistent point {}",
+                                    self.table_id, consistent_point
+                                ),
+                            )
+                            .await;
+                            consistent_point
+                        }
                     }
                 }
                 Err(err) => {
+                    log_to_file(
+                        self.table_id,
+                        "WORKER",
+                        &format!("ERROR: Sync failed for table {}: {}", self.table_id, err),
+                    )
+                    .await;
                     return Err(err.into());
                 }
             };
 
-            // If we succeed syncing the table, we want to start the same apply loop as in the apply
-            // worker with the consistent point as the starting point.
             let hook = Hook::new(self.table_id);
             start_apply_loop(
                 hook,
@@ -298,8 +352,6 @@ where
             Ok(())
         };
 
-        // We spawn the table sync worker with a safe future, so that we can have controlled teardown
-        // on completion or error.
         let handle = tokio::spawn(ReactiveFuture::new(
             table_sync_worker,
             self.table_id,
