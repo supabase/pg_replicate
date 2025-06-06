@@ -278,7 +278,6 @@ where
             let mut total_rows_count = 0;
             while let Some(table_rows) = table_copy_stream.next().await {
                 let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
-                let current_table_rows = table_rows.len();
                 total_rows_count += table_rows.len();
                 destination.copy_table_rows(table_id, table_rows).await?;
                 log_to_file(
