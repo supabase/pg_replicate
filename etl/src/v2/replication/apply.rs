@@ -12,8 +12,8 @@ use tokio_postgres::types::PgLsn;
 
 use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
 use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::conversions::event::EventConverter;
-use crate::v2::destination::base::Destination;
+use crate::v2::conversions::event::{Event, EventConversionError, EventConverter};
+use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::{PipelineId, PipelineIdentity};
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
@@ -39,14 +39,28 @@ pub enum ApplyLoopError {
     #[error("A Postgres replication error occurred in the apply loop: {0}")]
     PgReplication(#[from] PgReplicationError),
 
-    #[error("An error occurred while streaming logical replication changes: {0}")]
+    #[error(
+        "An error occurred while streaming logical replication changes in the apply loop: {0}"
+    )]
     LogicalReplicationStreamFailed(#[from] EventsStreamError),
 
     #[error("Could not generate slot name in the apply loop: {0}")]
     Slot(#[from] SlotError),
 
-    #[error("An error happened in the state store: {0}")]
+    #[error("An error happened in the state store while in the apply loop: {0}")]
     StateStore(#[from] StateStoreError),
+
+    #[error("An error occurred while build an event from a message in the apply loop: {0}")]
+    EventConversion(#[from] EventConversionError),
+
+    #[error("An error occurred when interacting with the destination in the apply loop: {0}")]
+    Destination(#[from] DestinationError),
+
+    #[error("Incorrect commit LSN {0} in COMMIT message (expected {1})")]
+    InvalidCommitLsn(PgLsn, PgLsn),
+
+    #[error("An invalid event {0} was received (expected {1})")]
+    InvalidEvent(String, String),
 }
 
 impl From<ApplyWorkerHookError> for ApplyLoopError {
@@ -81,7 +95,7 @@ pub trait ApplyLoopHook {
         &self,
         table_id: Oid,
         remote_final_lsn: PgLsn,
-    ) -> impl Future<Output = bool> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn slot_usage(&self) -> SlotUsage;
 }
@@ -108,7 +122,7 @@ struct ApplyLoopState {
     /// The id of the pipeline in which the apply loop state's is running.
     pipeline_id: PipelineId,
     /// The highest LSN of the received events.
-    /// 
+    ///
     /// This LSN is extracted from the `start_lsn` and `end_lsn` of each incoming event.
     last_received: PgLsn,
     /// The LSN of the commit WAL entry of the transaction that is currently being processed.
@@ -205,10 +219,8 @@ where
             biased;
 
             _ = shutdown_rx.changed() => {
-                // TODO: make sure that the system is cleanly resumable once a shutdown signal is received.
                 return Ok(ApplyLoopResult::ApplyStopped);
             }
-            // TODO: figure out if the logical replication stream is cancellation safe.
             Some(messages_batch) = logical_replication_stream.next() => {
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
@@ -287,7 +299,7 @@ where
             if end_lsn > state.last_received {
                 state.last_received = end_lsn;
             }
-            
+
             println!(
                 "\n\n MESSAGE {:?} \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?}",
                 hook.slot_usage(),
@@ -299,6 +311,7 @@ where
             handle_logical_replication_message(
                 state,
                 message.into_data(),
+                event_converter,
                 state_store,
                 destination,
                 hook,
@@ -341,8 +354,8 @@ where
 async fn handle_logical_replication_message<S, D, T>(
     state: &mut ApplyLoopState,
     message: LogicalReplicationMessage,
-    state_store: &S,
-    _destination: &D,
+    event_converter: &EventConverter<S>,
+    destination: &D,
     hook: &T,
 ) -> Result<(), ApplyLoopError>
 where
@@ -351,172 +364,151 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
+    // We perform the conversion of the message to our own event format which is used downstream
+    // by the destination.
+    let event = event_converter.convert(&message).await?;
+
+    // For each message, we handle it separately.
     match message {
         LogicalReplicationMessage::Begin(message) => {
-            handle_begin_message(state, message, state_store, hook).await
+            handle_begin_event::<D, T>(state, message.final_lsn().into(), event, destination).await
         }
         LogicalReplicationMessage::Commit(message) => {
-            handle_commit_message(state, message, state_store, hook).await
+            handle_commit_event(
+                state,
+                message.commit_lsn().into(),
+                message.end_lsn().into(),
+                event,
+                destination,
+                hook,
+            )
+            .await
         }
-        LogicalReplicationMessage::Origin(message) => {
-            handle_origin_message(state, message, state_store, hook).await
-        }
-        LogicalReplicationMessage::Relation(message) => {
-            handle_relation_message(state, message, state_store, hook).await
-        }
-        LogicalReplicationMessage::Type(message) => {
-            handle_type_message(state, message, state_store, hook).await
-        }
+        LogicalReplicationMessage::Origin(_) => Ok(()),
+        LogicalReplicationMessage::Relation(_) => Ok(()),
+        LogicalReplicationMessage::Type(_) => Ok(()),
         LogicalReplicationMessage::Insert(message) => {
-            handle_insert_message(state, message, state_store, hook).await
+            handle_simple_dml_event(state, message.rel_id(), event, destination, hook).await
         }
         LogicalReplicationMessage::Update(message) => {
-            handle_update_message(state, message, state_store, hook).await
+            handle_simple_dml_event(state, message.rel_id(), event, destination, hook).await
         }
         LogicalReplicationMessage::Delete(message) => {
-            handle_delete_message(state, message, state_store, hook).await
+            handle_simple_dml_event(state, message.rel_id(), event, destination, hook).await
         }
         LogicalReplicationMessage::Truncate(message) => {
-            handle_truncate_message(state, message, state_store, hook).await
+            handle_truncate_event(state, message.rel_ids(), event, destination, hook).await
         }
         _ => Ok(()),
     }
 }
 
-async fn handle_begin_message<S, T>(
+async fn handle_begin_event<D, T>(
     state: &mut ApplyLoopState,
-    message: postgres_replication::protocol::BeginBody,
-    _state_store: &S,
-    _hook: &T,
+    final_lsn: PgLsn,
+    event: Event,
+    destination: &D,
 ) -> Result<(), ApplyLoopError>
 where
-    S: StateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
     // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
     // `Commit` message.
-    let final_lsn = PgLsn::from(message.final_lsn());
     state.remote_final_lsn = final_lsn;
+
+    // We send the event to the destination unconditionally.
+    destination.apply_event(event).await?;
 
     Ok(())
 }
 
-async fn handle_commit_message<S, T>(
-    _state: &mut ApplyLoopState,
-    message: postgres_replication::protocol::CommitBody,
-    _state_store: &S,
+async fn handle_commit_event<D, T>(
+    state: &mut ApplyLoopState,
+    commit_lsn: PgLsn,
+    end_lsn: PgLsn,
+    event: Event,
+    destination: &D,
     hook: &T,
 ) -> Result<(), ApplyLoopError>
 where
-    S: StateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
+    // If the commit lsn of the message is different from the remote final lsn, it means that the
+    // transaction that was started expect a different commit lsn in the commit message. In this case,
+    // we want to bail assuming we are in an inconsistent state.
+    if commit_lsn != state.remote_final_lsn {
+        return Err(ApplyLoopError::InvalidCommitLsn(
+            commit_lsn,
+            state.remote_final_lsn,
+        ));
+    }
+
+    // We send the event to the destination unconditionally.
+    destination.apply_event(event).await?;
+
     // We process syncing tables since we just arrived at the end of a transaction, and we want to
     // synchronize all the workers.
     //
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
-    let end_lsn = PgLsn::from(message.end_lsn());
     hook.process_syncing_tables(end_lsn).await?;
 
     Ok(())
 }
 
-async fn handle_origin_message<S, T>(
-    _state: &mut ApplyLoopState,
-    _message: postgres_replication::protocol::OriginBody,
-    _state_store: &S,
-    _hook: &T,
+async fn handle_simple_dml_event<D, T>(
+    state: &mut ApplyLoopState,
+    table_id: Oid,
+    event: Event,
+    destination: &D,
+    hook: &T,
 ) -> Result<(), ApplyLoopError>
 where
-    S: StateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
+    if !hook
+        .should_apply_changes(table_id, state.remote_final_lsn)
+        .await?
+    {
+        return Ok(());
+    }
+
+    destination.apply_event(event).await?;
+
     Ok(())
 }
 
-async fn handle_relation_message<S, T>(
-    _state: &mut ApplyLoopState,
-    _message: postgres_replication::protocol::RelationBody,
-    _state_store: &S,
-    _hook: &T,
+async fn handle_truncate_event<D, T>(
+    state: &mut ApplyLoopState,
+    table_ids: &[u32],
+    event: Event,
+    destination: &D,
+    hook: &T,
 ) -> Result<(), ApplyLoopError>
 where
-    S: StateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    Ok(())
-}
+    let Event::Truncate(mut event) = event else {
+        return Err(ApplyLoopError::InvalidEvent);
+    };
 
-async fn handle_type_message<S, T>(
-    _state: &mut ApplyLoopState,
-    _message: postgres_replication::protocol::TypeBody,
-    _state_store: &S,
-    _hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    S: StateStore + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    Ok(())
-}
+    for (index, table_id) in table_ids.iter().enumerate() {
+        if !hook
+            .should_apply_changes(*table_id, state.remote_final_lsn)
+            .await?
+        {
+            event.rel_ids.remove(index);
+        }
+    }
 
-async fn handle_insert_message<S, T>(
-    _state: &mut ApplyLoopState,
-    _message: postgres_replication::protocol::InsertBody,
-    _state_store: &S,
-    _hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    S: StateStore + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    Ok(())
-}
+    destination.apply_event(Event::Truncate(event)).await?;
 
-async fn handle_update_message<S, T>(
-    _state: &mut ApplyLoopState,
-    _message: postgres_replication::protocol::UpdateBody,
-    _state_store: &S,
-    _hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    S: StateStore + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    Ok(())
-}
-
-async fn handle_delete_message<S, T>(
-    _state: &mut ApplyLoopState,
-    _message: postgres_replication::protocol::DeleteBody,
-    _state_store: &S,
-    _hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    S: StateStore + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    Ok(())
-}
-
-async fn handle_truncate_message<S, T>(
-    _state: &mut ApplyLoopState,
-    _message: postgres_replication::protocol::TruncateBody,
-    _state_store: &S,
-    _hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    S: StateStore + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
     Ok(())
 }

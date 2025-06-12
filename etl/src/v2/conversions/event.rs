@@ -225,7 +225,22 @@ pub enum Event {
     Type(TypeEvent),
     Origin(OriginEvent),
     Truncate(TruncateEvent),
-    KeepAlive(KeepAliveEvent),
+}
+
+impl fmt::Display for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Event::Begin(_) => write!(f, "Begin"),
+            Event::Commit(_) => write!(f, "Commit"),
+            Event::Insert(_) => write!(f, "Insert"),
+            Event::Update(_) => write!(f, "Update"),
+            Event::Delete(_) => write!(f, "Delete"),
+            Event::Relation(_) => write!(f, "Relation"),
+            Event::Type(_) => write!(f, "Type"),
+            Event::Origin(_) => write!(f, "Origin"),
+            Event::Truncate(_) => write!(f, "Truncate"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -279,7 +294,7 @@ where
 
     async fn convert_insert_to_event(
         &self,
-        insert_body: InsertBody,
+        insert_body: &InsertBody,
     ) -> Result<Event, EventConversionError> {
         let table_id = insert_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;
@@ -293,7 +308,7 @@ where
 
     async fn convert_update_to_event(
         &self,
-        update_body: UpdateBody,
+        update_body: &UpdateBody,
     ) -> Result<Event, EventConversionError> {
         let table_id = update_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;
@@ -307,7 +322,7 @@ where
 
     async fn convert_delete_to_event(
         &self,
-        delete_body: DeleteBody,
+        delete_body: &DeleteBody,
     ) -> Result<Event, EventConversionError> {
         let table_id = delete_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;
@@ -323,44 +338,36 @@ where
 
     pub async fn convert(
         &self,
-        value: ReplicationMessage<LogicalReplicationMessage>,
+        message: &LogicalReplicationMessage,
     ) -> Result<Event, EventConversionError> {
-        match value {
-            ReplicationMessage::XLogData(x_log_data) => match x_log_data.into_data() {
-                LogicalReplicationMessage::Begin(begin_body) => {
-                    Ok(Event::Begin(BeginEvent::from_protocol(&begin_body)))
-                }
-                LogicalReplicationMessage::Commit(commit_body) => {
-                    Ok(Event::Commit(CommitEvent::from_protocol(&commit_body)))
-                }
-                LogicalReplicationMessage::Origin(origin_body) => {
-                    Ok(Event::Origin(OriginEvent::from_protocol(&origin_body)?))
-                }
-                LogicalReplicationMessage::Relation(relation_body) => Ok(Event::Relation(
-                    RelationEvent::from_protocol(&relation_body)?,
-                )),
-                LogicalReplicationMessage::Type(type_body) => {
-                    Ok(Event::Type(TypeEvent::from_protocol(&type_body)?))
-                }
-                LogicalReplicationMessage::Insert(insert_body) => {
-                    self.convert_insert_to_event(insert_body).await
-                }
-                LogicalReplicationMessage::Update(update_body) => {
-                    self.convert_update_to_event(update_body).await
-                }
-                LogicalReplicationMessage::Delete(delete_body) => {
-                    self.convert_delete_to_event(delete_body).await
-                }
-                LogicalReplicationMessage::Truncate(truncate_body) => Ok(Event::Truncate(
-                    TruncateEvent::from_protocol(&truncate_body),
-                )),
-                _ => Err(EventConversionError::UnknownReplicationMessage),
-            },
-            ReplicationMessage::PrimaryKeepAlive(keep_alive) => {
-                Ok(Event::KeepAlive(KeepAliveEvent {
-                    reply: keep_alive.reply() == 1,
-                }))
+        match message {
+            LogicalReplicationMessage::Begin(begin_body) => {
+                Ok(Event::Begin(BeginEvent::from_protocol(&begin_body)))
             }
+            LogicalReplicationMessage::Commit(commit_body) => {
+                Ok(Event::Commit(CommitEvent::from_protocol(&commit_body)))
+            }
+            LogicalReplicationMessage::Origin(origin_body) => {
+                Ok(Event::Origin(OriginEvent::from_protocol(&origin_body)?))
+            }
+            LogicalReplicationMessage::Relation(relation_body) => Ok(Event::Relation(
+                RelationEvent::from_protocol(&relation_body)?,
+            )),
+            LogicalReplicationMessage::Type(type_body) => {
+                Ok(Event::Type(TypeEvent::from_protocol(&type_body)?))
+            }
+            LogicalReplicationMessage::Insert(insert_body) => {
+                self.convert_insert_to_event(insert_body).await
+            }
+            LogicalReplicationMessage::Update(update_body) => {
+                self.convert_update_to_event(update_body).await
+            }
+            LogicalReplicationMessage::Delete(delete_body) => {
+                self.convert_delete_to_event(delete_body).await
+            }
+            LogicalReplicationMessage::Truncate(truncate_body) => Ok(Event::Truncate(
+                TruncateEvent::from_protocol(&truncate_body),
+            )),
             _ => Err(EventConversionError::UnknownReplicationMessage),
         }
     }

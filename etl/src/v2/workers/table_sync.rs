@@ -358,7 +358,11 @@ where
         Ok(())
     }
 
-    async fn should_apply_changes(&self, table_id: Oid, _remote_final_lsn: PgLsn) -> bool {
+    async fn should_apply_changes(
+        &self,
+        table_id: Oid,
+        _remote_final_lsn: PgLsn,
+    ) -> Result<bool, Self::Error> {
         let should_apply = self.table_id == table_id;
         if should_apply {
             info!(
@@ -367,7 +371,7 @@ where
             );
         }
 
-        should_apply
+        Ok(should_apply)
     }
 
     fn slot_usage(&self) -> SlotUsage {

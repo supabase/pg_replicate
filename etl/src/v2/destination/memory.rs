@@ -1,13 +1,14 @@
-use crate::conversions::cdc_event::CdcEvent;
-use crate::conversions::table_row::TableRow;
-use crate::v2::destination::base::{Destination, DestinationError};
 use postgres::schema::{Oid, TableSchema};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::conversions::table_row::TableRow;
+use crate::v2::conversions::event::Event;
+use crate::v2::destination::base::{Destination, DestinationError};
+
 #[derive(Debug)]
 struct Inner {
-    events: Vec<CdcEvent>,
+    events: Vec<Event>,
     schemas: Vec<TableSchema>,
     table_rows: Vec<(Oid, Vec<TableRow>)>,
 }
@@ -41,18 +42,28 @@ impl Destination for MemoryDestination {
     async fn write_table_schema(&self, schema: TableSchema) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.schemas.push(schema);
+
         Ok(())
     }
 
     async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_rows.push((id, rows));
+
         Ok(())
     }
 
-    async fn apply_events(&self, events: Vec<CdcEvent>) -> Result<(), DestinationError> {
+    async fn apply_event(&self, event: Event) -> Result<(), DestinationError> {
+        let mut inner = self.inner.write().await;
+        inner.events.push(event);
+
+        Ok(())
+    }
+
+    async fn apply_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.events.extend(events);
+
         Ok(())
     }
 }

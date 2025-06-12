@@ -390,18 +390,39 @@ where
         Ok(())
     }
 
-    async fn should_apply_changes(&self, table_id: Oid, remote_final_lsn: PgLsn) -> bool {
+    async fn should_apply_changes(
+        &self,
+        table_id: Oid,
+        remote_final_lsn: PgLsn,
+    ) -> Result<bool, Self::Error> {
         let pool = self.pool.read().await;
-        let Some(table_sync_worker_state) = pool.get_worker_state(table_id) else {
-            return false;
+
+        let replication_phase = match pool.get_worker_state(table_id) {
+            Some(state) => {
+                let inner = state.get_inner().read().await;
+                inner.replication_phase()
+            }
+            None => {
+                // If we don't even find the state for this table, we skip the event entirely.
+                let Some(state) = self
+                    .state_store
+                    .load_table_replication_state(self.identity.id(), table_id)
+                    .await?
+                else {
+                    return Ok(false);
+                };
+
+                state.phase
+            }
         };
 
-        let inner = table_sync_worker_state.get_inner().read().await;
-        match inner.replication_phase() {
+        let should_apply_changes = match replication_phase {
             TableReplicationPhase::Ready { .. } => true,
             TableReplicationPhase::SyncDone { lsn } => lsn <= remote_final_lsn,
             _ => false,
-        }
+        };
+
+        Ok(should_apply_changes)
     }
 
     fn slot_usage(&self) -> SlotUsage {
