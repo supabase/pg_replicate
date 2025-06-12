@@ -202,6 +202,7 @@ where
     loop {
         tokio::select! {
             biased;
+
             _ = shutdown_rx.changed() => {
                 // TODO: make sure that the system is cleanly resumable once a shutdown signal is received.
                 return Ok(ApplyLoopResult::ApplyStopped);
@@ -286,8 +287,8 @@ where
                 state.last_received = end_lsn;
             }
 
-            print!(
-                "\n\n MESSAGE \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?} \n\n",
+            println!(
+                "\n\n MESSAGE \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?}",
                 message.wal_start(),
                 message.wal_end(),
                 message.data()

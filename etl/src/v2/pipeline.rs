@@ -195,13 +195,22 @@ where
         // the table sync workers to finish, otherwise if we wait for sync workers first, we might
         // be having the apply worker that spawns new sync workers after we waited for the current
         // ones to finish.
-        apply_worker.wait().await.map_err(|e| vec![e])?;
+        let apply_worker_result = apply_worker.wait().await;
         info!("Apply worker completed");
 
-        pool.wait_all().await?;
+        let table_sync_workers_result = pool.wait_all().await;
         info!("All table sync workers completed");
 
-        Ok(())
+        match (apply_worker_result, table_sync_workers_result) {
+            (Ok(_), Ok(_)) => Ok(()),
+            (Err(err), Ok(_)) => Err(vec![err]),
+            (Ok(_), Err(err)) => Err(err),
+            (Err(apply_err), Err(mut table_sync_err)) => {
+                // For efficiency, we add it to the end.
+                table_sync_err.push(apply_err);
+                Err(table_sync_err)
+            }
+        }
     }
 
     pub async fn shutdown(&self) {

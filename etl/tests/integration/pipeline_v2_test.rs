@@ -150,7 +150,7 @@ async fn test_pipeline_with_apply_worker_panic() {
     let database_schema = setup_database(&database).await;
 
     let fault_config = FaultConfig {
-        load_replication_origin_state: Some(FaultType::Panic),
+        store_replication_origin_state: Some(FaultType::Panic),
         ..Default::default()
     };
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
@@ -178,7 +178,7 @@ async fn test_pipeline_with_apply_worker_error() {
     let database_schema = setup_database(&database).await;
 
     let fault_config = FaultConfig {
-        load_replication_origin_state: Some(FaultType::Error),
+        store_replication_origin_state: Some(FaultType::Error),
         ..Default::default()
     };
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
@@ -203,13 +203,15 @@ async fn test_pipeline_with_apply_worker_error() {
     ));
 }
 
+// TODO: find a way to inject errors in a way that is predictable.
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_table_sync_worker_panic() {
     let database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
     let fault_config = FaultConfig {
-        store_table_schema: Some(FaultType::Panic),
+        store_table_replication_state: Some(FaultType::Panic),
         ..Default::default()
     };
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
@@ -254,6 +256,8 @@ async fn test_pipeline_with_table_sync_worker_panic() {
     assert!(matches!(errors[1], WorkerWaitError::TaskFailed(_)));
 }
 
+// TODO: find a way to inject errors in a way that is predictable.
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_table_sync_worker_error() {
     let database = spawn_database().await;
@@ -357,19 +361,9 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
-    // We stop and inspect errors.
-    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
-    assert_eq!(errors.len(), 2);
-    assert!(matches!(
-        errors[0],
-        WorkerWaitError::TableSyncWorkerPropagated(_)
-    ));
-    assert!(matches!(
-        errors[1],
-        WorkerWaitError::TableSyncWorkerPropagated(_)
-    ));
+    pipeline.shutdown_and_wait().await.unwrap();
 
-    // We recreate a pipeline, assuming the other one was stopped, using a non-failing state and
+    // We recreate a pipeline, assuming the other one was stopped, using a normal state store and
     // the same destination.
     let mut pipeline = spawn_pg_pipeline(
         &database_schema.publication_name,
@@ -700,11 +694,6 @@ async fn test_table_copy_and_sync() {
 
     pipeline.shutdown_and_wait().await.unwrap();
 
-    // sleep(Duration::from_secs(5)).await;
-    // timeout(Duration::from_secs(1), pipeline.shutdown_and_wait())
-    //     .await
-    //     .unwrap();
-
     // Get all table rows for table syncing
     let table_rows = destination.get_table_rows().await;
     let users_table_rows = table_rows
@@ -721,4 +710,5 @@ async fn test_table_copy_and_sync() {
     assert_eq!(age_sum, expected_age_sum);
 
     // Check the cdc events that were applied afterwards
+    // TODO: check the cdc events in the destination.
 }

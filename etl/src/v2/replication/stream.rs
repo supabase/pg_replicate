@@ -81,11 +81,6 @@ pub enum EventsStreamError {
 }
 
 pin_project! {
-    /// A stream that handles PostgreSQL logical replication events.
-    ///
-    /// This stream maintains the PostgreSQL epoch (2000-01-01 00:00:00 UTC) which is used
-    /// for timestamp calculations in replication messages. PostgreSQL uses this epoch
-    /// as a reference point for its internal timestamp handling.
     pub struct EventsStream {
         #[pin]
         stream: LogicalReplicationStream,

@@ -319,13 +319,11 @@ where
         }
 
         if catchup_started {
-            println!("WAITING FOR SYNC DONE");
             info!("Waiting for sync completion for table {}", table_id);
             let _ = table_sync_worker_state
                 .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
                 .await;
             info!("Sync completed for table {}", table_id);
-            println!("SYNC DONE READY")
         }
 
         Ok(())
@@ -374,7 +372,6 @@ where
             // read the shared state which can contain also non-persisted states.
             match table_replication_state.phase {
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
-                    println!("SYNC DONE, MOVING TO READY");
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
                     self.state_store

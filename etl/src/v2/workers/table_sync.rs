@@ -268,7 +268,9 @@ where
             .await;
 
             let origin_start_lsn = match result {
-                Ok(TableSyncResult::SyncNotRequired) => return Ok(()),
+                Ok(TableSyncResult::SyncStopped | TableSyncResult::SyncNotRequired) => {
+                    return Ok(())
+                }
                 Ok(TableSyncResult::SyncCompleted { origin_start_lsn }) => origin_start_lsn,
                 Err(err) => return Err(err.into()),
             };

@@ -46,11 +46,48 @@ pub enum TableSyncError {
 
 #[derive(Debug)]
 pub enum TableSyncResult {
+    SyncStopped,
     SyncNotRequired,
     SyncCompleted { origin_start_lsn: PgLsn },
 }
 
 pub async fn start_table_sync<S, D>(
+    identity: PipelineIdentity,
+    config: Arc<PipelineConfig>,
+    replication_client: PgReplicationClient,
+    table_id: Oid,
+    table_sync_worker_state: TableSyncWorkerState,
+    state_store: S,
+    destination: D,
+    mut shutdown_rx: watch::Receiver<()>,
+) -> Result<TableSyncResult, TableSyncError>
+where
+    S: StateStore + Clone + Send + 'static,
+    D: Destination + Clone + Send + 'static,
+{
+    let shutdown_rx_clone = shutdown_rx.clone();
+    tokio::select! {
+        biased;
+
+        _ = shutdown_rx.changed() => {
+            Ok(TableSyncResult::SyncStopped)
+        }
+        result = sync_table(
+            identity,
+            config,
+            replication_client,
+            table_id,
+            table_sync_worker_state,
+            state_store,
+            destination,
+            shutdown_rx_clone
+        ) => {
+            result
+        }
+    }
+}
+
+pub async fn sync_table<S, D>(
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
