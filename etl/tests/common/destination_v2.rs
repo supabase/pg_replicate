@@ -1,5 +1,5 @@
-use etl::conversions::cdc_event::CdcEvent;
 use etl::conversions::table_row::TableRow;
+use etl::v2::conversions::event::Event;
 use etl::v2::destination::base::{Destination, DestinationError};
 use postgres::schema::{Oid, TableSchema};
 use std::collections::HashMap;
@@ -8,17 +8,51 @@ use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
 
-type EventCondition = Box<dyn Fn(&[Arc<CdcEvent>]) -> bool + Send + Sync>;
+type EventCondition = Box<dyn Fn(&[Arc<Event>]) -> bool + Send + Sync>;
 type SchemaCondition = Box<dyn Fn(&[TableSchema]) -> bool + Send + Sync>;
 type TableRowCondition = Box<dyn Fn(&HashMap<Oid, Vec<TableRow>>) -> bool + Send + Sync>;
 
 struct Inner {
-    events: Vec<Arc<CdcEvent>>,
+    events: Vec<Arc<Event>>,
     table_schemas: Vec<TableSchema>,
     table_rows: HashMap<Oid, Vec<TableRow>>,
     event_conditions: Vec<(EventCondition, Arc<Notify>)>,
     table_schema_conditions: Vec<(SchemaCondition, Arc<Notify>)>,
     table_row_conditions: Vec<(TableRowCondition, Arc<Notify>)>,
+}
+
+impl Inner {
+    async fn check_conditions(&mut self) {
+        // Check event conditions
+        let events = self.events.clone();
+        self.event_conditions.retain(|(condition, notify)| {
+            let should_retain = !condition(&events);
+            if !should_retain {
+                notify.notify_one();
+            }
+            should_retain
+        });
+
+        // Check schema conditions
+        let schemas = self.table_schemas.clone();
+        self.table_schema_conditions.retain(|(condition, notify)| {
+            let should_retain = !condition(&schemas);
+            if !should_retain {
+                notify.notify_one();
+            }
+            should_retain
+        });
+
+        // Check table row conditions
+        let table_rows = self.table_rows.clone();
+        self.table_row_conditions.retain(|(condition, notify)| {
+            let should_retain = !condition(&table_rows);
+            if !should_retain {
+                notify.notify_one();
+            }
+            should_retain
+        });
+    }
 }
 
 #[derive(Clone)]
@@ -80,40 +114,6 @@ impl TestDestination {
         self.notify_on_schemas(move |schemas| schemas.len() == n)
             .await
     }
-
-    async fn check_conditions(&self) {
-        let mut inner = self.inner.write().await;
-
-        // Check event conditions
-        let events = inner.events.clone();
-        inner.event_conditions.retain(|(condition, notify)| {
-            let should_retain = !condition(&events);
-            if !should_retain {
-                notify.notify_one();
-            }
-            should_retain
-        });
-
-        // Check schema conditions
-        let schemas = inner.table_schemas.clone();
-        inner.table_schema_conditions.retain(|(condition, notify)| {
-            let should_retain = !condition(&schemas);
-            if !should_retain {
-                notify.notify_one();
-            }
-            should_retain
-        });
-
-        // Check table row conditions
-        let table_rows = inner.table_rows.clone();
-        inner.table_row_conditions.retain(|(condition, notify)| {
-            let should_retain = !condition(&table_rows);
-            if !should_retain {
-                notify.notify_one();
-            }
-            should_retain
-        });
-    }
 }
 
 impl Default for TestDestination {
@@ -126,9 +126,7 @@ impl Destination for TestDestination {
     async fn write_table_schema(&self, schema: TableSchema) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_schemas.push(schema);
-        drop(inner);
-
-        self.check_conditions().await;
+        inner.check_conditions().await;
 
         Ok(())
     }
@@ -136,20 +134,24 @@ impl Destination for TestDestination {
     async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_rows.entry(id).or_default().extend(rows);
-        drop(inner);
-
-        self.check_conditions().await;
+        inner.check_conditions().await;
 
         Ok(())
     }
 
-    async fn apply_events(&self, events: Vec<CdcEvent>) -> Result<(), DestinationError> {
+    async fn apply_event(&self, event: Event) -> Result<(), DestinationError> {
+        let mut inner = self.inner.write().await;
+        inner.events.push(Arc::new(event));
+        inner.check_conditions().await;
+
+        Ok(())
+    }
+
+    async fn apply_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();
         inner.events.extend(arc_events);
-        drop(inner);
-
-        self.check_conditions().await;
+        inner.check_conditions().await;
 
         Ok(())
     }

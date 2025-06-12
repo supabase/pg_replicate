@@ -1,17 +1,17 @@
 use core::str;
-use std::{collections::HashMap, io, str::Utf8Error};
+use postgres::schema::{ColumnSchema, TableId, TableSchema};
+use postgres_replication::protocol::{
+    BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, OriginBody,
+    RelationBody, TruncateBody, TupleData, TypeBody, UpdateBody,
+};
+use std::{io, str::Utf8Error};
+use thiserror::Error;
 
 use crate::conversions::table_row::TableRow;
 use crate::conversions::text::{FromTextError, TextFormatConverter};
 use crate::conversions::Cell;
 use crate::v2::pipeline::PipelineId;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
-use postgres::schema::{ColumnSchema, TableId, TableSchema};
-use postgres_replication::protocol::{
-    BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, OriginBody,
-    RelationBody, ReplicationMessage, TruncateBody, TupleData, TypeBody, UpdateBody,
-};
-use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EventConversionError {
@@ -225,22 +225,6 @@ pub enum Event {
     Type(TypeEvent),
     Origin(OriginEvent),
     Truncate(TruncateEvent),
-}
-
-impl fmt::Display for Event {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Event::Begin(_) => write!(f, "Begin"),
-            Event::Commit(_) => write!(f, "Commit"),
-            Event::Insert(_) => write!(f, "Insert"),
-            Event::Update(_) => write!(f, "Update"),
-            Event::Delete(_) => write!(f, "Delete"),
-            Event::Relation(_) => write!(f, "Relation"),
-            Event::Type(_) => write!(f, "Type"),
-            Event::Origin(_) => write!(f, "Origin"),
-            Event::Truncate(_) => write!(f, "Truncate"),
-        }
-    }
 }
 
 #[derive(Debug)]

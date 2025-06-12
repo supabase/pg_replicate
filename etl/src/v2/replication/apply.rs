@@ -159,8 +159,6 @@ impl ApplyLoopState {
 
 impl From<ApplyLoopState> for ReplicationOriginState {
     fn from(value: ApplyLoopState) -> Self {
-        // TODO: if we see that we can resume midway from within a transaction, we might want to also
-        //  store the remote_final_lsn on disk, so that we can safely resume.
         Self {
             pipeline_id: value.pipeline_id,
             table_id: None,
