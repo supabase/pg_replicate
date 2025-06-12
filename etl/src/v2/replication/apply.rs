@@ -1,5 +1,6 @@
 use futures::StreamExt;
 use postgres::schema::Oid;
+use postgres_replication::protocol;
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
 use std::future::Future;
 use std::pin::Pin;
@@ -12,7 +13,9 @@ use tokio_postgres::types::PgLsn;
 
 use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
 use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::conversions::event::{Event, EventConversionError, EventConverter};
+use crate::v2::conversions::event::{
+    BeginEvent, CommitEvent, Event, EventConversionError, EventConverter, TruncateEvent,
+};
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::{PipelineId, PipelineIdentity};
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
@@ -312,7 +315,6 @@ where
                 state,
                 message.into_data(),
                 event_converter,
-                state_store,
                 destination,
                 hook,
             )
@@ -371,33 +373,86 @@ where
     // For each message, we handle it separately.
     match message {
         LogicalReplicationMessage::Begin(message) => {
-            handle_begin_event::<D, T>(state, message.final_lsn().into(), event, destination).await
+            let Event::Begin(event) = event else {
+                return Err(ApplyLoopError::InvalidEvent(
+                    format!("{:?}", event),
+                    "Event::Begin".to_string(),
+                ));
+            };
+
+            handle_begin_event::<D, T>(state, message, event, destination).await
         }
         LogicalReplicationMessage::Commit(message) => {
-            handle_commit_event(
-                state,
-                message.commit_lsn().into(),
-                message.end_lsn().into(),
-                event,
-                destination,
-                hook,
-            )
-            .await
+            let Event::Commit(event) = event else {
+                return Err(ApplyLoopError::InvalidEvent(
+                    format!("{:?}", event),
+                    "Event::Commit".to_string(),
+                ));
+            };
+
+            handle_commit_event(state, message, event, destination, hook).await
         }
         LogicalReplicationMessage::Origin(_) => Ok(()),
         LogicalReplicationMessage::Relation(_) => Ok(()),
         LogicalReplicationMessage::Type(_) => Ok(()),
         LogicalReplicationMessage::Insert(message) => {
-            handle_simple_dml_event(state, message.rel_id(), event, destination, hook).await
+            let Event::Insert(event) = event else {
+                return Err(ApplyLoopError::InvalidEvent(
+                    format!("{:?}", event),
+                    "Event::Insert".to_string(),
+                ));
+            };
+
+            handle_simple_dml_event(
+                state,
+                message.rel_id(),
+                Event::Insert(event),
+                destination,
+                hook,
+            )
+            .await
         }
         LogicalReplicationMessage::Update(message) => {
-            handle_simple_dml_event(state, message.rel_id(), event, destination, hook).await
+            let Event::Update(event) = event else {
+                return Err(ApplyLoopError::InvalidEvent(
+                    format!("{:?}", event),
+                    "Event::Update".to_string(),
+                ));
+            };
+            handle_simple_dml_event(
+                state,
+                message.rel_id(),
+                Event::Update(event),
+                destination,
+                hook,
+            )
+            .await
         }
         LogicalReplicationMessage::Delete(message) => {
-            handle_simple_dml_event(state, message.rel_id(), event, destination, hook).await
+            let Event::Delete(event) = event else {
+                return Err(ApplyLoopError::InvalidEvent(
+                    format!("{:?}", event),
+                    "Event::Delete".to_string(),
+                ));
+            };
+            handle_simple_dml_event(
+                state,
+                message.rel_id(),
+                Event::Delete(event),
+                destination,
+                hook,
+            )
+            .await
         }
         LogicalReplicationMessage::Truncate(message) => {
-            handle_truncate_event(state, message.rel_ids(), event, destination, hook).await
+            let Event::Truncate(event) = event else {
+                return Err(ApplyLoopError::InvalidEvent(
+                    format!("{:?}", event),
+                    "Event::Truncate".to_string(),
+                ));
+            };
+
+            handle_truncate_event(state, message, event, destination, hook).await
         }
         _ => Ok(()),
     }
@@ -405,8 +460,8 @@ where
 
 async fn handle_begin_event<D, T>(
     state: &mut ApplyLoopState,
-    final_lsn: PgLsn,
-    event: Event,
+    message: protocol::BeginBody,
+    event: BeginEvent,
     destination: &D,
 ) -> Result<(), ApplyLoopError>
 where
@@ -416,19 +471,18 @@ where
 {
     // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
     // `Commit` message.
-    state.remote_final_lsn = final_lsn;
+    state.remote_final_lsn = PgLsn::from(message.final_lsn());
 
     // We send the event to the destination unconditionally.
-    destination.apply_event(event).await?;
+    destination.apply_event(Event::Begin(event)).await?;
 
     Ok(())
 }
 
 async fn handle_commit_event<D, T>(
     state: &mut ApplyLoopState,
-    commit_lsn: PgLsn,
-    end_lsn: PgLsn,
-    event: Event,
+    message: protocol::CommitBody,
+    event: CommitEvent,
     destination: &D,
     hook: &T,
 ) -> Result<(), ApplyLoopError>
@@ -440,6 +494,7 @@ where
     // If the commit lsn of the message is different from the remote final lsn, it means that the
     // transaction that was started expect a different commit lsn in the commit message. In this case,
     // we want to bail assuming we are in an inconsistent state.
+    let commit_lsn = PgLsn::from(message.commit_lsn());
     if commit_lsn != state.remote_final_lsn {
         return Err(ApplyLoopError::InvalidCommitLsn(
             commit_lsn,
@@ -448,12 +503,13 @@ where
     }
 
     // We send the event to the destination unconditionally.
-    destination.apply_event(event).await?;
+    destination.apply_event(Event::Commit(event)).await?;
 
     // We process syncing tables since we just arrived at the end of a transaction, and we want to
     // synchronize all the workers.
     //
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
+    let end_lsn = PgLsn::from(message.end_lsn());
     hook.process_syncing_tables(end_lsn).await?;
 
     Ok(())
@@ -485,8 +541,8 @@ where
 
 async fn handle_truncate_event<D, T>(
     state: &mut ApplyLoopState,
-    table_ids: &[u32],
-    event: Event,
+    message: protocol::TruncateBody,
+    mut event: TruncateEvent,
     destination: &D,
     hook: &T,
 ) -> Result<(), ApplyLoopError>
@@ -495,11 +551,9 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    let Event::Truncate(mut event) = event else {
-        return Err(ApplyLoopError::InvalidEvent);
-    };
-
-    for (index, table_id) in table_ids.iter().enumerate() {
+    // We remove the table ids from the truncate event of the tables that we should not apply changes
+    // for.
+    for (index, table_id) in message.rel_ids().iter().enumerate() {
         if !hook
             .should_apply_changes(*table_id, state.remote_final_lsn)
             .await?
