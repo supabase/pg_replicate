@@ -5,6 +5,7 @@ use etl::v2::state::table::{TableReplicationPhaseType, TableReplicationState};
 use postgres::schema::{Oid, TableSchema};
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
@@ -29,6 +30,33 @@ struct Inner {
     table_schemas: HashMap<(PipelineId, Oid), TableSchema>,
     table_state_conditions: Vec<((PipelineId, Oid), TableStateCondition, Arc<Notify>)>,
     method_call_notifiers: HashMap<StateStoreMethod, Vec<Arc<Notify>>>,
+}
+
+impl Inner {
+    async fn check_conditions(&mut self) {
+        // Check table state conditions
+        let table_states = self.table_replication_states.clone();
+        self.table_state_conditions
+            .retain(|((pid, tid), condition, notify)| {
+                if let Some(state) = table_states.get(&(*pid, *tid)) {
+                    let should_retain = !condition(state);
+                    if !should_retain {
+                        notify.notify_one();
+                    }
+                    should_retain
+                } else {
+                    true
+                }
+            });
+    }
+
+    async fn dispatch_method_notification(&self, method: StateStoreMethod) {
+        if let Some(notifiers) = self.method_call_notifiers.get(&method) {
+            for notifier in notifiers {
+                notifier.notify_one();
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -100,35 +128,6 @@ impl TestStateStore {
 
         notify
     }
-
-    async fn check_conditions(&self) {
-        let mut inner = self.inner.write().await;
-
-        // Check table state conditions
-        let table_states = inner.table_replication_states.clone();
-        inner
-            .table_state_conditions
-            .retain(|((pid, tid), condition, notify)| {
-                if let Some(state) = table_states.get(&(*pid, *tid)) {
-                    let should_retain = !condition(state);
-                    if !should_retain {
-                        notify.notify_one();
-                    }
-                    should_retain
-                } else {
-                    true
-                }
-            });
-    }
-
-    async fn dispatch_method_notification(&self, method: StateStoreMethod) {
-        let inner = self.inner.read().await;
-        if let Some(notifiers) = inner.method_call_notifiers.get(&method) {
-            for notifier in notifiers {
-                notifier.notify_one();
-            }
-        }
-    }
 }
 
 impl Default for TestStateStore {
@@ -148,10 +147,11 @@ impl StateStore for TestStateStore {
             .replication_origin_states
             .get(&(pipeline_id, table_id))
             .cloned());
-        drop(inner);
 
-        self.dispatch_method_notification(StateStoreMethod::LoadReplicationOriginState)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadReplicationOriginState)
             .await;
+
         result
     }
 
@@ -168,10 +168,11 @@ impl StateStore for TestStateStore {
         }
 
         inner.replication_origin_states.insert(key, state);
-        drop(inner);
 
-        self.dispatch_method_notification(StateStoreMethod::StoreReplicationOriginState)
+        inner
+            .dispatch_method_notification(StateStoreMethod::StoreReplicationOriginState)
             .await;
+
         Ok(true)
     }
 
@@ -185,10 +186,11 @@ impl StateStore for TestStateStore {
             .table_replication_states
             .get(&(pipeline_id, table_id))
             .cloned());
-        drop(inner);
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
             .await;
+
         result
     }
 
@@ -197,10 +199,11 @@ impl StateStore for TestStateStore {
     ) -> Result<Vec<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_replication_states.values().cloned().collect());
-        drop(inner);
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
             .await;
+
         result
     }
 
@@ -217,10 +220,10 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_replication_states.insert(key, state);
-        drop(inner);
 
-        self.check_conditions().await;
-        self.dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
+        inner.check_conditions().await;
+        inner
+            .dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
             .await;
 
         Ok(true)
@@ -237,10 +240,11 @@ impl StateStore for TestStateStore {
             .filter(|((pid, _), _)| pid == &pipeline_id)
             .map(|(_, schema)| schema.clone())
             .collect());
-        drop(inner);
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableSchemas)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableSchemas)
             .await;
+
         result
     }
 
@@ -251,10 +255,11 @@ impl StateStore for TestStateStore {
     ) -> Result<Option<TableSchema>, StateStoreError> {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_schemas.get(&(pipeline_id, table_id)).cloned());
-        drop(inner);
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableSchema)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableSchema)
             .await;
+
         result
     }
 
@@ -272,10 +277,11 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_schemas.insert(key, table_schema);
-        drop(inner);
 
-        self.dispatch_method_notification(StateStoreMethod::StoreTableSchema)
+        inner
+            .dispatch_method_notification(StateStoreMethod::StoreTableSchema)
             .await;
+
         Ok(true)
     }
 }
