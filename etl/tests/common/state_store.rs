@@ -5,7 +5,6 @@ use etl::v2::state::table::{TableReplicationPhaseType, TableReplicationState};
 use postgres::schema::{Oid, TableSchema};
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
@@ -34,7 +33,6 @@ struct Inner {
 
 impl Inner {
     async fn check_conditions(&mut self) {
-        // Check table state conditions
         let table_states = self.table_replication_states.clone();
         self.table_state_conditions
             .retain(|((pid, tid), condition, notify)| {
@@ -102,6 +100,7 @@ impl TestStateStore {
             Box::new(condition),
             notify.clone(),
         ));
+
         notify
     }
 
@@ -168,7 +167,6 @@ impl StateStore for TestStateStore {
         }
 
         inner.replication_origin_states.insert(key, state);
-
         inner
             .dispatch_method_notification(StateStoreMethod::StoreReplicationOriginState)
             .await;
@@ -220,7 +218,6 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_replication_states.insert(key, state);
-
         inner.check_conditions().await;
         inner
             .dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
@@ -277,7 +274,6 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_schemas.insert(key, table_schema);
-
         inner
             .dispatch_method_notification(StateStoreMethod::StoreTableSchema)
             .await;
