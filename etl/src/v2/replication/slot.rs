@@ -26,30 +26,14 @@ pub enum SlotUsage {
     TableSyncWorker { table_id: Oid },
 }
 
-/// Generates a replication slot name based on the pipeline identity and usage type.
-// TODO: the slot name should not depend on publication name as publication names are
-// created by users and can be quite long. We should also not use the pipeline identity
-// to avoid the identity changing between runs, which would cause the slot name to change.
-// Instead, we should do something similar to what Postgres does: use subscription name
-// for the apply worker and table_id for the table sync worker.
+/// Generates a replication slot name.
 pub fn get_slot_name(identity: &PipelineIdentity, usage: SlotUsage) -> Result<String, SlotError> {
     let slot_name = match usage {
         SlotUsage::ApplyWorker => {
-            format!(
-                "{}_{}_{}",
-                APPLY_WORKER_PREFIX,
-                identity.id(),
-                identity.publication_name()
-            )
+            format!("{}_{}", APPLY_WORKER_PREFIX, identity.id(),)
         }
         SlotUsage::TableSyncWorker { table_id } => {
-            format!(
-                "{}_{}_{}_{}",
-                TABLE_SYNC_PREFIX,
-                identity.id(),
-                identity.publication_name(),
-                table_id
-            )
+            format!("{}_{}_{}", TABLE_SYNC_PREFIX, identity.id(), table_id)
         }
     };
 

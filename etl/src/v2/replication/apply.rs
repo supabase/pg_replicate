@@ -1,5 +1,15 @@
-use crate::conversions::cdc_event::CdcEventConverter;
-use crate::pipeline::sources::postgres::CdcStreamError::CdcEventConversion;
+use futures::StreamExt;
+use postgres::schema::Oid;
+use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+use thiserror::Error;
+use tokio::pin;
+use tokio::sync::watch;
+use tokio_postgres::types::PgLsn;
+
 use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::conversions::event::EventConverter;
@@ -12,17 +22,6 @@ use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::workers::apply::ApplyWorkerHookError;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
-use futures::StreamExt;
-use postgres::schema::Oid;
-use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
-use thiserror::Error;
-use tokio::pin;
-use tokio::sync::watch;
-use tokio_postgres::types::PgLsn;
 
 /// The amount of seconds that pass between syncing via the hook in case nothing else is going on
 /// in the system (e.g., no data from the stream and no shutdown signal).
@@ -108,7 +107,9 @@ struct LastStatusUpdate {
 struct ApplyLoopState {
     /// The id of the pipeline in which the apply loop state's is running.
     pipeline_id: PipelineId,
-    /// The highest LSN of the received
+    /// The highest LSN of the received events.
+    /// 
+    /// This LSN is extracted from the `start_lsn` and `end_lsn` of each incoming event.
     last_received: PgLsn,
     /// The LSN of the commit WAL entry of the transaction that is currently being processed.
     ///
@@ -286,9 +287,10 @@ where
             if end_lsn > state.last_received {
                 state.last_received = end_lsn;
             }
-
+            
             println!(
-                "\n\n MESSAGE \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?}",
+                "\n\n MESSAGE {:?} \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?}",
+                hook.slot_usage(),
                 message.wal_start(),
                 message.wal_end(),
                 message.data()

@@ -3,14 +3,12 @@ use etl::v2::state::table::TableReplicationPhaseType;
 use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
-use std::time::Duration;
-use tokio::time::{sleep, timeout};
 use tokio_postgres::types::Type;
-use tokio_postgres::GenericClient;
+use tokio_postgres::{Client, GenericClient};
 
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::destination_v2::TestDestination;
-use crate::common::pipeline_v2::spawn_pg_pipeline;
+use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
 use crate::common::state_store::{
     FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
 };
@@ -95,34 +93,66 @@ async fn setup_database<G: GenericClient>(database: &PgDatabase<G>) -> DatabaseS
     }
 }
 
-async fn insert_mock_data<G: GenericClient>(
-    database: &PgDatabase<G>,
+async fn insert_mock_data(
+    database: &mut PgDatabase<Client>,
     users_table_name: &TableName,
     orders_table_name: &TableName,
     n: usize,
+    use_transaction: bool
 ) {
-    // Insert users with deterministic data
-    for i in 1..=n {
-        database
-            .insert_values(
-                users_table_name.clone(),
-                &["name", "age"],
-                &[&format!("user_{}", i), &(i as i32)],
-            )
-            .await
-            .expect("Failed to insert users");
-    }
+    if use_transaction {
+        let mut transaction = database.begin_transaction().await;
+        
+        // Insert users with deterministic data
+        for i in 1..=n {
+            transaction
+                .insert_values(
+                    users_table_name.clone(),
+                    &["name", "age"],
+                    &[&format!("user_{}", i), &(i as i32)],
+                )
+                .await
+                .expect("Failed to insert users");
+        }
 
-    // Insert orders with deterministic data
-    for i in 1..=n {
-        database
-            .insert_values(
-                orders_table_name.clone(),
-                &["description"],
-                &[&format!("description_{}", i)],
-            )
-            .await
-            .expect("Failed to insert orders");
+        // Insert orders with deterministic data
+        for i in 1..=n {
+            transaction
+                .insert_values(
+                    orders_table_name.clone(),
+                    &["description"],
+                    &[&format!("description_{}", i)],
+                )
+                .await
+                .expect("Failed to insert orders");
+        }
+
+        // Commit the transaction
+        transaction.commit_transaction().await;
+    } else {
+        // Insert users with deterministic data
+        for i in 1..=n {
+            database
+                .insert_values(
+                    users_table_name.clone(),
+                    &["name", "age"],
+                    &[&format!("user_{}", i), &(i as i32)],
+                )
+                .await
+                .expect("Failed to insert users");
+        }
+
+        // Insert orders with deterministic data
+        for i in 1..=n {
+            database
+                .insert_values(
+                    orders_table_name.clone(),
+                    &["description"],
+                    &[&format!("description_{}", i)],
+                )
+                .await
+                .expect("Failed to insert orders");
+        }
     }
 }
 
@@ -158,7 +188,7 @@ async fn test_pipeline_with_apply_worker_panic() {
 
     // We start the pipeline from scratch.
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &create_pipeline_identity(&database_schema.publication_name),
         &database.options,
         state_store.clone(),
         destination.clone(),
@@ -186,7 +216,7 @@ async fn test_pipeline_with_apply_worker_error() {
 
     // We start the pipeline from scratch.
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &create_pipeline_identity(&database_schema.publication_name),
         &database.options,
         state_store.clone(),
         destination.clone(),
@@ -219,7 +249,7 @@ async fn test_pipeline_with_table_sync_worker_panic() {
 
     // We start the pipeline from scratch.
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &create_pipeline_identity(&database_schema.publication_name),
         &database.options,
         state_store.clone(),
         destination.clone(),
@@ -272,7 +302,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
 
     // We start the pipeline from scratch.
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &create_pipeline_identity(&database_schema.publication_name),
         &database.options,
         state_store.clone(),
         destination.clone(),
@@ -330,19 +360,19 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         ..Default::default()
     };
     let failing_state_store = FaultInjectingStateStore::wrap(state_store.clone(), fault_config);
+    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &identity,
         &database.options,
         failing_state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // We register the interest in waiting for both table syncs to have started.
     let users_state_notify = failing_state_store
         .get_inner()
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.users_table_schema.id,
             TableReplicationPhaseType::DataSync,
         )
@@ -350,7 +380,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let orders_state_notify = failing_state_store
         .get_inner()
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.orders_table_schema.id,
             TableReplicationPhaseType::DataSync,
         )
@@ -366,12 +396,11 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     // We recreate a pipeline, assuming the other one was stopped, using a normal state store and
     // the same destination.
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &identity,
         &database.options,
         state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // We wait for two table schemas to be received.
     let schemas_notify = destination.wait_for_n_schemas(2).await;
@@ -379,14 +408,14 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     // available on the store).
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.users_table_schema.id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.orders_table_schema.id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -402,10 +431,11 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 
     // We check that the states are correctly set.
     let table_replication_states = state_store.get_table_replication_states().await;
+    println!("table_replication_states: {:?}", table_replication_states);
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.users_table_schema.id))
+            .get(&(identity.id(), database_schema.users_table_schema.id))
             .unwrap()
             .phase
             .as_type(),
@@ -413,7 +443,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     );
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.orders_table_schema.id))
+            .get(&(identity.id(), database_schema.orders_table_schema.id))
             .unwrap()
             .phase
             .as_type(),
@@ -437,8 +467,9 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
+    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &identity,
         &database.options,
         state_store.clone(),
         destination.clone(),
@@ -523,7 +554,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
 
     // We recreate a pipeline, assuming the other one was stopped, using the same state and destination.
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &identity,
         &database.options,
         state_store.clone(),
         destination.clone(),
@@ -551,16 +582,17 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy() {
-    let database = spawn_database().await;
+    let mut database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
     // Insert test data
     let rows_inserted = 10;
     insert_mock_data(
-        &database,
+        &mut database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
         rows_inserted,
+        false
     )
     .await;
 
@@ -568,25 +600,25 @@ async fn test_table_copy() {
     let destination = TestDestination::new();
 
     // Start the pipeline from scratch
+    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &identity,
         &database.options,
         state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // Wait for both table states to be in finished copy
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.users_table_schema.id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.orders_table_schema.id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -618,16 +650,17 @@ async fn test_table_copy() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy_and_sync() {
-    let database = spawn_database().await;
+    let mut database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
     // Insert test data
     let rows_inserted = 10;
     insert_mock_data(
-        &database,
+        &mut database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
         rows_inserted,
+        false
     )
     .await;
 
@@ -635,25 +668,25 @@ async fn test_table_copy_and_sync() {
     let destination = TestDestination::new();
 
     // Start the pipeline from scratch
+    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
-        &database_schema.publication_name,
+        &identity,
         &database.options,
         state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // Wait for both table states to be in finished copy
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.users_table_schema.id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.orders_table_schema.id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -666,24 +699,25 @@ async fn test_table_copy_and_sync() {
 
     // Insert some data to have it the stream
     insert_mock_data(
-        &database,
+        &mut database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
-        1,
+        2,
+        true
     )
     .await;
 
     // We wait for both tables to be in sync done
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.users_table_schema.id,
             TableReplicationPhaseType::SyncDone,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
+            identity.id(),
             database_schema.orders_table_schema.id,
             TableReplicationPhaseType::SyncDone,
         )
@@ -709,6 +743,6 @@ async fn test_table_copy_and_sync() {
         get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
     assert_eq!(age_sum, expected_age_sum);
 
-    // Check the cdc events that were applied afterwards
+    // Get all the events that were produced to the destination
     // TODO: check the cdc events in the destination.
 }
