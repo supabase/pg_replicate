@@ -72,6 +72,8 @@ impl TableSyncWorkerStateInner {
         self.phase_change.notify_waiters();
     }
 
+    // TODO: investigate whether we want to just keep the syncwait and catchup special states in
+    //  the table sync worker state for the sake of simplicity.
     pub async fn set_phase_with<S: StateStore>(
         &mut self,
         phase: TableReplicationPhase,
@@ -339,6 +341,7 @@ where
         );
 
         let mut inner = self.table_sync_worker_state.get_inner().write().await;
+        // If we caught up with the lsn, we mark this table as `SyncDone` and stop the worker.
         if let TableReplicationPhase::Catchup { lsn } = inner.replication_phase() {
             if current_lsn >= lsn {
                 inner

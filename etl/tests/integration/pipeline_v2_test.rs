@@ -3,6 +3,9 @@ use etl::v2::state::table::TableReplicationPhaseType;
 use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
+use std::ops::RangeInclusive;
+use std::time::Duration;
+use tokio::time::sleep;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, GenericClient};
 
@@ -97,14 +100,14 @@ async fn insert_mock_data(
     database: &mut PgDatabase<Client>,
     users_table_name: &TableName,
     orders_table_name: &TableName,
-    n: usize,
+    range: RangeInclusive<usize>,
     use_transaction: bool,
 ) {
     if use_transaction {
         let mut transaction = database.begin_transaction().await;
 
         // Insert users with deterministic data
-        for i in 1..=n {
+        for i in range.clone() {
             transaction
                 .insert_values(
                     users_table_name.clone(),
@@ -116,7 +119,7 @@ async fn insert_mock_data(
         }
 
         // Insert orders with deterministic data
-        for i in 1..=n {
+        for i in range {
             transaction
                 .insert_values(
                     orders_table_name.clone(),
@@ -131,7 +134,7 @@ async fn insert_mock_data(
         transaction.commit_transaction().await;
     } else {
         // Insert users with deterministic data
-        for i in 1..=n {
+        for i in range.clone() {
             database
                 .insert_values(
                     users_table_name.clone(),
@@ -143,7 +146,7 @@ async fn insert_mock_data(
         }
 
         // Insert orders with deterministic data
-        for i in 1..=n {
+        for i in range {
             database
                 .insert_values(
                     orders_table_name.clone(),
@@ -156,7 +159,7 @@ async fn insert_mock_data(
     }
 }
 
-async fn get_users_age_sum_from_rows(destination: TestDestination, table_id: Oid) -> i32 {
+async fn get_users_age_sum_from_rows(destination: &TestDestination, table_id: Oid) -> i32 {
     let mut actual_sum = 0;
 
     let tables_rows = destination.get_table_rows().await;
@@ -431,7 +434,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 
     // We check that the states are correctly set.
     let table_replication_states = state_store.get_table_replication_states().await;
-    println!("table_replication_states: {:?}", table_replication_states);
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
@@ -591,7 +593,7 @@ async fn test_table_copy() {
         &mut database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
-        rows_inserted,
+        1..=rows_inserted,
         false,
     )
     .await;
@@ -644,7 +646,7 @@ async fn test_table_copy() {
     assert_eq!(orders_table_rows.len(), rows_inserted);
     let expected_age_sum = get_n_integers_sum(rows_inserted);
     let age_sum =
-        get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
+        get_users_age_sum_from_rows(&destination, database_schema.users_table_schema.id).await;
     assert_eq!(age_sum, expected_age_sum);
 }
 
@@ -659,7 +661,7 @@ async fn test_table_copy_and_sync() {
         &mut database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
-        rows_inserted,
+        1..=rows_inserted,
         false,
     )
     .await;
@@ -702,7 +704,7 @@ async fn test_table_copy_and_sync() {
         &mut database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
-        2,
+        (rows_inserted + 1)..=(rows_inserted + 2),
         true,
     )
     .await;
@@ -726,7 +728,38 @@ async fn test_table_copy_and_sync() {
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
-    pipeline.shutdown_and_wait().await.unwrap();
+    // We add additional elements after table sync, which should be processed by the main apply
+    // worker only
+    insert_mock_data(
+        &mut database,
+        &database_schema.users_table_schema.name,
+        &database_schema.orders_table_schema.name,
+        (rows_inserted + 3)..=(rows_inserted + 4),
+        true,
+    )
+    .await;
+
+    // We wait for table to be in ready state
+    let users_state_notify = state_store
+        .notify_on_replication_phase(
+            identity.id(),
+            database_schema.users_table_schema.id,
+            TableReplicationPhaseType::Ready,
+        )
+        .await;
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            identity.id(),
+            database_schema.orders_table_schema.id,
+            TableReplicationPhaseType::Ready,
+        )
+        .await;
+
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
+
+    // TODO: remove sleep.
+    sleep(Duration::from_secs(1)).await;
 
     // Get all table rows for table syncing
     let table_rows = destination.get_table_rows().await;
@@ -740,9 +773,17 @@ async fn test_table_copy_and_sync() {
     assert_eq!(orders_table_rows.len(), rows_inserted);
     let expected_age_sum = get_n_integers_sum(rows_inserted);
     let age_sum =
-        get_users_age_sum_from_rows(destination, database_schema.users_table_schema.id).await;
+        get_users_age_sum_from_rows(&destination, database_schema.users_table_schema.id).await;
     assert_eq!(age_sum, expected_age_sum);
 
     // Get all the events that were produced to the destination
-    // TODO: check the cdc events in the destination.
+    let events = destination.get_events().await;
+    for event in events {
+        println!("{:?}", event);
+    }
+
+    //
+    //
+    //
+    // pipeline.shutdown_and_wait().await.unwrap();
 }

@@ -284,13 +284,15 @@ where
         table_id: Oid,
         current_lsn: PgLsn,
     ) -> Result<(), ApplyWorkerHookError> {
-        let pool = self.pool.read().await;
-        let table_sync_worker_state = pool.get_worker_state(table_id);
-        drop(pool);
+        let table_sync_worker_state = {
+            let pool = self.pool.read().await;
+            pool.get_worker_state(table_id)
+        };
 
         let Some(table_sync_worker_state) = table_sync_worker_state else {
             info!("Creating new sync worker for table {}", table_id);
             self.start_table_sync_worker(table_id).await?;
+
             return Ok(());
         };
 
@@ -314,6 +316,7 @@ where
                         self.state_store.clone(),
                     )
                     .await?;
+
                 catchup_started = true;
             }
         }
@@ -343,15 +346,13 @@ where
         for table_replication_state in table_replication_states {
             let table_id = table_replication_state.table_id;
 
-            let pool = self.pool.read().await;
-            let table_sync_worker_state = pool.get_worker_state(table_replication_state.table_id);
-            drop(pool);
+            let table_sync_worker_state = {
+                let pool = self.pool.read().await;
+                pool.get_worker_state(table_id)
+            };
 
             if table_sync_worker_state.is_none() {
-                if let Err(err) = self
-                    .start_table_sync_worker(table_replication_state.table_id)
-                    .await
-                {
+                if let Err(err) = self.start_table_sync_worker(table_id).await {
                     error!("Error handling syncing table {}: {}", table_id, err);
                 }
             }
@@ -370,7 +371,12 @@ where
         for table_replication_state in table_replication_states {
             // We read the state store state first, if we don't find `SyncDone` we will attempt to
             // read the shared state which can contain also non-persisted states.
+            let table_id = table_replication_state.table_id;
             match table_replication_state.phase {
+                TableReplicationPhase::Ready { .. } => {
+                    info!("Found table {} with ready state, skipping it", table_id);
+                    continue;
+                }
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
@@ -379,7 +385,6 @@ where
                         .await?;
                 }
                 _ => {
-                    let table_id = table_replication_state.table_id;
                     if let Err(err) = self.handle_syncing_table(table_id, current_lsn).await {
                         error!("Error handling syncing table {}: {}", table_id, err);
                     }

@@ -43,7 +43,7 @@ pub enum EventConversionError {
     StateStore(#[from] StateStoreError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BeginEvent {
     pub final_lsn: u64,
     pub timestamp: i64,
@@ -60,7 +60,7 @@ impl BeginEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CommitEvent {
     pub flags: i8,
     pub commit_lsn: u64,
@@ -79,7 +79,7 @@ impl CommitEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OriginEvent {
     pub commit_lsn: u64,
     pub name: String,
@@ -94,7 +94,7 @@ impl OriginEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RelationEvent {
     pub rel_id: u32,
     pub namespace: String,
@@ -119,7 +119,7 @@ impl RelationEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeEvent {
     pub id: u32,
     pub namespace: String,
@@ -136,25 +136,25 @@ impl TypeEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InsertEvent {
     pub table_id: TableId,
     pub row: TableRow,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UpdateEvent {
     pub table_id: TableId,
     pub row: TableRow,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeleteEvent {
     pub table_id: TableId,
     pub row: TableRow,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TruncateEvent {
     pub options: i8,
     pub rel_ids: Vec<u32>,
@@ -169,12 +169,12 @@ impl TruncateEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeepAliveEvent {
     pub reply: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ReplicaIdentity {
     Default,
     Nothing,
@@ -193,7 +193,7 @@ impl ReplicaIdentity {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Column {
     pub flags: i8,
     pub name: String,
@@ -214,7 +214,7 @@ impl Column {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Event {
     Begin(BeginEvent),
     Commit(CommitEvent),
@@ -227,7 +227,7 @@ pub enum Event {
     Truncate(TruncateEvent),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EventConverter<S> {
     pipeline_id: PipelineId,
     state_store: S,

@@ -302,7 +302,7 @@ where
             }
 
             println!(
-                "\n\n MESSAGE {:?} \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?}",
+                "MESSAGE {:?} \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?}\n",
                 hook.slot_usage(),
                 message.wal_start(),
                 message.wal_end(),

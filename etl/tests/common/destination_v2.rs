@@ -8,12 +8,12 @@ use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
 
-type EventCondition = Box<dyn Fn(&[Arc<Event>]) -> bool + Send + Sync>;
+type EventCondition = Box<dyn Fn(&[Event]) -> bool + Send + Sync>;
 type SchemaCondition = Box<dyn Fn(&[TableSchema]) -> bool + Send + Sync>;
 type TableRowCondition = Box<dyn Fn(&HashMap<Oid, Vec<TableRow>>) -> bool + Send + Sync>;
 
 struct Inner {
-    events: Vec<Arc<Event>>,
+    events: Vec<Event>,
     table_schemas: Vec<TableSchema>,
     table_rows: HashMap<Oid, Vec<TableRow>>,
     event_conditions: Vec<(EventCondition, Arc<Notify>)>,
@@ -97,6 +97,10 @@ impl TestDestination {
         self.inner.read().await.table_rows.clone()
     }
 
+    pub async fn get_events(&self) -> Vec<Event> {
+        self.inner.read().await.events.clone()
+    }
+
     pub async fn notify_on_schemas<F>(&self, condition: F) -> Arc<Notify>
     where
         F: Fn(&[TableSchema]) -> bool + Send + Sync + 'static,
@@ -141,7 +145,7 @@ impl Destination for TestDestination {
 
     async fn apply_event(&self, event: Event) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
-        inner.events.push(Arc::new(event));
+        inner.events.push(event);
         inner.check_conditions().await;
 
         Ok(())
@@ -149,8 +153,7 @@ impl Destination for TestDestination {
 
     async fn apply_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
-        let arc_events = events.into_iter().map(Arc::new).collect::<Vec<_>>();
-        inner.events.extend(arc_events);
+        inner.events.extend(events);
         inner.check_conditions().await;
 
         Ok(())
