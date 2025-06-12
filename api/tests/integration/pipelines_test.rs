@@ -524,3 +524,84 @@ async fn deleting_a_destination_cascade_deletes_the_pipeline() {
     let response = app.read_pipeline(tenant_id, pipeline_id).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn duplicate_pipeline_with_same_source_and_destination_cant_be_created() {
+    // Arrange
+    let app = spawn_test_app().await;
+    create_default_image(&app).await;
+    let tenant_id = &create_tenant(&app).await;
+    let source_id = create_source(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
+
+    // Create first pipeline
+    let pipeline = CreatePipelineRequest {
+        source_id,
+        destination_id,
+        publication_name: "publication".to_string(),
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant_id, &pipeline).await;
+    assert!(response.status().is_success());
+
+    // Act - Try to create duplicate pipeline with same source and destination
+    let duplicate_pipeline = CreatePipelineRequest {
+        source_id,
+        destination_id,
+        publication_name: "different_publication".to_string(),
+        config: updated_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant_id, &duplicate_pipeline).await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn updating_pipeline_to_duplicate_source_destination_combination_fails() {
+    // Arrange
+    let app = spawn_test_app().await;
+    create_default_image(&app).await;
+    let tenant_id = &create_tenant(&app).await;
+    let source1_id = create_source(&app, tenant_id).await;
+    let source2_id = create_source(&app, tenant_id).await;
+    let destination_id = create_destination(&app, tenant_id).await;
+
+    // Create first pipeline
+    let pipeline1 = CreatePipelineRequest {
+        source_id: source1_id,
+        destination_id,
+        publication_name: "publication1".to_string(),
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant_id, &pipeline1).await;
+    assert!(response.status().is_success());
+
+    // Create second pipeline with different source
+    let pipeline2 = CreatePipelineRequest {
+        source_id: source2_id,
+        destination_id,
+        publication_name: "publication2".to_string(),
+        config: new_pipeline_config(),
+    };
+    let response = app.create_pipeline(tenant_id, &pipeline2).await;
+    let response: CreatePipelineResponse = response
+        .json()
+        .await
+        .expect("failed to deserialize response");
+    let pipeline2_id = response.id;
+
+    // Act - Try to update second pipeline to have same source as first
+    let updated_config = UpdatePipelineRequest {
+        source_id: source1_id, // This would create a duplicate
+        destination_id,
+        publication_name: "updated_publication".to_string(),
+        config: updated_pipeline_config(),
+    };
+    let response = app
+        .update_pipeline(tenant_id, pipeline2_id, &updated_config)
+        .await;
+
+    // Assert
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+}

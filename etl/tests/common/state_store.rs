@@ -31,6 +31,32 @@ struct Inner {
     method_call_notifiers: HashMap<StateStoreMethod, Vec<Arc<Notify>>>,
 }
 
+impl Inner {
+    async fn check_conditions(&mut self) {
+        let table_states = self.table_replication_states.clone();
+        self.table_state_conditions
+            .retain(|((pid, tid), condition, notify)| {
+                if let Some(state) = table_states.get(&(*pid, *tid)) {
+                    let should_retain = !condition(state);
+                    if !should_retain {
+                        notify.notify_one();
+                    }
+                    should_retain
+                } else {
+                    true
+                }
+            });
+    }
+
+    async fn dispatch_method_notification(&self, method: StateStoreMethod) {
+        if let Some(notifiers) = self.method_call_notifiers.get(&method) {
+            for notifier in notifiers {
+                notifier.notify_one();
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct TestStateStore {
     inner: Arc<RwLock<Inner>>,
@@ -74,6 +100,7 @@ impl TestStateStore {
             Box::new(condition),
             notify.clone(),
         ));
+
         notify
     }
 
@@ -100,35 +127,6 @@ impl TestStateStore {
 
         notify
     }
-
-    async fn check_conditions(&self) {
-        let mut inner = self.inner.write().await;
-
-        // Check table state conditions
-        let table_states = inner.table_replication_states.clone();
-        inner
-            .table_state_conditions
-            .retain(|((pid, tid), condition, notify)| {
-                if let Some(state) = table_states.get(&(*pid, *tid)) {
-                    let should_retain = !condition(state);
-                    if !should_retain {
-                        notify.notify_one();
-                    }
-                    should_retain
-                } else {
-                    true
-                }
-            });
-    }
-
-    async fn dispatch_method_notification(&self, method: StateStoreMethod) {
-        let inner = self.inner.read().await;
-        if let Some(notifiers) = inner.method_call_notifiers.get(&method) {
-            for notifier in notifiers {
-                notifier.notify_one();
-            }
-        }
-    }
 }
 
 impl Default for TestStateStore {
@@ -149,8 +147,10 @@ impl StateStore for TestStateStore {
             .get(&(pipeline_id, table_id))
             .cloned());
 
-        self.dispatch_method_notification(StateStoreMethod::LoadReplicationOriginState)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadReplicationOriginState)
             .await;
+
         result
     }
 
@@ -167,10 +167,10 @@ impl StateStore for TestStateStore {
         }
 
         inner.replication_origin_states.insert(key, state);
-        drop(inner);
-
-        self.dispatch_method_notification(StateStoreMethod::StoreReplicationOriginState)
+        inner
+            .dispatch_method_notification(StateStoreMethod::StoreReplicationOriginState)
             .await;
+
         Ok(true)
     }
 
@@ -185,8 +185,10 @@ impl StateStore for TestStateStore {
             .get(&(pipeline_id, table_id))
             .cloned());
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
             .await;
+
         result
     }
 
@@ -196,8 +198,10 @@ impl StateStore for TestStateStore {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_replication_states.values().cloned().collect());
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
             .await;
+
         result
     }
 
@@ -214,10 +218,9 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_replication_states.insert(key, state);
-        drop(inner); // Release the write lock before checking conditions
-
-        self.check_conditions().await;
-        self.dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
+        inner.check_conditions().await;
+        inner
+            .dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
             .await;
 
         Ok(true)
@@ -235,8 +238,10 @@ impl StateStore for TestStateStore {
             .map(|(_, schema)| schema.clone())
             .collect());
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableSchemas)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableSchemas)
             .await;
+
         result
     }
 
@@ -248,8 +253,10 @@ impl StateStore for TestStateStore {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_schemas.get(&(pipeline_id, table_id)).cloned());
 
-        self.dispatch_method_notification(StateStoreMethod::LoadTableSchema)
+        inner
+            .dispatch_method_notification(StateStoreMethod::LoadTableSchema)
             .await;
+
         result
     }
 
@@ -267,10 +274,10 @@ impl StateStore for TestStateStore {
         }
 
         inner.table_schemas.insert(key, table_schema);
-        drop(inner);
-
-        self.dispatch_method_notification(StateStoreMethod::StoreTableSchema)
+        inner
+            .dispatch_method_notification(StateStoreMethod::StoreTableSchema)
             .await;
+
         Ok(true)
     }
 }
