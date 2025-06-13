@@ -340,7 +340,7 @@ where
         &self.inner
     }
 
-    fn check_fault(&self, fault: &Option<FaultType>) -> Result<(), StateStoreError> {
+    fn trigger_fault(&self, fault: &Option<FaultType>) -> Result<(), StateStoreError> {
         if let Some(fault_type) = fault {
             match fault_type {
                 FaultType::Panic => panic!("Fault injection: panic triggered"),
@@ -348,6 +348,7 @@ where
                 FaultType::Error => return Err(StateStoreError::ReplicationOriginStateNotFound),
             }
         }
+
         Ok(())
     }
 }
@@ -361,7 +362,7 @@ where
         pipeline_id: PipelineId,
         table_id: Option<Oid>,
     ) -> Result<Option<ReplicationOriginState>, StateStoreError> {
-        self.check_fault(&self.config.load_replication_origin_state)?;
+        self.trigger_fault(&self.config.load_replication_origin_state)?;
         self.inner
             .load_replication_origin_state(pipeline_id, table_id)
             .await
@@ -372,7 +373,7 @@ where
         state: ReplicationOriginState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
-        self.check_fault(&self.config.store_replication_origin_state)?;
+        self.trigger_fault(&self.config.store_replication_origin_state)?;
         self.inner
             .store_replication_origin_state(state, overwrite)
             .await
@@ -383,7 +384,7 @@ where
         pipeline_id: PipelineId,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
-        self.check_fault(&self.config.load_table_replication_state)?;
+        self.trigger_fault(&self.config.load_table_replication_state)?;
         self.inner
             .load_table_replication_state(pipeline_id, table_id)
             .await
@@ -392,7 +393,7 @@ where
     async fn load_table_replication_states(
         &self,
     ) -> Result<Vec<TableReplicationState>, StateStoreError> {
-        self.check_fault(&self.config.load_table_replication_states)?;
+        self.trigger_fault(&self.config.load_table_replication_states)?;
         self.inner.load_table_replication_states().await
     }
 
@@ -401,7 +402,7 @@ where
         state: TableReplicationState,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
-        self.check_fault(&self.config.store_table_replication_state)?;
+        self.trigger_fault(&self.config.store_table_replication_state)?;
         self.inner
             .store_table_replication_state(state, overwrite)
             .await
@@ -411,7 +412,7 @@ where
         &self,
         pipeline_id: PipelineId,
     ) -> Result<Vec<TableSchema>, StateStoreError> {
-        self.check_fault(&self.config.load_table_schemas)?;
+        self.trigger_fault(&self.config.load_table_schemas)?;
         self.inner.load_table_schemas(pipeline_id).await
     }
 
@@ -420,7 +421,7 @@ where
         pipeline_id: PipelineId,
         table_id: Oid,
     ) -> Result<Option<TableSchema>, StateStoreError> {
-        self.check_fault(&self.config.load_table_schema)?;
+        self.trigger_fault(&self.config.load_table_schema)?;
         self.inner.load_table_schema(pipeline_id, table_id).await
     }
 
@@ -430,7 +431,7 @@ where
         table_schema: TableSchema,
         overwrite: bool,
     ) -> Result<bool, StateStoreError> {
-        self.check_fault(&self.config.store_table_schema)?;
+        self.trigger_fault(&self.config.store_table_schema)?;
         self.inner
             .store_table_schema(pipeline_id, table_schema, overwrite)
             .await

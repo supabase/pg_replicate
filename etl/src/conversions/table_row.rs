@@ -10,7 +10,7 @@ use super::{text::FromTextError, Cell};
 use crate::v2::concurrency::stream::BatchBoundary;
 use crate::{conversions::text::TextFormatConverter, pipeline::batching::BatchBoundaryV1};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TableRow {
     pub values: Vec<Cell>,
 }
@@ -23,7 +23,8 @@ impl BatchBoundaryV1 for TableRow {
 
 impl BatchBoundary for TableRow {
     fn is_on_boundary(&self) -> bool {
-        // A table row is always considered a boundary element.
+        // A table row is always considered a boundary element since it's received when performing
+        // table copy.
         true
     }
 }

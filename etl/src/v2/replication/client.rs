@@ -91,6 +91,12 @@ pub struct GetSlotResult {
     pub confirmed_flush_lsn: PgLsn,
 }
 
+#[derive(Debug, Clone)]
+pub enum GetOrCreateSlotResult {
+    CreateSlot(CreateSlotResult),
+    GetSlot(GetSlotResult),
+}
+
 /// A transaction that operates within the context of a replication slot.
 ///
 /// This type ensures that the parent connection remains active for the duration of any
@@ -296,15 +302,38 @@ impl PgReplicationClient {
         Err(PgReplicationError::SlotNotFound(slot_name.to_string()))
     }
 
+    /// Gets an existing replication slot or creates a new one if it doesn't exist.
+    ///
+    /// This method first attempts to get the slot by name. If the slot doesn't exist,
+    /// it creates a new one.
+    ///
+    /// Returns a tuple containing:
+    /// - A boolean indicating whether the slot was created (true) or already existed (false)
+    /// - The slot result containing either the confirmed_flush_lsn (for existing slots)
+    ///   or the consistent_point (for newly created slots)
+    pub async fn get_or_create_slot(
+        &self,
+        slot_name: &str,
+    ) -> PgReplicationResult<GetOrCreateSlotResult> {
+        match self.get_slot(slot_name).await {
+            Ok(slot) => Ok(GetOrCreateSlotResult::GetSlot(slot)),
+            Err(PgReplicationError::SlotNotFound(_)) => {
+                let create_result = self.create_slot_internal(slot_name, false).await?;
+                Ok(GetOrCreateSlotResult::CreateSlot(create_result))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Deletes a replication slot with the specified name.
     ///
     /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.
     pub async fn delete_slot(&self, slot_name: &str) -> PgReplicationResult<()> {
         // Do not convert the query or the options to lowercase, see comment in `create_slot_internal`.
-        // TODO: drop the slot with WAIT option to ensure that the server waits for the slot to be
-        // become inactive before dropping it instead of returning an error if the slot is still active.
-        // This is what Postgres does in its replication implementation.
-        let query = format!(r#"DROP_REPLICATION_SLOT {};"#, quote_identifier(slot_name));
+        let query = format!(
+            r#"DROP_REPLICATION_SLOT {} WAIT;"#,
+            quote_identifier(slot_name)
+        );
 
         match self.inner.client.simple_query(&query).await {
             Ok(_) => Ok(()),

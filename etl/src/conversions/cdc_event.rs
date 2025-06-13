@@ -8,13 +8,12 @@ use postgres_replication::protocol::{
 };
 use thiserror::Error;
 
-use crate::pipeline::batching::BatchBoundaryV1;
-
 use super::{
     table_row::TableRow,
     text::{FromTextError, TextFormatConverter},
     Cell,
 };
+use crate::pipeline::batching::BatchBoundaryV1;
 
 #[derive(Debug, Error)]
 pub enum CdcEventConversionError {

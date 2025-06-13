@@ -2,6 +2,7 @@ use postgres::schema::TableName;
 use postgres::tokio::options::PgDatabaseConfig;
 use postgres::tokio::test_utils::PgDatabase;
 use tokio_postgres::config::SslMode;
+use tokio_postgres::Client;
 use uuid::Uuid;
 
 /// The schema name used for organizing test tables.
@@ -31,7 +32,7 @@ pub fn test_table_name(name: &str) -> TableName {
 /// # Panics
 ///
 /// Panics if the test schema cannot be created.
-pub async fn spawn_database() -> PgDatabase {
+pub async fn spawn_database() -> PgDatabase<Client> {
     let options = PgDatabaseConfig {
         host: "localhost".to_owned(),
         port: 5430,
@@ -47,6 +48,8 @@ pub async fn spawn_database() -> PgDatabase {
     // Create the test schema.
     database
         .client
+        .as_ref()
+        .unwrap()
         .execute(&format!("CREATE SCHEMA {}", TEST_DATABASE_SCHEMA), &[])
         .await
         .expect("Failed to create test schema");

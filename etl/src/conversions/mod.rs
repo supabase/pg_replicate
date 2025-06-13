@@ -11,7 +11,7 @@ pub mod numeric;
 pub mod table_row;
 pub mod text;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Cell {
     Null,
     Bool(bool),
@@ -33,7 +33,7 @@ pub enum Cell {
     Array(ArrayCell),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArrayCell {
     Null,
     Bool(Vec<Option<bool>>),
