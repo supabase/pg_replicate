@@ -11,7 +11,7 @@ use etl::{
     SslMode,
 };
 use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgDatabaseConfig;
 use tracing::error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

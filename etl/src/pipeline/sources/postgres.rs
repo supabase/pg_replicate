@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use futures::{ready, Stream};
 use pin_project_lite::pin_project;
 use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgDatabaseConfig;
 use postgres_replication::LogicalReplicationStream;
 use rustls::pki_types::CertificateDer;
 use thiserror::Error;

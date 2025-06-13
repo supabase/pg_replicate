@@ -1,4 +1,4 @@
-use crate::sqlx::options::PgDatabaseOptions;
+use crate::sqlx::config::PgDatabaseConfig;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 
 /// Creates a new PostgreSQL database and returns a connection pool to it.
@@ -6,7 +6,7 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 /// Establishes a connection to the PostgreSQL server using the provided options,
 /// creates a new database, and returns a [`PgPool`] connected to the new database.
 /// Panics if the connection fails or if database creation fails.
-pub async fn create_pg_database(options: &PgDatabaseOptions) -> PgPool {
+pub async fn create_pg_database(options: &PgDatabaseConfig) -> PgPool {
     // Create the database via a single connection.
     let mut connection = PgConnection::connect_with(&options.without_db())
         .await
@@ -26,9 +26,9 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> PgPool {
 ///
 /// Connects to the PostgreSQL server, forcefully terminates all active connections
 /// to the target database, and drops the database if it exists. Useful for cleaning
-/// up test databases. Takes a reference to [`PgDatabaseOptions`] specifying the database
+/// up test databases. Takes a reference to [`PgDatabaseConfig`] specifying the database
 /// to drop. Panics if any operation fails.
-pub async fn drop_pg_database(options: &PgDatabaseOptions) {
+pub async fn drop_pg_database(options: &PgDatabaseConfig) {
     // Connect to the default database.
     let mut connection = PgConnection::connect_with(&options.without_db())
         .await

@@ -1,5 +1,5 @@
 use crate::schema::{ColumnSchema, Oid, TableName};
-use crate::tokio::options::PgDatabaseConfig;
+use crate::tokio::config::PgDatabaseConfig;
 use tokio::runtime::Handle;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, NoTls};

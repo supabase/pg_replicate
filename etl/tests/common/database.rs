@@ -1,5 +1,5 @@
 use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgDatabaseConfig;
 use postgres::tokio::test_utils::PgDatabase;
 use tokio_postgres::config::SslMode;
 use uuid::Uuid;

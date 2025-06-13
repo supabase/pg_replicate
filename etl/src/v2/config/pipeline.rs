@@ -1,5 +1,5 @@
 use crate::v2::config::batch::BatchConfig;
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgDatabaseConfig;
 
 #[derive(Debug, Clone)]
 pub struct PipelineConfig {

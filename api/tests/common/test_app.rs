@@ -5,7 +5,7 @@ use api::{
     encryption::{self, generate_random_key},
     startup::run,
 };
-use postgres::sqlx::options::PgDatabaseOptions;
+use postgres::sqlx::config::PgDatabaseConfig;
 use postgres::sqlx::test_utils::drop_pg_database;
 use reqwest::{IntoUrl, RequestBuilder};
 use serde::{Deserialize, Serialize};
@@ -200,7 +200,7 @@ pub struct TestApp {
     pub address: String,
     pub api_client: reqwest::Client,
     pub api_key: String,
-    options: PgDatabaseOptions,
+    options: PgDatabaseConfig,
     server_handle: tokio::task::JoinHandle<io::Result<()>>,
 }
 

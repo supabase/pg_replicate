@@ -4,7 +4,7 @@ use etl::pipeline::destinations::BatchDestination;
 use etl::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
 use etl::pipeline::PipelineAction;
 use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgDatabaseConfig;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use uuid::Uuid;

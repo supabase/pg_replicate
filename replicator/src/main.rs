@@ -12,7 +12,7 @@ use etl::{
     },
     SslMode,
 };
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgDatabaseConfig;
 use telemetry::init_tracing;
 use tracing::{info, instrument};
 
