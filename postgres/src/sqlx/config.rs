@@ -8,7 +8,7 @@ use sqlx::postgres::{PgConnectOptions, PgSslMode};
 /// database server, including network location, authentication credentials, and security
 /// settings.
 #[derive(Debug, Clone, Deserialize)]
-pub struct PgDatabaseConfig {
+pub struct PgConnectionConfig {
     /// Host name or IP address of the PostgreSQL server
     pub host: String,
     /// Port number that the PostgreSQL server listens on
@@ -23,7 +23,7 @@ pub struct PgDatabaseConfig {
     pub require_ssl: bool,
 }
 
-impl PgDatabaseConfig {
+impl PgConnectionConfig {
     /// Creates connection options for connecting to the PostgreSQL server without
     /// specifying a database.
     ///

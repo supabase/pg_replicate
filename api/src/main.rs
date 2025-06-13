@@ -5,7 +5,7 @@ use api::{
     configuration::{get_settings, Settings},
     startup::Application,
 };
-use postgres::sqlx::config::PgDatabaseConfig;
+use postgres::sqlx::config::PgConnectionConfig;
 use telemetry::init_tracing;
 use tracing::{error, info};
 
@@ -33,7 +33,7 @@ pub async fn main() -> anyhow::Result<()> {
             let command = args.nth(1).unwrap();
             match command.as_str() {
                 "migrate" => {
-                    let options = get_settings::<'_, PgDatabaseConfig>()?;
+                    let options = get_settings::<'_, PgConnectionConfig>()?;
                     log_pg_database_options(&options);
                     Application::migrate_database(options).await?;
                     info!("database migrated successfully");
@@ -55,7 +55,7 @@ pub async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn log_pg_database_options(config: &PgDatabaseConfig) {
+fn log_pg_database_options(config: &PgConnectionConfig) {
     info!(
         host = config.host,
         port = config.port,

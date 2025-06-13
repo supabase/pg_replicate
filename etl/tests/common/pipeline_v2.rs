@@ -3,11 +3,11 @@ use etl::v2::config::pipeline::PipelineConfig;
 use etl::v2::destination::base::Destination;
 use etl::v2::pipeline::{Pipeline, PipelineIdentity};
 use etl::v2::state::store::base::StateStore;
-use postgres::tokio::config::PgDatabaseConfig;
+use postgres::tokio::config::PgConnectionConfig;
 
 pub fn spawn_pg_pipeline<S, D>(
     publication_name: &str,
-    pg_database_config: &PgDatabaseConfig,
+    pg_database_config: &PgConnectionConfig,
     state_store: S,
     destination: D,
 ) -> Pipeline<S, D>

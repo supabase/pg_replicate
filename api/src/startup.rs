@@ -4,7 +4,7 @@ use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use aws_lc_rs::aead::{RandomizedNonceKey, AES_256_GCM};
 use base64::{prelude::BASE64_STANDARD, Engine};
-use postgres::sqlx::config::PgDatabaseConfig;
+use postgres::sqlx::config::PgConnectionConfig;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tracing_actix_web::TracingLogger;
 use utoipa::OpenApi;
@@ -92,7 +92,7 @@ impl Application {
         Ok(Self { port, server })
     }
 
-    pub async fn migrate_database(options: PgDatabaseConfig) -> Result<(), anyhow::Error> {
+    pub async fn migrate_database(options: PgConnectionConfig) -> Result<(), anyhow::Error> {
         let connection_pool = get_connection_pool(&options);
 
         sqlx::migrate!("./migrations").run(&connection_pool).await?;
@@ -109,7 +109,7 @@ impl Application {
     }
 }
 
-pub fn get_connection_pool(config: &PgDatabaseConfig) -> PgPool {
+pub fn get_connection_pool(config: &PgConnectionConfig) -> PgPool {
     PgPoolOptions::new().connect_lazy_with(config.with_db())
 }
 
