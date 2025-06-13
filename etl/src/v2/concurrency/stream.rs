@@ -128,8 +128,9 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> 
             }
 
             if *this.reset_timer {
-                this.deadline
-                    .set(Some(tokio::time::sleep(this.batch_config.max_batch_fill_time)));
+                this.deadline.set(Some(tokio::time::sleep(
+                    this.batch_config.max_batch_fill_time,
+                )));
                 *this.reset_timer = false;
             }
             if this.items.is_empty() {
