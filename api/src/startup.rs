@@ -109,8 +109,8 @@ impl Application {
     }
 }
 
-pub fn get_connection_pool(options: &PgDatabaseConfig) -> PgPool {
-    PgPoolOptions::new().connect_lazy_with(options.with_db())
+pub fn get_connection_pool(config: &PgDatabaseConfig) -> PgPool {
+    PgPoolOptions::new().connect_lazy_with(config.with_db())
 }
 
 // HttpK8sClient is wrapped in an option because creating it

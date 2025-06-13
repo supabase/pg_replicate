@@ -55,13 +55,13 @@ pub async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn log_pg_database_options(options: &PgDatabaseConfig) {
+fn log_pg_database_options(config: &PgDatabaseConfig) {
     info!(
-        host = options.host,
-        port = options.port,
-        dbname = options.name,
-        username = options.username,
-        require_ssl = options.require_ssl,
+        host = config.host,
+        port = config.port,
+        dbname = config.name,
+        username = config.username,
+        require_ssl = config.require_ssl,
         "pg database options",
     );
 }
