@@ -334,7 +334,7 @@ where
         Ok(())
     }
 
-    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<(), Self::Error> {
+    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<bool, Self::Error> {
         info!(
             "Processing syncing tables for table sync worker with LSN {}",
             current_lsn
@@ -356,9 +356,10 @@ where
             drop(inner);
 
             // TODO: cleanup slot and replication origin.
+            return Ok(false);
         }
 
-        Ok(())
+        Ok(true)
     }
 
     async fn should_apply_changes(

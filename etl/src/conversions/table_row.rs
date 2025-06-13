@@ -10,7 +10,7 @@ use super::{text::FromTextError, Cell};
 use crate::v2::concurrency::stream::BatchBoundary;
 use crate::{conversions::text::TextFormatConverter, pipeline::batching::BatchBoundaryV1};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TableRow {
     pub values: Vec<Cell>,
 }

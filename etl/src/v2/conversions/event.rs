@@ -43,7 +43,7 @@ pub enum EventConversionError {
     StateStore(#[from] StateStoreError),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BeginEvent {
     pub final_lsn: u64,
     pub timestamp: i64,
@@ -60,7 +60,7 @@ impl BeginEvent {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommitEvent {
     pub flags: i8,
     pub commit_lsn: u64,
@@ -79,7 +79,7 @@ impl CommitEvent {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OriginEvent {
     pub commit_lsn: u64,
     pub name: String,
@@ -94,7 +94,7 @@ impl OriginEvent {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RelationEvent {
     pub rel_id: u32,
     pub namespace: String,
@@ -119,7 +119,7 @@ impl RelationEvent {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypeEvent {
     pub id: u32,
     pub namespace: String,
@@ -136,25 +136,26 @@ impl TypeEvent {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InsertEvent {
     pub table_id: TableId,
     pub row: TableRow,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UpdateEvent {
     pub table_id: TableId,
     pub row: TableRow,
+    pub identity_row: TableRow,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DeleteEvent {
     pub table_id: TableId,
-    pub row: TableRow,
+    pub identity_row: TableRow,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TruncateEvent {
     pub options: i8,
     pub rel_ids: Vec<u32>,
@@ -169,12 +170,12 @@ impl TruncateEvent {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KeepAliveEvent {
     pub reply: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReplicaIdentity {
     Default,
     Nothing,
@@ -193,7 +194,7 @@ impl ReplicaIdentity {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Column {
     pub flags: i8,
     pub name: String,
@@ -214,7 +215,7 @@ impl Column {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     Begin(BeginEvent),
     Commit(CommitEvent),
@@ -227,7 +228,7 @@ pub enum Event {
     Truncate(TruncateEvent),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EventConverter<S> {
     pipeline_id: PipelineId,
     state_store: S,
@@ -296,12 +297,23 @@ where
     ) -> Result<Event, EventConversionError> {
         let table_id = update_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;
+        let identity = update_body
+            .key_tuple()
+            .or(update_body.old_tuple())
+            .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
+
+        let identity_row =
+            Self::convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
         let row = Self::convert_tuple_to_row(
             &table_schema.column_schemas,
             update_body.new_tuple().tuple_data(),
         )?;
 
-        Ok(Event::Update(UpdateEvent { table_id, row }))
+        Ok(Event::Update(UpdateEvent {
+            table_id,
+            row,
+            identity_row,
+        }))
     }
 
     async fn convert_delete_to_event(
@@ -310,14 +322,18 @@ where
     ) -> Result<Event, EventConversionError> {
         let table_id = delete_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;
-        let tuple = delete_body
+        let identity = delete_body
             .key_tuple()
             .or(delete_body.old_tuple())
             .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
 
-        let row = Self::convert_tuple_to_row(&table_schema.column_schemas, tuple.tuple_data())?;
+        let identity_row =
+            Self::convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
 
-        Ok(Event::Delete(DeleteEvent { table_id, row }))
+        Ok(Event::Delete(DeleteEvent {
+            table_id,
+            identity_row,
+        }))
     }
 
     pub async fn convert(

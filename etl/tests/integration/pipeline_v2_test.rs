@@ -1,29 +1,32 @@
+use crate::common::database::{spawn_database, test_table_name};
+use crate::common::destination_v2::{
+    group_events_by_type_and_table_id, EventType, TestDestination,
+};
+use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
+use crate::common::state_store::{
+    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
+};
+use etl::conversions::table_row::TableRow;
 use etl::conversions::Cell;
+use etl::v2::conversions::event::{Event, InsertEvent};
 use etl::v2::state::table::TableReplicationPhaseType;
 use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
 use std::ops::RangeInclusive;
-use std::time::Duration;
-use tokio::time::sleep;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, GenericClient};
 
-use crate::common::database::{spawn_database, test_table_name};
-use crate::common::destination_v2::TestDestination;
-use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
-use crate::common::state_store::{
-    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
-};
-
 #[derive(Debug)]
-struct DatabaseSchema {
+struct TestDatabaseSchema {
     users_table_schema: TableSchema,
     orders_table_schema: TableSchema,
     publication_name: String,
 }
 
-async fn setup_database<G: GenericClient>(database: &PgDatabase<G>) -> DatabaseSchema {
+async fn setup_test_database_schema<G: GenericClient>(
+    database: &PgDatabase<G>,
+) -> TestDatabaseSchema {
     let users_table_name = test_table_name("users");
     let users_table_id = database
         .create_table(
@@ -89,7 +92,7 @@ async fn setup_database<G: GenericClient>(database: &PgDatabase<G>) -> DatabaseS
         ],
     );
 
-    DatabaseSchema {
+    TestDatabaseSchema {
         users_table_schema,
         orders_table_schema,
         publication_name: publication_name.to_owned(),
@@ -177,10 +180,56 @@ fn get_n_integers_sum(n: usize) -> i32 {
     ((n * (n + 1)) / 2) as i32
 }
 
+fn build_expected_users_inserts(
+    mut starting_id: i64,
+    users_table_id: Oid,
+    expected_rows: Vec<(&str, i32)>,
+) -> Vec<Event> {
+    let mut events = Vec::new();
+
+    for (name, age) in expected_rows {
+        events.push(Event::Insert(InsertEvent {
+            table_id: users_table_id,
+            row: TableRow {
+                values: vec![
+                    Cell::I64(starting_id),
+                    Cell::String(name.to_owned()),
+                    Cell::I32(age),
+                ],
+            },
+        }));
+
+        starting_id += 1;
+    }
+
+    events
+}
+
+fn build_expected_orders_inserts(
+    mut starting_id: i64,
+    orders_table_id: Oid,
+    expected_rows: Vec<&str>,
+) -> Vec<Event> {
+    let mut events = Vec::new();
+
+    for name in expected_rows {
+        events.push(Event::Insert(InsertEvent {
+            table_id: orders_table_id,
+            row: TableRow {
+                values: vec![Cell::I64(starting_id), Cell::String(name.to_owned())],
+            },
+        }));
+
+        starting_id += 1;
+    }
+
+    events
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_apply_worker_panic() {
     let database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     let fault_config = FaultConfig {
         store_replication_origin_state: Some(FaultType::Panic),
@@ -208,7 +257,7 @@ async fn test_pipeline_with_apply_worker_panic() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_apply_worker_error() {
     let database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     let fault_config = FaultConfig {
         store_replication_origin_state: Some(FaultType::Error),
@@ -241,7 +290,7 @@ async fn test_pipeline_with_apply_worker_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_table_sync_worker_panic() {
     let database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     let fault_config = FaultConfig {
         store_table_replication_state: Some(FaultType::Panic),
@@ -294,7 +343,7 @@ async fn test_pipeline_with_table_sync_worker_panic() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_table_sync_worker_error() {
     let database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     let fault_config = FaultConfig {
         store_table_schema: Some(FaultType::Error),
@@ -351,7 +400,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_data_sync_retry() {
     let database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
@@ -463,7 +512,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_finished_copy_retry() {
     let database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
@@ -585,7 +634,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy() {
     let mut database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     // Insert test data
     let rows_inserted = 10;
@@ -653,7 +702,7 @@ async fn test_table_copy() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy_and_sync() {
     let mut database = spawn_database().await;
-    let database_schema = setup_database(&database).await;
+    let database_schema = setup_test_database_schema(&database).await;
 
     // Insert test data
     let rows_inserted = 10;
@@ -699,16 +748,6 @@ async fn test_table_copy_and_sync() {
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
-    // Insert some data to have it the stream
-    insert_mock_data(
-        &mut database,
-        &database_schema.users_table_schema.name,
-        &database_schema.orders_table_schema.name,
-        (rows_inserted + 1)..=(rows_inserted + 2),
-        true,
-    )
-    .await;
-
     // We wait for both tables to be in sync done
     let users_state_notify = state_store
         .notify_on_replication_phase(
@@ -725,19 +764,18 @@ async fn test_table_copy_and_sync() {
         )
         .await;
 
-    users_state_notify.notified().await;
-    orders_state_notify.notified().await;
-
-    // We add additional elements after table sync, which should be processed by the main apply
-    // worker only
+    // Insert some data to have it the stream
     insert_mock_data(
         &mut database,
         &database_schema.users_table_schema.name,
         &database_schema.orders_table_schema.name,
-        (rows_inserted + 3)..=(rows_inserted + 4),
+        (rows_inserted + 1)..=(rows_inserted + 2),
         true,
     )
     .await;
+
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
 
     // We wait for table to be in ready state
     let users_state_notify = state_store
@@ -755,11 +793,27 @@ async fn test_table_copy_and_sync() {
         )
         .await;
 
+    // We wait for events to be received
+    let events_notify = destination
+        .wait_for_events_count(vec![(EventType::Insert, 8)])
+        .await;
+
+    // We add additional elements after table sync, which should be processed by the main apply
+    // worker only
+    insert_mock_data(
+        &mut database,
+        &database_schema.users_table_schema.name,
+        &database_schema.orders_table_schema.name,
+        (rows_inserted + 3)..=(rows_inserted + 4),
+        true,
+    )
+    .await;
+
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
+    events_notify.notified().await;
 
-    // TODO: remove sleep.
-    sleep(Duration::from_secs(1)).await;
+    pipeline.shutdown_and_wait().await.unwrap();
 
     // Get all table rows for table syncing
     let table_rows = destination.get_table_rows().await;
@@ -776,14 +830,39 @@ async fn test_table_copy_and_sync() {
         get_users_age_sum_from_rows(&destination, database_schema.users_table_schema.id).await;
     assert_eq!(age_sum, expected_age_sum);
 
-    // Get all the events that were produced to the destination
+    // Get all the events that were produced to the destination and assert them individually by table
+    // since the only thing we are guaranteed is that the order of operations is preserved within the
+    // same table but not across tables given the asynchronous nature of the pipeline (e.g., we could
+    // start streaming earlier on a table for data which was inserted after another table which was
+    // modified before this one)
     let events = destination.get_events().await;
-    for event in events {
-        println!("{:?}", event);
-    }
-
-    //
-    //
-    //
-    // pipeline.shutdown_and_wait().await.unwrap();
+    let grouped_events = group_events_by_type_and_table_id(&events);
+    let users_inserts = grouped_events
+        .get(&(EventType::Insert, database_schema.users_table_schema.id))
+        .unwrap();
+    let orders_inserts = grouped_events
+        .get(&(EventType::Insert, database_schema.orders_table_schema.id))
+        .unwrap();
+    let expected_users_inserts = build_expected_users_inserts(
+        11,
+        database_schema.users_table_schema.id,
+        vec![
+            ("user_11", 11),
+            ("user_12", 12),
+            ("user_13", 13),
+            ("user_14", 14),
+        ],
+    );
+    let expected_orders_inserts = build_expected_orders_inserts(
+        11,
+        database_schema.orders_table_schema.id,
+        vec![
+            "description_11",
+            "description_12",
+            "description_13",
+            "description_14",
+        ],
+    );
+    assert_eq!(*users_inserts, expected_users_inserts);
+    assert_eq!(*orders_inserts, expected_orders_inserts);
 }

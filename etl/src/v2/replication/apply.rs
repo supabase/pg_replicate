@@ -1,16 +1,3 @@
-use futures::StreamExt;
-use postgres::schema::Oid;
-use postgres_replication::protocol;
-use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
-use thiserror::Error;
-use tokio::pin;
-use tokio::sync::watch;
-use tokio_postgres::types::PgLsn;
-
 use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::conversions::event::{
@@ -25,6 +12,19 @@ use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::workers::apply::ApplyWorkerHookError;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
+use futures::StreamExt;
+use postgres::schema::Oid;
+use postgres_replication::protocol;
+use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+use thiserror::Error;
+use tokio::pin;
+use tokio::sync::watch;
+use tokio_postgres::types::PgLsn;
+use tracing::error;
 
 /// The amount of seconds that pass between syncing via the hook in case nothing else is going on
 /// in the system (e.g., no data from the stream and no shutdown signal).
@@ -92,7 +92,7 @@ pub trait ApplyLoopHook {
     fn process_syncing_tables(
         &self,
         current_lsn: PgLsn,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn should_apply_changes(
         &self,
@@ -135,6 +135,8 @@ struct ApplyLoopState {
     /// The last status update content, used to validate whether to send a status update again is worth
     /// it.
     last_status_update: Option<LastStatusUpdate>,
+    /// A boolean indicating whether the loop should be completed.
+    should_complete: bool,
 }
 
 impl ApplyLoopState {
@@ -189,6 +191,7 @@ where
         last_received: origin_start_lsn,
         remote_final_lsn: PgLsn::from(0),
         last_status_update: None,
+        should_complete: false,
     };
 
     // We initialize the apply loop which is based on the hook implementation.
@@ -216,6 +219,10 @@ where
     let event_converter = EventConverter::new(identity.id(), state_store.clone());
 
     loop {
+        if state.should_complete {
+            return Ok(ApplyLoopResult::ApplyCompleted);
+        }
+
         tokio::select! {
             biased;
 
@@ -257,7 +264,8 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    for message in messages_batch {
+    let batch_size = messages_batch.len();
+    for (index, message) in messages_batch.into_iter().enumerate() {
         let message = message?;
         handle_replication_message(
             state,
@@ -268,7 +276,20 @@ where
             destination,
             hook,
         )
-        .await?
+        .await?;
+
+        // If we should complete after processing a message, we want to finish the loop early, even
+        // though we assume that when `should_complete` is flipped to true, it means a boundary element
+        // has been found, meaning that it should be the last in batch. If that's not the case, we
+        // want to emit an error.
+        if state.should_complete {
+            let remaining_messages = batch_size - index - 1;
+            if remaining_messages > 0 {
+                error!("There are {} remaining messages in the batch even though the should stop the apply loop", remaining_messages);
+            }
+
+            return Ok(());
+        }
     }
 
     Ok(())
@@ -469,7 +490,7 @@ where
 {
     // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
     // `Commit` message.
-    state.remote_final_lsn = PgLsn::from(message.final_lsn());
+    state.remote_final_lsn = message.final_lsn().into();
 
     // We send the event to the destination unconditionally.
     destination.apply_event(Event::Begin(event)).await?;
@@ -507,8 +528,12 @@ where
     // synchronize all the workers.
     //
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
-    let end_lsn = PgLsn::from(message.end_lsn());
-    hook.process_syncing_tables(end_lsn).await?;
+    let continue_loop = hook
+        .process_syncing_tables(message.end_lsn().into())
+        .await?;
+    if !continue_loop {
+        state.should_complete = true;
+    }
 
     Ok(())
 }

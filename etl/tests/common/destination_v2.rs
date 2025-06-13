@@ -101,6 +101,24 @@ impl TestDestination {
         self.inner.read().await.events.clone()
     }
 
+    pub async fn notify_on_events<F>(&self, condition: F) -> Arc<Notify>
+    where
+        F: Fn(&[Event]) -> bool + Send + Sync + 'static,
+    {
+        let notify = Arc::new(Notify::new());
+        let mut inner = self.inner.write().await;
+        inner
+            .event_conditions
+            .push((Box::new(condition), notify.clone()));
+
+        notify
+    }
+
+    pub async fn wait_for_events_count(&self, conditions: Vec<(EventType, u64)>) -> Arc<Notify> {
+        self.notify_on_events(move |events| check_events_count(events, conditions.clone()))
+            .await
+    }
+
     pub async fn notify_on_schemas<F>(&self, condition: F) -> Arc<Notify>
     where
         F: Fn(&[TableSchema]) -> bool + Send + Sync + 'static,
@@ -158,4 +176,85 @@ impl Destination for TestDestination {
 
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum EventType {
+    Begin,
+    Commit,
+    Insert,
+    Update,
+    Delete,
+    Relation,
+    Type,
+    Origin,
+    Truncate,
+}
+
+impl From<&Event> for EventType {
+    fn from(event: &Event) -> Self {
+        match event {
+            Event::Begin(_) => EventType::Begin,
+            Event::Commit(_) => EventType::Commit,
+            Event::Insert(_) => EventType::Insert,
+            Event::Update(_) => EventType::Update,
+            Event::Delete(_) => EventType::Delete,
+            Event::Relation(_) => EventType::Relation,
+            Event::Type(_) => EventType::Type,
+            Event::Origin(_) => EventType::Origin,
+            Event::Truncate(_) => EventType::Truncate,
+        }
+    }
+}
+
+pub fn group_events_by_type(events: &[Event]) -> HashMap<EventType, Vec<Event>> {
+    let mut grouped = HashMap::new();
+    for event in events {
+        let event_type = EventType::from(event);
+        grouped
+            .entry(event_type)
+            .or_insert_with(Vec::new)
+            .push(event.clone());
+    }
+
+    grouped
+}
+
+pub fn group_events_by_type_and_table_id(
+    events: &[Event],
+) -> HashMap<(EventType, Oid), Vec<Event>> {
+    let mut grouped = HashMap::new();
+    for event in events {
+        let event_type = EventType::from(event);
+        // This grouping only works on simple DML operations.
+        let table_id = match event {
+            Event::Insert(event) => Some(event.table_id),
+            Event::Update(event) => Some(event.table_id),
+            Event::Delete(event) => Some(event.table_id),
+            _ => None,
+        };
+        if let Some(table_id) = table_id {
+            grouped
+                .entry((event_type, table_id))
+                .or_insert_with(Vec::new)
+                .push(event.clone());
+        }
+    }
+
+    grouped
+}
+
+fn check_events_count(events: &[Event], conditions: Vec<(EventType, u64)>) -> bool {
+    let grouped_events = group_events_by_type(events);
+    for (event_type, count) in conditions {
+        let Some(inner_events) = grouped_events.get(&event_type) else {
+            return false;
+        };
+
+        if inner_events.len() != count as usize {
+            return false;
+        }
+    }
+
+    true
 }

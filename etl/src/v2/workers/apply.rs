@@ -361,7 +361,7 @@ where
         Ok(())
     }
 
-    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<(), Self::Error> {
+    async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<bool, Self::Error> {
         let table_replication_states = self.state_store.load_table_replication_states().await?;
         info!(
             "Processing syncing tables for apply worker with LSN {}",
@@ -392,7 +392,7 @@ where
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 
     async fn should_apply_changes(
