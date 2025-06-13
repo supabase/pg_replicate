@@ -169,6 +169,7 @@ impl From<ApplyLoopState> for ReplicationOriginState {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_apply_loop<S, D, T>(
     identity: PipelineIdentity,
     origin_start_lsn: PgLsn,
@@ -321,14 +322,6 @@ where
             if end_lsn > state.last_received {
                 state.last_received = end_lsn;
             }
-
-            println!(
-                "MESSAGE {:?} \n    start_lsn: {:?}, end_lsn: {:?} \n    data: {:?}\n",
-                hook.slot_usage(),
-                message.wal_start(),
-                message.wal_end(),
-                message.data()
-            );
 
             handle_logical_replication_message(
                 state,

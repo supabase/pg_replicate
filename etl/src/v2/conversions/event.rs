@@ -113,7 +113,7 @@ impl RelationEvent {
             columns: relation_body
                 .columns()
                 .iter()
-                .map(|c| Column::from_protocol(c))
+                .map(Column::from_protocol)
                 .collect::<Result<Vec<_>, _>>()?,
         })
     }
@@ -342,19 +342,19 @@ where
     ) -> Result<Event, EventConversionError> {
         match message {
             LogicalReplicationMessage::Begin(begin_body) => {
-                Ok(Event::Begin(BeginEvent::from_protocol(&begin_body)))
+                Ok(Event::Begin(BeginEvent::from_protocol(begin_body)))
             }
             LogicalReplicationMessage::Commit(commit_body) => {
-                Ok(Event::Commit(CommitEvent::from_protocol(&commit_body)))
+                Ok(Event::Commit(CommitEvent::from_protocol(commit_body)))
             }
             LogicalReplicationMessage::Origin(origin_body) => {
-                Ok(Event::Origin(OriginEvent::from_protocol(&origin_body)?))
+                Ok(Event::Origin(OriginEvent::from_protocol(origin_body)?))
             }
             LogicalReplicationMessage::Relation(relation_body) => Ok(Event::Relation(
-                RelationEvent::from_protocol(&relation_body)?,
+                RelationEvent::from_protocol(relation_body)?,
             )),
             LogicalReplicationMessage::Type(type_body) => {
-                Ok(Event::Type(TypeEvent::from_protocol(&type_body)?))
+                Ok(Event::Type(TypeEvent::from_protocol(type_body)?))
             }
             LogicalReplicationMessage::Insert(insert_body) => {
                 self.convert_insert_to_event(insert_body).await
@@ -366,7 +366,7 @@ where
                 self.convert_delete_to_event(delete_body).await
             }
             LogicalReplicationMessage::Truncate(truncate_body) => Ok(Event::Truncate(
-                TruncateEvent::from_protocol(&truncate_body),
+                TruncateEvent::from_protocol(truncate_body),
             )),
             _ => Err(EventConversionError::UnknownReplicationMessage),
         }

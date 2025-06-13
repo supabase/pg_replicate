@@ -51,6 +51,7 @@ pub enum TableSyncResult {
     SyncCompleted { origin_start_lsn: PgLsn },
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_table_sync<S, D>(
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
@@ -87,6 +88,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn sync_table<S, D>(
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
