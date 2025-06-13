@@ -4,7 +4,6 @@
 /// pipeline testing utilities, destination testing helpers, and table manipulation utilities.
 /// It also includes common testing patterns like waiting for conditions to be met.
 use std::time::{Duration, Instant};
-use tokio::time::sleep;
 
 pub mod database;
 pub mod destination;
@@ -46,7 +45,7 @@ where
             return;
         }
 
-        sleep(ASSERTION_FREQUENCY_DURATION).await;
+        tokio::time::sleep(ASSERTION_FREQUENCY_DURATION).await;
     }
 
     panic!("Failed to process all events within timeout")

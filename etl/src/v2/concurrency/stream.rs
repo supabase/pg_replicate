@@ -3,7 +3,6 @@ use core::task::{Context, Poll};
 use futures::{ready, Future, Stream};
 use pin_project_lite::pin_project;
 use tokio::sync::watch;
-use tokio::time::{sleep, Sleep};
 use tracing::info;
 
 use crate::v2::config::batch::BatchConfig;
@@ -53,7 +52,7 @@ pin_project! {
         #[pin]
         stream: S,
         #[pin]
-        deadline: Option<Sleep>,
+        deadline: Option<tokio::time::Sleep>,
         shutdown_rx: watch::Receiver<()>,
         items: Vec<S::Item>,
         batch_config: BatchConfig,
@@ -130,7 +129,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> 
 
             if *this.reset_timer {
                 this.deadline
-                    .set(Some(sleep(this.batch_config.max_batch_fill_time)));
+                    .set(Some(tokio::time::sleep(this.batch_config.max_batch_fill_time)));
                 *this.reset_timer = false;
             }
             if this.items.is_empty() {
