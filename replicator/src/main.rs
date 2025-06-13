@@ -12,7 +12,7 @@ use etl::{
     },
     SslMode,
 };
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgConnectionConfig;
 use telemetry::init_tracing;
 use tracing::{info, instrument};
 
@@ -110,7 +110,7 @@ async fn start_replication(settings: Settings) -> anyhow::Result<()> {
         SslMode::Disable
     };
 
-    let options = PgDatabaseConfig {
+    let options = PgConnectionConfig {
         host,
         port,
         name,
