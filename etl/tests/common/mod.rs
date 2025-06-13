@@ -9,6 +9,7 @@ use tokio::time::sleep;
 pub mod database;
 pub mod destination;
 pub mod destination_v2;
+pub mod event;
 pub mod pipeline;
 pub mod pipeline_v2;
 pub mod state_store;

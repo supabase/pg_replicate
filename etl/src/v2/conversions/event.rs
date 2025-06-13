@@ -1,6 +1,7 @@
 use core::str;
 use postgres::schema::{ColumnSchema, TableId, TableSchema};
-use postgres_replication::protocol::{
+use postgres_replication::protocol;
+use protocol::{
     BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, OriginBody,
     RelationBody, TruncateBody, TupleData, TypeBody, UpdateBody,
 };
@@ -184,12 +185,12 @@ pub enum ReplicaIdentity {
 }
 
 impl ReplicaIdentity {
-    fn from_protocol(identity: &postgres_replication::protocol::ReplicaIdentity) -> Self {
+    fn from_protocol(identity: &protocol::ReplicaIdentity) -> Self {
         match identity {
-            postgres_replication::protocol::ReplicaIdentity::Default => Self::Default,
-            postgres_replication::protocol::ReplicaIdentity::Nothing => Self::Nothing,
-            postgres_replication::protocol::ReplicaIdentity::Full => Self::Full,
-            postgres_replication::protocol::ReplicaIdentity::Index => Self::Index,
+            protocol::ReplicaIdentity::Default => Self::Default,
+            protocol::ReplicaIdentity::Nothing => Self::Nothing,
+            protocol::ReplicaIdentity::Full => Self::Full,
+            protocol::ReplicaIdentity::Index => Self::Index,
         }
     }
 }
@@ -203,9 +204,7 @@ pub struct Column {
 }
 
 impl Column {
-    fn from_protocol(
-        column: &postgres_replication::protocol::Column,
-    ) -> Result<Self, EventConversionError> {
+    fn from_protocol(column: &protocol::Column) -> Result<Self, EventConversionError> {
         Ok(Self {
             flags: column.flags(),
             name: column.name()?.to_string(),
@@ -365,9 +364,9 @@ where
             LogicalReplicationMessage::Delete(delete_body) => {
                 self.convert_delete_to_event(delete_body).await
             }
-            LogicalReplicationMessage::Truncate(truncate_body) => Ok(Event::Truncate(
-                TruncateEvent::from_protocol(truncate_body),
-            )),
+            LogicalReplicationMessage::Truncate(truncate_body) => {
+                Ok(Event::Truncate(TruncateEvent::from_protocol(truncate_body)))
+            }
             _ => Err(EventConversionError::UnknownReplicationMessage),
         }
     }
