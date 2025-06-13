@@ -45,7 +45,7 @@ async fn setup_test_database_schema<G: GenericClient>(
         .await
         .expect("Failed to create orders table");
 
-    // Create publication for both tables
+    // Create publication for both tables.
     let publication_name = "users_orders_pub";
     database
         .create_publication(
@@ -109,7 +109,7 @@ async fn insert_mock_data(
     if use_transaction {
         let mut transaction = database.begin_transaction().await;
 
-        // Insert users with deterministic data
+        // Insert users with deterministic data.
         for i in range.clone() {
             transaction
                 .insert_values(
@@ -121,7 +121,7 @@ async fn insert_mock_data(
                 .expect("Failed to insert users");
         }
 
-        // Insert orders with deterministic data
+        // Insert orders with deterministic data.
         for i in range {
             transaction
                 .insert_values(
@@ -133,10 +133,10 @@ async fn insert_mock_data(
                 .expect("Failed to insert orders");
         }
 
-        // Commit the transaction
+        // Commit the transaction.
         transaction.commit_transaction().await;
     } else {
-        // Insert users with deterministic data
+        // Insert users with deterministic data.
         for i in range.clone() {
             database
                 .insert_values(
@@ -148,7 +148,7 @@ async fn insert_mock_data(
                 .expect("Failed to insert users");
         }
 
-        // Insert orders with deterministic data
+        // Insert orders with deterministic data.
         for i in range {
             database
                 .insert_values(
@@ -231,6 +231,7 @@ async fn test_pipeline_with_apply_worker_panic() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database).await;
 
+    // Configure state store to panic when storing replication origin state.
     let fault_config = FaultConfig {
         store_replication_origin_state: Some(FaultType::Panic),
         ..Default::default()
@@ -238,7 +239,7 @@ async fn test_pipeline_with_apply_worker_panic() {
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
     let destination = TestDestination::new();
 
-    // We start the pipeline from scratch.
+    // Initialize pipeline with fault-injecting state store.
     let mut pipeline = spawn_pg_pipeline(
         &create_pipeline_identity(&database_schema.publication_name),
         &database.options,
@@ -248,7 +249,7 @@ async fn test_pipeline_with_apply_worker_panic() {
 
     pipeline.start().await.unwrap();
 
-    // We stop and inspect errors.
+    // Verify that pipeline shutdown returns expected error.
     let errors = pipeline.shutdown_and_wait().await.err().unwrap();
     assert_eq!(errors.len(), 1);
     assert!(matches!(errors[0], WorkerWaitError::TaskFailed(_)));
@@ -259,6 +260,7 @@ async fn test_pipeline_with_apply_worker_error() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database).await;
 
+    // Configure state store to return error when storing replication origin state.
     let fault_config = FaultConfig {
         store_replication_origin_state: Some(FaultType::Error),
         ..Default::default()
@@ -266,7 +268,7 @@ async fn test_pipeline_with_apply_worker_error() {
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
     let destination = TestDestination::new();
 
-    // We start the pipeline from scratch.
+    // Initialize pipeline with fault-injecting state store.
     let mut pipeline = spawn_pg_pipeline(
         &create_pipeline_identity(&database_schema.publication_name),
         &database.options,
@@ -276,7 +278,7 @@ async fn test_pipeline_with_apply_worker_error() {
 
     pipeline.start().await.unwrap();
 
-    // We stop and inspect errors.
+    // Verify that pipeline shutdown returns expected error type.
     let errors = pipeline.shutdown_and_wait().await.err().unwrap();
     assert_eq!(errors.len(), 1);
     assert!(matches!(
@@ -361,7 +363,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
     );
     let pipeline_id = pipeline.identity().id();
 
-    // We register the interest in waiting for both table syncs to have started.
+    // Register notifications for when table sync is started.
     let users_state_notify = state_store
         .get_inner()
         .notify_on_replication_phase(
@@ -405,8 +407,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
-    // We start the pipeline from scratch with a faulty state store in order to have a failure during
-    // data sync.
+    // Configure state store to fail during data sync.
     let fault_config = FaultConfig {
         store_table_schema: Some(FaultType::Error),
         ..Default::default()
@@ -420,7 +421,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         destination.clone(),
     );
 
-    // We register the interest in waiting for both table syncs to have started.
+    // Register notifications for table sync phases.
     let users_state_notify = failing_state_store
         .get_inner()
         .notify_on_replication_phase(
@@ -445,8 +446,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 
     pipeline.shutdown_and_wait().await.unwrap();
 
-    // We recreate a pipeline, assuming the other one was stopped, using a normal state store and
-    // the same destination.
+    // Restart pipeline with normal state store to verify recovery.
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.options,
@@ -454,10 +454,10 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         destination.clone(),
     );
 
-    // We wait for two table schemas to be received.
+    // Wait for schema reception and table sync completion.
     let schemas_notify = destination.wait_for_n_schemas(2).await;
-    // We wait for both table states to be in finished done (sync wait is only memory and not
-    // available on the store).
+
+    // Register notifications for table sync phases.
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
@@ -481,7 +481,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 
     pipeline.shutdown_and_wait().await.unwrap();
 
-    // We check that the states are correctly set.
+    // Verify table replication states.
     let table_replication_states = state_store.get_table_replication_states().await;
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
@@ -501,7 +501,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         TableReplicationPhaseType::FinishedCopy
     );
 
-    // We check that the table schemas have been stored.
+    // Verify table schemas were correctly stored.
     let mut first_table_schemas = destination.get_table_schemas().await;
     first_table_schemas.sort();
     assert_eq!(first_table_schemas.len(), 2);
@@ -636,7 +636,7 @@ async fn test_table_copy() {
     let mut database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database).await;
 
-    // Insert test data
+    // Insert initial test data.
     let rows_inserted = 10;
     insert_mock_data(
         &mut database,
@@ -650,7 +650,7 @@ async fn test_table_copy() {
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
-    // Start the pipeline from scratch
+    // Start pipeline from scratch.
     let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
@@ -659,7 +659,7 @@ async fn test_table_copy() {
         destination.clone(),
     );
 
-    // Wait for both table states to be in finished copy
+    // Register notifications for table copy completion.
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
@@ -677,13 +677,12 @@ async fn test_table_copy() {
 
     pipeline.start().await.unwrap();
 
-    // Wait for notifications with timeout
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
     pipeline.shutdown_and_wait().await.unwrap();
 
-    // Get all table rows
+    // Verify copied data.
     let table_rows = destination.get_table_rows().await;
     let users_table_rows = table_rows
         .get(&database_schema.users_table_schema.id)
@@ -693,6 +692,8 @@ async fn test_table_copy() {
         .unwrap();
     assert_eq!(users_table_rows.len(), rows_inserted);
     assert_eq!(orders_table_rows.len(), rows_inserted);
+
+    // Verify age sum calculation.
     let expected_age_sum = get_n_integers_sum(rows_inserted);
     let age_sum =
         get_users_age_sum_from_rows(&destination, database_schema.users_table_schema.id).await;
@@ -704,7 +705,7 @@ async fn test_table_copy_and_sync() {
     let mut database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database).await;
 
-    // Insert test data
+    // Insert initial test data.
     let rows_inserted = 10;
     insert_mock_data(
         &mut database,
@@ -718,7 +719,7 @@ async fn test_table_copy_and_sync() {
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
-    // Start the pipeline from scratch
+    // Start pipeline from scratch.
     let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
@@ -727,7 +728,7 @@ async fn test_table_copy_and_sync() {
         destination.clone(),
     );
 
-    // Wait for both table states to be in finished copy
+    // Register notifications for initial table copy completion.
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
@@ -748,7 +749,7 @@ async fn test_table_copy_and_sync() {
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
-    // We wait for both tables to be in sync done
+    // Register notifications for sync completion.
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
@@ -764,7 +765,7 @@ async fn test_table_copy_and_sync() {
         )
         .await;
 
-    // Insert some data to have it the stream
+    // Insert additional data to test streaming.
     insert_mock_data(
         &mut database,
         &database_schema.users_table_schema.name,
@@ -777,7 +778,7 @@ async fn test_table_copy_and_sync() {
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
-    // We wait for table to be in ready state
+    // Register notifications for ready state.
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
@@ -793,13 +794,12 @@ async fn test_table_copy_and_sync() {
         )
         .await;
 
-    // We wait for events to be received
+    // We wait for all the inserts to be received.
     let events_notify = destination
         .wait_for_events_count(vec![(EventType::Insert, 8)])
         .await;
 
-    // We add additional elements after table sync, which should be processed by the main apply
-    // worker only
+    // Insert more data to test apply worker processing.
     insert_mock_data(
         &mut database,
         &database_schema.users_table_schema.name,
@@ -815,7 +815,7 @@ async fn test_table_copy_and_sync() {
 
     pipeline.shutdown_and_wait().await.unwrap();
 
-    // Get all table rows for table syncing
+    // Verify initial table copy data.
     let table_rows = destination.get_table_rows().await;
     let users_table_rows = table_rows
         .get(&database_schema.users_table_schema.id)
@@ -825,6 +825,8 @@ async fn test_table_copy_and_sync() {
         .unwrap();
     assert_eq!(users_table_rows.len(), rows_inserted);
     assert_eq!(orders_table_rows.len(), rows_inserted);
+
+    // Verify age sum calculation.
     let expected_age_sum = get_n_integers_sum(rows_inserted);
     let age_sum =
         get_users_age_sum_from_rows(&destination, database_schema.users_table_schema.id).await;
@@ -843,6 +845,8 @@ async fn test_table_copy_and_sync() {
     let orders_inserts = grouped_events
         .get(&(EventType::Insert, database_schema.orders_table_schema.id))
         .unwrap();
+
+    // Build expected events for verification
     let expected_users_inserts = build_expected_users_inserts(
         11,
         database_schema.users_table_schema.id,
