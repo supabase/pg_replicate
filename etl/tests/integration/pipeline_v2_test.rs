@@ -444,7 +444,11 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     users_state_notify.notified().await;
     orders_state_notify.notified().await;
 
-    pipeline.shutdown_and_wait().await.unwrap();
+    // This result could be an error or not based on if we manage to shut down before the error is
+    // thrown. This is a shortcoming of this fault injection implementation, we have plans to fix
+    // this in future PRs.
+    // TODO: assert error once better failure injection is implemented.
+    let _ = pipeline.shutdown_and_wait().await;
 
     // Restart pipeline with normal state store to verify recovery.
     let mut pipeline = spawn_pg_pipeline(
