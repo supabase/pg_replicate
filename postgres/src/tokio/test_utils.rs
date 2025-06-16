@@ -1,5 +1,5 @@
 use crate::schema::{ColumnSchema, Oid, TableName};
-use crate::tokio::options::PgDatabaseConfig;
+use crate::tokio::config::PgConnectionConfig;
 use tokio::runtime::Handle;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, NoTls};
@@ -11,12 +11,12 @@ pub enum TableModification<'a> {
 }
 
 pub struct PgDatabase {
-    pub options: PgDatabaseConfig,
+    pub options: PgConnectionConfig,
     pub client: Client,
 }
 
 impl PgDatabase {
-    pub async fn new(options: PgDatabaseConfig) -> Self {
+    pub async fn new(options: PgConnectionConfig) -> Self {
         let client = create_pg_database(&options).await;
 
         Self { options, client }
@@ -227,9 +227,9 @@ impl Drop for PgDatabase {
 /// Establishes a connection to the PostgreSQL server using the provided options,
 /// creates a new database, and returns a [`Client`] connected to the new database.
 /// Panics if the connection fails or if database creation fails.
-pub async fn create_pg_database(options: &PgDatabaseConfig) -> Client {
+pub async fn create_pg_database(config: &PgConnectionConfig) -> Client {
     // Create the database via a single connection
-    let (client, connection) = options
+    let (client, connection) = config
         .without_db()
         .connect(NoTls)
         .await
@@ -244,12 +244,12 @@ pub async fn create_pg_database(options: &PgDatabaseConfig) -> Client {
 
     // Create the database
     client
-        .execute(&*format!(r#"create database "{}";"#, options.name), &[])
+        .execute(&*format!(r#"create database "{}";"#, config.name), &[])
         .await
         .expect("Failed to create database");
 
     // Create a new client connected to the created database
-    let (client, connection) = options
+    let (client, connection) = config
         .with_db()
         .connect(NoTls)
         .await
@@ -269,11 +269,11 @@ pub async fn create_pg_database(options: &PgDatabaseConfig) -> Client {
 ///
 /// Connects to the PostgreSQL server, forcefully terminates all active connections
 /// to the target database, and drops the database if it exists. Useful for cleaning
-/// up test databases. Takes a reference to [`PgDatabaseConfig`] specifying the database
+/// up test databases. Takes a reference to [`PgConnectionConfig`] specifying the database
 /// to drop. Panics if any operation fails.
-pub async fn drop_pg_database(options: &PgDatabaseConfig) {
+pub async fn drop_pg_database(config: &PgConnectionConfig) {
     // Connect to the default database
-    let (client, connection) = options
+    let (client, connection) = config
         .without_db()
         .connect(NoTls)
         .await
@@ -295,7 +295,7 @@ pub async fn drop_pg_database(options: &PgDatabaseConfig) {
                 from pg_stat_activity
                 where pg_stat_activity.datname = '{}'
                 and pid <> pg_backend_pid();"#,
-                options.name
+                config.name
             ),
             &[],
         )
@@ -311,7 +311,7 @@ pub async fn drop_pg_database(options: &PgDatabaseConfig) {
                 from pg_replication_slots 
                 where slot_name like 'test_%'
                 and database = '{}';"#,
-                options.name
+                config.name
             ),
             &[],
         )
@@ -321,7 +321,7 @@ pub async fn drop_pg_database(options: &PgDatabaseConfig) {
     // Drop the database
     client
         .execute(
-            &format!(r#"drop database if exists "{}";"#, options.name),
+            &format!(r#"drop database if exists "{}";"#, config.name),
             &[],
         )
         .await

@@ -2,13 +2,13 @@ use secrecy::{ExposeSecret, Secret};
 use serde::Deserialize;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
-/// Connection options for a PostgreSQL database.
+/// Connection config for a PostgreSQL database.
 ///
 /// Contains the connection parameters needed to establish a connection to a PostgreSQL
 /// database server, including network location, authentication credentials, and security
 /// settings.
 #[derive(Debug, Clone, Deserialize)]
-pub struct PgDatabaseOptions {
+pub struct PgConnectionConfig {
     /// Host name or IP address of the PostgreSQL server
     pub host: String,
     /// Port number that the PostgreSQL server listens on
@@ -23,7 +23,7 @@ pub struct PgDatabaseOptions {
     pub require_ssl: bool,
 }
 
-impl PgDatabaseOptions {
+impl PgConnectionConfig {
     /// Creates connection options for connecting to the PostgreSQL server without
     /// specifying a database.
     ///

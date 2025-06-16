@@ -1,6 +1,6 @@
 use pg_escape::{quote_identifier, quote_literal};
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgConnectionConfig;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use std::collections::HashMap;
@@ -168,7 +168,7 @@ impl PgReplicationSlotTransaction {
 #[derive(Debug)]
 struct ClientInner {
     client: Client,
-    pg_database_config: PgDatabaseConfig,
+    pg_database_config: PgConnectionConfig,
     trusted_root_certs: Vec<CertificateDer<'static>>,
     with_tls: bool,
 }
@@ -189,7 +189,9 @@ impl PgReplicationClient {
     /// Establishes a connection to PostgreSQL without TLS encryption.
     ///
     /// The connection is configured for logical replication mode.
-    pub async fn connect_no_tls(pg_database_config: PgDatabaseConfig) -> PgReplicationResult<Self> {
+    pub async fn connect_no_tls(
+        pg_database_config: PgConnectionConfig,
+    ) -> PgReplicationResult<Self> {
         info!("connecting to postgres without TLS");
 
         let mut config: Config = pg_database_config.clone().into();
@@ -216,7 +218,7 @@ impl PgReplicationClient {
     /// The connection is configured for logical replication mode and uses the provided
     /// trusted root certificates for TLS verification.
     pub async fn connect_tls(
-        pg_database_config: PgDatabaseConfig,
+        pg_database_config: PgConnectionConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> PgReplicationResult<Self> {
         info!("connecting to postgres with TLS");
