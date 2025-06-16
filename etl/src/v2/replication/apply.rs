@@ -1,6 +1,5 @@
 use futures::StreamExt;
 use postgres::schema::Oid;
-use postgres_replication::protocol;
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
 use std::future::Future;
 use std::pin::Pin;
@@ -14,9 +13,7 @@ use tracing::error;
 
 use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::conversions::event::{
-    BeginEvent, CommitEvent, Event, EventConversionError, EventConverter, TruncateEvent,
-};
+use crate::v2::conversions::event::{Event, EventConversionError, EventConverter};
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};

@@ -188,7 +188,7 @@ pub enum Event {
     Delete(DeleteEvent),
     Relation(RelationEvent),
     Truncate(TruncateEvent),
-    Unsupported
+    Unsupported,
 }
 
 #[derive(Debug, Clone, PartialEq)]

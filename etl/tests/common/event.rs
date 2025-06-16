@@ -10,9 +10,8 @@ pub enum EventType {
     Update,
     Delete,
     Relation,
-    Type,
-    Origin,
     Truncate,
+    Unsupported,
 }
 
 impl From<&Event> for EventType {
@@ -24,9 +23,8 @@ impl From<&Event> for EventType {
             Event::Update(_) => EventType::Update,
             Event::Delete(_) => EventType::Delete,
             Event::Relation(_) => EventType::Relation,
-            Event::Type(_) => EventType::Type,
-            Event::Origin(_) => EventType::Origin,
             Event::Truncate(_) => EventType::Truncate,
+            &Event::Unsupported => EventType::Unsupported,
         }
     }
 }
