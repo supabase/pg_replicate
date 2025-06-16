@@ -1,17 +1,3 @@
-use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
-use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::conversions::event::{
-    BeginEvent, CommitEvent, Event, EventConversionError, EventConverter, TruncateEvent,
-};
-use crate::v2::destination::base::{Destination, DestinationError};
-use crate::v2::pipeline::{PipelineId, PipelineIdentity};
-use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
-use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
-use crate::v2::replication::stream::{EventsStream, EventsStreamError};
-use crate::v2::state::origin::ReplicationOriginState;
-use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::workers::apply::ApplyWorkerHookError;
-use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 use futures::StreamExt;
 use postgres::schema::Oid;
 use postgres_replication::protocol;
@@ -25,6 +11,21 @@ use tokio::pin;
 use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 use tracing::error;
+
+use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
+use crate::v2::config::pipeline::PipelineConfig;
+use crate::v2::conversions::event::{
+    BeginEvent, CommitEvent, Event, EventConversionError, EventConverter, TruncateEvent,
+};
+use crate::v2::destination::base::{Destination, DestinationError};
+use crate::v2::pipeline::PipelineIdentity;
+use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
+use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
+use crate::v2::replication::stream::{EventsStream, EventsStreamError};
+use crate::v2::state::origin::ReplicationOriginState;
+use crate::v2::state::store::base::{StateStore, StateStoreError};
+use crate::v2::workers::apply::ApplyWorkerHookError;
+use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 
 /// The amount of seconds that pass between syncing via the hook in case nothing else is going on
 /// in the system (e.g., no data from the stream and no shutdown signal).
@@ -53,7 +54,7 @@ pub enum ApplyLoopError {
     #[error("An error happened in the state store while in the apply loop: {0}")]
     StateStore(#[from] StateStoreError),
 
-    #[error("An error occurred while build an event from a message in the apply loop: {0}")]
+    #[error("An error occurred while building an event from a message in the apply loop: {0}")]
     EventConversion(#[from] EventConversionError),
 
     #[error("An error occurred when interacting with the destination in the apply loop: {0}")]
@@ -116,14 +117,7 @@ impl BatchBoundary for ReplicationMessage<LogicalReplicationMessage> {
 }
 
 #[derive(Debug, Clone)]
-struct LastStatusUpdate {
-    last_received: PgLsn,
-}
-
-#[derive(Debug, Clone)]
 struct ApplyLoopState {
-    /// The id of the pipeline in which the apply loop state's is running.
-    pipeline_id: PipelineId,
     /// The highest LSN of the received events.
     ///
     /// This LSN is extracted from the `start_lsn` and `end_lsn` of each incoming event.
@@ -132,41 +126,8 @@ struct ApplyLoopState {
     ///
     /// This LSN is set at every `BEGIN` of a new transaction.
     remote_final_lsn: PgLsn,
-    /// The last status update content, used to validate whether to send a status update again is worth
-    /// it.
-    last_status_update: Option<LastStatusUpdate>,
     /// A boolean indicating whether the loop should be completed.
     should_complete: bool,
-}
-
-impl ApplyLoopState {
-    fn should_send_status_update(&self) -> bool {
-        let Some(last_status_update) = &self.last_status_update else {
-            return true;
-        };
-
-        self.last_received > last_status_update.last_received
-    }
-
-    fn status_update_sent(&mut self) {
-        // This method takes a snapshot of the current state, so it must be called after the status
-        // update and before any further state change.
-        let last_status_update = LastStatusUpdate {
-            last_received: self.last_received,
-        };
-
-        self.last_status_update = Some(last_status_update);
-    }
-}
-
-impl From<ApplyLoopState> for ReplicationOriginState {
-    fn from(value: ApplyLoopState) -> Self {
-        Self {
-            pipeline_id: value.pipeline_id,
-            table_id: None,
-            remote_lsn: value.last_received,
-        }
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -188,10 +149,8 @@ where
 {
     // We initialize the shared state that is used throughout the loop to track progress.
     let mut state = ApplyLoopState {
-        pipeline_id: identity.id(),
         last_received: origin_start_lsn,
         remote_final_lsn: PgLsn::from(0),
-        last_status_update: None,
         should_complete: false,
     };
 
@@ -234,23 +193,21 @@ where
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
 
-                handle_replication_message_batch(&mut state, events_stream, messages_batch, &event_converter, &state_store, &destination, &hook).await?;
+                handle_replication_message_batch(&identity, &mut state, events_stream, messages_batch, &event_converter, &state_store, &destination, &hook).await?;
             }
             _ = tokio::time::sleep(SYNCING_FREQUENCY_SECONDS) => {
                 // TODO: this is a great place to perform cleanup operations.
                let logical_replication_stream = logical_replication_stream.as_mut();
                let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
 
-               if state.should_send_status_update() {
-                    events_stream.send_status_update(state.last_received).await?;
-                    state.status_update_sent();
-               }
+               events_stream.send_status_update(state.last_received).await?;
             }
         }
     }
 }
 
 async fn handle_replication_message_batch<S, D, T>(
+    identity: &PipelineIdentity,
     state: &mut ApplyLoopState,
     mut stream: Pin<&mut EventsStream>,
     messages_batch: Vec<Result<ReplicationMessage<LogicalReplicationMessage>, EventsStreamError>>,
@@ -269,6 +226,7 @@ where
     for (index, message) in messages_batch.into_iter().enumerate() {
         let message = message?;
         handle_replication_message(
+            &identity,
             state,
             stream.as_mut(),
             message,
@@ -297,6 +255,7 @@ where
 }
 
 async fn handle_replication_message<S, D, T>(
+    identity: &PipelineIdentity,
     state: &mut ApplyLoopState,
     events_stream: Pin<&mut EventsStream>,
     message: ReplicationMessage<LogicalReplicationMessage>,
@@ -324,19 +283,15 @@ where
             }
 
             handle_logical_replication_message(
+                identity,
                 state,
                 message.into_data(),
                 event_converter,
+                state_store,
                 destination,
                 hook,
             )
             .await?;
-
-            // After successfully applying an event, we store the progress in the state store so that
-            // in case of a restart, we will start from the right position.
-            state_store
-                .store_replication_origin_state(state.clone().into(), true)
-                .await?;
         }
         ReplicationMessage::PrimaryKeepAlive(message) => {
             let end_lsn = PgLsn::from(message.wal_end());
@@ -344,20 +299,9 @@ where
                 state.last_received = end_lsn;
             }
 
-            // We store the replication origin state before confirming the Postgres the max LSN we read
-            // since in the worst case, we store this in our state and Postgres doesn't know this
-            // but on a restart, we will correctly restart from our state and then notify Postgres
-            // again when this code path is hit.
-            state_store
-                .store_replication_origin_state(state.clone().into(), true)
+            events_stream
+                .send_status_update(state.last_received)
                 .await?;
-
-            if state.should_send_status_update() {
-                events_stream
-                    .send_status_update(state.last_received)
-                    .await?;
-                state.status_update_sent();
-            }
         }
         _ => {}
     }
@@ -366,9 +310,11 @@ where
 }
 
 async fn handle_logical_replication_message<S, D, T>(
+    identity: &PipelineIdentity,
     state: &mut ApplyLoopState,
     message: LogicalReplicationMessage,
     event_converter: &EventConverter<S>,
+    state_store: &S,
     destination: &D,
     hook: &T,
 ) -> Result<(), ApplyLoopError>
@@ -402,7 +348,16 @@ where
                 ));
             };
 
-            handle_commit_event(state, message, event, destination, hook).await
+            handle_commit_event(
+                identity,
+                state,
+                message,
+                event,
+                state_store,
+                destination,
+                hook,
+            )
+            .await
         }
         LogicalReplicationMessage::Origin(_) => Ok(()),
         LogicalReplicationMessage::Relation(_) => Ok(()),
@@ -491,14 +446,17 @@ where
     Ok(())
 }
 
-async fn handle_commit_event<D, T>(
+async fn handle_commit_event<S, D, T>(
+    identity: &PipelineIdentity,
     state: &mut ApplyLoopState,
     message: protocol::CommitBody,
     event: CommitEvent,
+    state_store: &S,
     destination: &D,
     hook: &T,
 ) -> Result<(), ApplyLoopError>
 where
+    S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
@@ -514,8 +472,19 @@ where
         ));
     }
 
+    let end_lsn = PgLsn::from(message.end_lsn());
+
     // We send the event to the destination unconditionally.
     destination.apply_event(Event::Commit(event)).await?;
+
+    // After successfully applying a commit event in the destination, we update our replication origin
+    // state to point to the `end_lsn` of the commit message, which points to the next WAL entry that
+    // we should continue/start from.
+    let replication_origin_state =
+        ReplicationOriginState::new(identity.id(), None, PgLsn::from(end_lsn));
+    state_store
+        .store_replication_origin_state(replication_origin_state, true)
+        .await?;
 
     // We process syncing tables since we just arrived at the end of a transaction, and we want to
     // synchronize all the workers.

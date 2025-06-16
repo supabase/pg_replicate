@@ -22,9 +22,6 @@ pub enum EventConversionError {
     #[error("Binary format is not supported for data conversion")]
     BinaryFormatNotSupported,
 
-    #[error("Unsupported type encountered: {0}")]
-    UnsupportedType(String),
-
     #[error("Missing tuple data in delete body")]
     MissingTupleInDeleteBody,
 

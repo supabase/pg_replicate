@@ -77,7 +77,7 @@ pub enum EventsStreamError {
 
     /// An error occurred while calculating the elapsed time since PostgreSQL epoch.
     #[error("An error occurred while determining the elapsed time: {0}")]
-    EpocCalculationFailed(#[from] SystemTimeError),
+    EpochCalculationFailed(#[from] SystemTimeError),
 }
 
 pin_project! {
