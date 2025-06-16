@@ -78,21 +78,6 @@ impl CommitEvent {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct OriginEvent {
-    pub commit_lsn: u64,
-    pub name: String,
-}
-
-impl OriginEvent {
-    pub fn from_protocol(origin_body: &OriginBody) -> Result<Self, EventConversionError> {
-        Ok(Self {
-            commit_lsn: origin_body.commit_lsn(),
-            name: origin_body.name()?.to_string(),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct RelationEvent {
     pub rel_id: u32,
     pub namespace: String,
@@ -113,23 +98,6 @@ impl RelationEvent {
                 .iter()
                 .map(Column::from_protocol)
                 .collect::<Result<Vec<_>, _>>()?,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TypeEvent {
-    pub id: u32,
-    pub namespace: String,
-    pub name: String,
-}
-
-impl TypeEvent {
-    pub fn from_protocol(type_body: &TypeBody) -> Result<Self, EventConversionError> {
-        Ok(Self {
-            id: type_body.id(),
-            namespace: type_body.namespace()?.to_string(),
-            name: type_body.name()?.to_string(),
         })
     }
 }
@@ -219,9 +187,8 @@ pub enum Event {
     Update(UpdateEvent),
     Delete(DeleteEvent),
     Relation(RelationEvent),
-    Type(TypeEvent),
-    Origin(OriginEvent),
     Truncate(TruncateEvent),
+    Unsupported
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -343,15 +310,9 @@ where
             LogicalReplicationMessage::Commit(commit_body) => {
                 Ok(Event::Commit(CommitEvent::from_protocol(commit_body)))
             }
-            LogicalReplicationMessage::Origin(origin_body) => {
-                Ok(Event::Origin(OriginEvent::from_protocol(origin_body)?))
-            }
             LogicalReplicationMessage::Relation(relation_body) => Ok(Event::Relation(
                 RelationEvent::from_protocol(relation_body)?,
             )),
-            LogicalReplicationMessage::Type(type_body) => {
-                Ok(Event::Type(TypeEvent::from_protocol(type_body)?))
-            }
             LogicalReplicationMessage::Insert(insert_body) => {
                 self.convert_insert_to_event(insert_body).await
             }
@@ -363,6 +324,9 @@ where
             }
             LogicalReplicationMessage::Truncate(truncate_body) => {
                 Ok(Event::Truncate(TruncateEvent::from_protocol(truncate_body)))
+            }
+            LogicalReplicationMessage::Origin(_) | LogicalReplicationMessage::Type(_) => {
+                Ok(Event::Unsupported)
             }
             _ => Err(EventConversionError::UnknownReplicationMessage),
         }

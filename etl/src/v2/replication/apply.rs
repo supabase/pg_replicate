@@ -114,6 +114,14 @@ struct ApplyLoopState {
     ///
     /// This LSN is set at every `BEGIN` of a new transaction.
     remote_final_lsn: PgLsn,
+    /// The LSN extracted from `end_lsn` of `COMMIT` message.
+    ///
+    /// This LSN is set at every `COMMIT` message and signals the LSN from where to restart replication
+    /// in case of restarts.
+    ///
+    /// When set, the replication origin state should be updated with its value, if not set, nothing
+    /// should be done.
+    last_commit_end_lsn: Option<PgLsn>,
     /// A boolean indicating whether the loop should be completed.
     should_complete: bool,
 }
@@ -139,6 +147,7 @@ where
     let mut state = ApplyLoopState {
         last_received: origin_start_lsn,
         remote_final_lsn: PgLsn::from(0),
+        last_commit_end_lsn: None,
         should_complete: false,
     };
 
@@ -211,50 +220,55 @@ where
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
     let batch_size = messages_batch.len();
-    for (index, message) in messages_batch.into_iter().enumerate() {
-        let message = message?;
-        handle_replication_message(
-            &identity,
-            state,
-            stream.as_mut(),
-            message,
-            event_converter,
-            state_store,
-            destination,
-            hook,
-        )
-        .await?;
+    let mut events_batch = Vec::with_capacity(batch_size);
 
-        // If we should complete after processing a message, we want to finish the loop early, even
-        // though we assume that when `should_complete` is flipped to true, it means a boundary element
-        // has been found, meaning that it should be the last in batch. If that's not the case, we
-        // want to emit an error.
+    for message in messages_batch {
+        let event =
+            handle_replication_message(state, stream.as_mut(), message?, event_converter, hook)
+                .await?;
+
+        if let Some(event) = event {
+            events_batch.push(event);
+        }
+
+        // If we should complete after processing a message, we want to finish the loop early, to
+        // avoid processing additional elements which might lead to duplication.
+        //
+        // This can happen for example when a table sync worker has caught up with the apply worker
+        // but its batch contained more elements after the caught up element, in that case we don't
+        // want to process those elements, otherwise if we do, the apply worker will process them too
+        // causing duplicate data.
         if state.should_complete {
-            let remaining_messages = batch_size - index - 1;
-            if remaining_messages > 0 {
-                error!("There are {} remaining messages in the batch even though the should stop the apply loop", remaining_messages);
-            }
-
             return Ok(());
         }
+    }
+
+    // We apply the batch of events to the destination.
+    destination.apply_events(events_batch).await?;
+
+    // If we have a `last_commit_end_lsn`, it means that this batch contains one or more `COMMIT` messages and
+    // the LSN here is the highest LSN of the ones that were encountered, so we want to use this to update
+    // our progress in the replication origin.
+    if let Some(last_commit_end_lsn) = state.last_commit_end_lsn.take() {
+        let replication_origin_state =
+            ReplicationOriginState::new(identity.id(), None, last_commit_end_lsn);
+        state_store
+            .store_replication_origin_state(replication_origin_state, true)
+            .await?;
     }
 
     Ok(())
 }
 
-async fn handle_replication_message<S, D, T>(
-    identity: &PipelineIdentity,
+async fn handle_replication_message<S, T>(
     state: &mut ApplyLoopState,
     events_stream: Pin<&mut EventsStream>,
     message: ReplicationMessage<LogicalReplicationMessage>,
     event_converter: &EventConverter<S>,
-    state_store: &S,
-    destination: &D,
     hook: &T,
-) -> Result<(), ApplyLoopError>
+) -> Result<Option<Event>, ApplyLoopError>
 where
     S: StateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
@@ -270,16 +284,8 @@ where
                 state.last_received = end_lsn;
             }
 
-            handle_logical_replication_message(
-                identity,
-                state,
-                message.into_data(),
-                event_converter,
-                state_store,
-                destination,
-                hook,
-            )
-            .await?;
+            handle_logical_replication_message(state, message.into_data(), event_converter, hook)
+                .await
         }
         ReplicationMessage::PrimaryKeepAlive(message) => {
             let end_lsn = PgLsn::from(message.wal_end());
@@ -290,25 +296,21 @@ where
             events_stream
                 .send_status_update(state.last_received)
                 .await?;
-        }
-        _ => {}
-    }
 
-    Ok(())
+            Ok(None)
+        }
+        _ => Ok(None),
+    }
 }
 
-async fn handle_logical_replication_message<S, D, T>(
-    identity: &PipelineIdentity,
+async fn handle_logical_replication_message<S, T>(
     state: &mut ApplyLoopState,
     message: LogicalReplicationMessage,
     event_converter: &EventConverter<S>,
-    state_store: &S,
-    destination: &D,
     hook: &T,
-) -> Result<(), ApplyLoopError>
+) -> Result<Option<Event>, ApplyLoopError>
 where
     S: StateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
@@ -326,7 +328,11 @@ where
                 ));
             };
 
-            handle_begin_event::<D, T>(state, message, event, destination).await
+            // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
+            // `Commit` message.
+            state.remote_final_lsn = message.final_lsn().into();
+
+            Ok(Some(Event::Begin(event)))
         }
         LogicalReplicationMessage::Commit(message) => {
             let Event::Commit(event) = event else {
@@ -336,20 +342,36 @@ where
                 ));
             };
 
-            handle_commit_event(
-                identity,
-                state,
-                message,
-                event,
-                state_store,
-                destination,
-                hook,
-            )
-            .await
+            // If the commit lsn of the message is different from the remote final lsn, it means that the
+            // transaction that was started expect a different commit lsn in the commit message. In this case,
+            // we want to bail assuming we are in an inconsistent state.
+            let commit_lsn = PgLsn::from(message.commit_lsn());
+            if commit_lsn != state.remote_final_lsn {
+                return Err(ApplyLoopError::InvalidCommitLsn(
+                    commit_lsn,
+                    state.remote_final_lsn,
+                ));
+            }
+
+            // We track the `end_lsn` of this commit since we will use this to update the replication origin
+            // state once the batch is processed.
+            state.last_commit_end_lsn = Some(PgLsn::from(message.end_lsn()));
+
+            // We process syncing tables since we just arrived at the end of a transaction, and we want to
+            // synchronize all the workers.
+            //
+            // The `end_lsn` here refers to the LSN of the record right after the commit record.
+            let continue_loop = hook
+                .process_syncing_tables(message.end_lsn().into())
+                .await?;
+            if !continue_loop {
+                state.should_complete = true;
+            }
+
+            Ok(Some(Event::Commit(event)))
         }
-        LogicalReplicationMessage::Origin(_) => Ok(()),
-        LogicalReplicationMessage::Relation(_) => Ok(()),
-        LogicalReplicationMessage::Type(_) => Ok(()),
+        // TODO: update schema cache.
+        LogicalReplicationMessage::Relation(_) => Ok(None),
         LogicalReplicationMessage::Insert(message) => {
             let Event::Insert(event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(
@@ -358,14 +380,14 @@ where
                 ));
             };
 
-            handle_simple_dml_event(
-                state,
-                message.rel_id(),
-                Event::Insert(event),
-                destination,
-                hook,
-            )
-            .await
+            if !hook
+                .should_apply_changes(message.rel_id(), state.remote_final_lsn)
+                .await?
+            {
+                return Ok(None);
+            }
+
+            Ok(Some(Event::Insert(event)))
         }
         LogicalReplicationMessage::Update(message) => {
             let Event::Update(event) = event else {
@@ -374,14 +396,15 @@ where
                     "Event::Update".to_string(),
                 ));
             };
-            handle_simple_dml_event(
-                state,
-                message.rel_id(),
-                Event::Update(event),
-                destination,
-                hook,
-            )
-            .await
+
+            if !hook
+                .should_apply_changes(message.rel_id(), state.remote_final_lsn)
+                .await?
+            {
+                return Ok(None);
+            }
+
+            Ok(Some(Event::Update(event)))
         }
         LogicalReplicationMessage::Delete(message) => {
             let Event::Delete(event) = event else {
@@ -390,152 +413,39 @@ where
                     "Event::Delete".to_string(),
                 ));
             };
-            handle_simple_dml_event(
-                state,
-                message.rel_id(),
-                Event::Delete(event),
-                destination,
-                hook,
-            )
-            .await
+
+            if !hook
+                .should_apply_changes(message.rel_id(), state.remote_final_lsn)
+                .await?
+            {
+                return Ok(None);
+            }
+
+            Ok(Some(Event::Delete(event)))
         }
         LogicalReplicationMessage::Truncate(message) => {
-            let Event::Truncate(event) = event else {
+            let Event::Truncate(mut event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(
                     format!("{:?}", event),
                     "Event::Truncate".to_string(),
                 ));
             };
 
-            handle_truncate_event(state, message, event, destination, hook).await
+            let mut rel_ids = Vec::with_capacity(message.rel_ids().len());
+            for &table_id in message.rel_ids().iter() {
+                if hook
+                    .should_apply_changes(table_id, state.remote_final_lsn)
+                    .await?
+                {
+                    rel_ids.push(table_id);
+                }
+            }
+            event.rel_ids = rel_ids;
+
+            Ok(Some(Event::Truncate(event)))
         }
-        _ => Ok(()),
+        LogicalReplicationMessage::Origin(_) => Ok(None),
+        LogicalReplicationMessage::Type(_) => Ok(None),
+        _ => Ok(None),
     }
-}
-
-async fn handle_begin_event<D, T>(
-    state: &mut ApplyLoopState,
-    message: protocol::BeginBody,
-    event: BeginEvent,
-    destination: &D,
-) -> Result<(), ApplyLoopError>
-where
-    D: Destination + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
-    // `Commit` message.
-    state.remote_final_lsn = message.final_lsn().into();
-
-    // We send the event to the destination unconditionally.
-    destination.apply_event(Event::Begin(event)).await?;
-
-    Ok(())
-}
-
-async fn handle_commit_event<S, D, T>(
-    identity: &PipelineIdentity,
-    state: &mut ApplyLoopState,
-    message: protocol::CommitBody,
-    event: CommitEvent,
-    state_store: &S,
-    destination: &D,
-    hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    S: StateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    // If the commit lsn of the message is different from the remote final lsn, it means that the
-    // transaction that was started expect a different commit lsn in the commit message. In this case,
-    // we want to bail assuming we are in an inconsistent state.
-    let commit_lsn = PgLsn::from(message.commit_lsn());
-    if commit_lsn != state.remote_final_lsn {
-        return Err(ApplyLoopError::InvalidCommitLsn(
-            commit_lsn,
-            state.remote_final_lsn,
-        ));
-    }
-
-    let end_lsn = PgLsn::from(message.end_lsn());
-
-    // We send the event to the destination unconditionally.
-    destination.apply_event(Event::Commit(event)).await?;
-
-    // After successfully applying a commit event in the destination, we update our replication origin
-    // state to point to the `end_lsn` of the commit message, which points to the next WAL entry that
-    // we should continue/start from.
-    let replication_origin_state =
-        ReplicationOriginState::new(identity.id(), None, PgLsn::from(end_lsn));
-    state_store
-        .store_replication_origin_state(replication_origin_state, true)
-        .await?;
-
-    // We process syncing tables since we just arrived at the end of a transaction, and we want to
-    // synchronize all the workers.
-    //
-    // The `end_lsn` here refers to the LSN of the record right after the commit record.
-    let continue_loop = hook
-        .process_syncing_tables(message.end_lsn().into())
-        .await?;
-    if !continue_loop {
-        state.should_complete = true;
-    }
-
-    Ok(())
-}
-
-async fn handle_simple_dml_event<D, T>(
-    state: &mut ApplyLoopState,
-    table_id: Oid,
-    event: Event,
-    destination: &D,
-    hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    D: Destination + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    if !hook
-        .should_apply_changes(table_id, state.remote_final_lsn)
-        .await?
-    {
-        return Ok(());
-    }
-
-    destination.apply_event(event).await?;
-
-    Ok(())
-}
-
-async fn handle_truncate_event<D, T>(
-    state: &mut ApplyLoopState,
-    message: protocol::TruncateBody,
-    mut event: TruncateEvent,
-    destination: &D,
-    hook: &T,
-) -> Result<(), ApplyLoopError>
-where
-    D: Destination + Clone + Send + 'static,
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    let mut rel_ids = Vec::with_capacity(message.rel_ids().len());
-    for &table_id in message.rel_ids().iter() {
-        if hook
-            .should_apply_changes(table_id, state.remote_final_lsn)
-            .await?
-        {
-            rel_ids.push(table_id);
-        }
-    }
-    event.rel_ids = rel_ids;
-
-    destination.apply_event(Event::Truncate(event)).await?;
-
-    Ok(())
 }
