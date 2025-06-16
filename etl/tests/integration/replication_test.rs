@@ -79,7 +79,7 @@ where
 async fn test_replication_client_creates_slot() {
     let database = spawn_database().await;
 
-    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -99,7 +99,7 @@ async fn test_replication_client_creates_slot() {
 async fn test_create_and_delete_slot() {
     let database = spawn_database().await;
 
-    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -124,7 +124,7 @@ async fn test_create_and_delete_slot() {
 async fn test_delete_nonexistent_slot() {
     let database = spawn_database().await;
 
-    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -139,7 +139,7 @@ async fn test_delete_nonexistent_slot() {
 async fn test_replication_client_doesnt_recreate_slot() {
     let database = spawn_database().await;
 
-    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -155,7 +155,7 @@ async fn test_replication_client_doesnt_recreate_slot() {
 async fn test_table_schema_copy_is_consistent() {
     let database = spawn_database().await;
 
-    let client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -196,7 +196,7 @@ async fn test_table_schema_copy_is_consistent() {
 async fn test_table_schema_copy_across_multiple_connections() {
     let database = spawn_database().await;
 
-    let first_client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let first_client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
     let second_client = first_client.duplicate().await.unwrap();
@@ -290,7 +290,7 @@ async fn test_table_schema_copy_across_multiple_connections() {
 async fn test_table_copy_stream_is_consistent() {
     let database = spawn_database().await;
 
-    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let parent_client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -353,7 +353,7 @@ async fn test_table_copy_stream_is_consistent() {
 async fn test_publication_creation_and_check() {
     let database = spawn_database().await;
 
-    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let parent_client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -403,7 +403,7 @@ async fn test_publication_creation_and_check() {
 async fn test_start_logical_replication() {
     let database = spawn_database().await;
 
-    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let parent_client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 
@@ -441,7 +441,7 @@ async fn test_start_logical_replication() {
 
     // We create a new connection and start another replication instance from the same slot to check
     // if the same data is received.
-    let parent_client = PgReplicationClient::connect_no_tls(database.options.clone())
+    let parent_client = PgReplicationClient::connect_no_tls(database.config.clone())
         .await
         .unwrap();
 

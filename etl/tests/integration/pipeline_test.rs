@@ -133,7 +133,7 @@ async fn test_table_copy_with_insert_and_update() {
 
     // We create a pipeline that copies the users table.
     let mut pipeline = spawn_pg_pipeline(
-        &database.options,
+        &database.config,
         PipelineMode::CopyTable {
             table_names: vec![test_table_name("users")],
         },
@@ -154,7 +154,7 @@ async fn test_table_copy_with_insert_and_update() {
 
     // We recreate the pipeline to copy again and see if we have the new data.
     let mut pipeline = spawn_pg_pipeline(
-        &database.options,
+        &database.config,
         PipelineMode::CopyTable {
             table_names: vec![test_table_name("users")],
         },
@@ -181,7 +181,7 @@ async fn test_cdc_with_multiple_inserts() {
     // We create a pipeline that subscribes to the changes of the users table.
     let destination = TestDestination::new();
     let mut pipeline = spawn_async_pg_pipeline(
-        &database.options,
+        &database.config,
         PipelineMode::Cdc {
             publication: "users_publication".to_owned(),
             slot_name: test_slot_name("users_slot"),

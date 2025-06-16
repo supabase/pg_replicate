@@ -11,7 +11,7 @@ pub enum TableModification<'a> {
 }
 
 pub struct PgDatabase<G> {
-    pub options: PgConnectionConfig,
+    pub config: PgConnectionConfig,
     pub client: Option<G>,
     destroy_on_drop: bool,
 }
@@ -222,11 +222,11 @@ impl<G: GenericClient> PgDatabase<G> {
 }
 
 impl PgDatabase<Client> {
-    pub async fn new(options: PgConnectionConfig) -> Self {
-        let client = create_pg_database(&options).await;
+    pub async fn new(config: PgConnectionConfig) -> Self {
+        let client = create_pg_database(&config).await;
 
         Self {
-            options,
+            config,
             client: Some(client),
             destroy_on_drop: true,
         }
@@ -240,7 +240,7 @@ impl PgDatabase<Client> {
         let transaction = self.client.as_mut().unwrap().transaction().await.unwrap();
 
         PgDatabase {
-            options: self.options.clone(),
+            config: self.config.clone(),
             client: Some(transaction),
             destroy_on_drop: false,
         }
@@ -261,7 +261,7 @@ impl<G> Drop for PgDatabase<G> {
             // To use `block_in_place,` we need a multithreaded runtime since when a blocking
             // task is issued, the runtime will offload existing tasks to another worker.
             tokio::task::block_in_place(move || {
-                Handle::current().block_on(async move { drop_pg_database(&self.options).await });
+                Handle::current().block_on(async move { drop_pg_database(&self.config).await });
             });
         }
     }

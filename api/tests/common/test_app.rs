@@ -200,7 +200,7 @@ pub struct TestApp {
     pub address: String,
     pub api_client: reqwest::Client,
     pub api_key: String,
-    options: PgConnectionConfig,
+    config: PgConnectionConfig,
     server_handle: tokio::task::JoinHandle<io::Result<()>>,
 }
 
@@ -212,7 +212,7 @@ impl Drop for TestApp {
         // To use `block_in_place,` we need a multithreaded runtime since when a blocking
         // task is issued, the runtime will offload existing tasks to another worker.
         tokio::task::block_in_place(move || {
-            Handle::current().block_on(async move { drop_pg_database(&self.options).await });
+            Handle::current().block_on(async move { drop_pg_database(&self.config).await });
         });
     }
 }
@@ -575,7 +575,7 @@ pub async fn spawn_test_app() -> TestApp {
         address: format!("http://{base_address}:{port}"),
         api_client: reqwest::Client::new(),
         api_key,
-        options: settings.database,
+        config: settings.database,
         server_handle,
     }
 }
