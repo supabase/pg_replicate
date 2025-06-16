@@ -1,5 +1,5 @@
 use etl::conversions::table_row::TableRow;
-use etl::v2::conversions::event::Event;
+use etl::v2::conversions::event::{Event, EventType};
 use etl::v2::destination::base::{Destination, DestinationError};
 use postgres::schema::{Oid, TableSchema};
 use std::collections::HashMap;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
 
-use crate::common::event::{check_events_count, EventType};
+use crate::common::event::check_events_count;
 
 type EventCondition = Box<dyn Fn(&[Event]) -> bool + Send + Sync>;
 type SchemaCondition = Box<dyn Fn(&[TableSchema]) -> bool + Send + Sync>;

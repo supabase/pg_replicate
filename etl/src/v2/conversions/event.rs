@@ -8,7 +8,7 @@ use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
 use postgres::types::convert_type_oid_to_type;
 use postgres_replication::protocol;
 use postgres_replication::protocol::LogicalReplicationMessage;
-use std::{io, str::Utf8Error};
+use std::{fmt, io, str::Utf8Error};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -163,6 +163,54 @@ pub enum Event {
     Relation(RelationEvent),
     Truncate(TruncateEvent),
     Unsupported,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum EventType {
+    Begin,
+    Commit,
+    Insert,
+    Update,
+    Delete,
+    Relation,
+    Truncate,
+    Unsupported,
+}
+
+impl fmt::Display for EventType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Begin => write!(f, "Begin"),
+            Self::Commit => write!(f, "Commit"),
+            Self::Insert => write!(f, "Insert"),
+            Self::Update => write!(f, "Update"),
+            Self::Delete => write!(f, "Delete"),
+            Self::Relation => write!(f, "Relation"),
+            Self::Truncate => write!(f, "Truncate"),
+            Self::Unsupported => write!(f, "Unsupported"),
+        }
+    }
+}
+
+impl From<&Event> for EventType {
+    fn from(event: &Event) -> Self {
+        match event {
+            Event::Begin(_) => EventType::Begin,
+            Event::Commit(_) => EventType::Commit,
+            Event::Insert(_) => EventType::Insert,
+            Event::Update(_) => EventType::Update,
+            Event::Delete(_) => EventType::Delete,
+            Event::Relation(_) => EventType::Relation,
+            Event::Truncate(_) => EventType::Truncate,
+            &Event::Unsupported => EventType::Unsupported,
+        }
+    }
+}
+
+impl From<Event> for EventType {
+    fn from(event: Event) -> Self {
+        (&event).into()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

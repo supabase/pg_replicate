@@ -1,6 +1,6 @@
 use etl::conversions::table_row::TableRow;
 use etl::conversions::Cell;
-use etl::v2::conversions::event::{Event, InsertEvent};
+use etl::v2::conversions::event::{Event, EventType, InsertEvent};
 use etl::v2::state::table::TableReplicationPhaseType;
 use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
@@ -11,7 +11,7 @@ use tokio_postgres::{Client, GenericClient};
 
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::destination_v2::TestDestination;
-use crate::common::event::{group_events_by_type_and_table_id, EventType};
+use crate::common::event::group_events_by_type_and_table_id;
 use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
 use crate::common::state_store::{
     FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,

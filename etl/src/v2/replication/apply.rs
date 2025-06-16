@@ -13,7 +13,7 @@ use tracing::error;
 
 use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::conversions::event::{Event, EventConversionError, EventConverter};
+use crate::v2::conversions::event::{Event, EventConversionError, EventConverter, EventType};
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
@@ -64,7 +64,7 @@ pub enum ApplyLoopError {
     InvalidCommitLsn(PgLsn, PgLsn),
 
     #[error("An invalid event {0} was received (expected {1})")]
-    InvalidEvent(String, String),
+    InvalidEvent(EventType, EventType),
 }
 
 impl From<ApplyWorkerHookError> for ApplyLoopError {
@@ -197,16 +197,6 @@ where
         flush_lsn: origin_start_lsn,
         apply_lsn: origin_start_lsn,
     };
-
-    if let SlotUsage::ApplyWorker = hook.slot_usage() {
-        let write_lsn: u64 = last_status_update.write_lsn.into();
-        let flush_lsn: u64 = last_status_update.flush_lsn.into();
-        let apply_lsn: u64 = last_status_update.apply_lsn.into();
-        println!(
-            "INITIAL STATUS write: {:?}, flush: {:?}, apply: {:?}",
-            write_lsn, flush_lsn, apply_lsn
-        );
-    }
 
     // We initialize the shared state that is used throughout the loop to track progress.
     let mut state = ApplyLoopState {
@@ -393,10 +383,7 @@ where
     match message {
         LogicalReplicationMessage::Begin(message) => {
             let Event::Begin(event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(
-                    format!("{:?}", event),
-                    "Event::Begin".to_string(),
-                ));
+                return Err(ApplyLoopError::InvalidEvent(event.into(), EventType::Begin));
             };
 
             // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
@@ -409,8 +396,8 @@ where
         LogicalReplicationMessage::Commit(message) => {
             let Event::Commit(event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(
-                    format!("{:?}", event),
-                    "Event::Commit".to_string(),
+                    event.into(),
+                    EventType::Commit,
                 ));
             };
 
@@ -451,8 +438,8 @@ where
         LogicalReplicationMessage::Insert(message) => {
             let Event::Insert(event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(
-                    format!("{:?}", event),
-                    "Event::Insert".to_string(),
+                    event.into(),
+                    EventType::Insert,
                 ));
             };
 
@@ -474,8 +461,8 @@ where
         LogicalReplicationMessage::Update(message) => {
             let Event::Update(event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(
-                    format!("{:?}", event),
-                    "Event::Update".to_string(),
+                    event.into(),
+                    EventType::Update,
                 ));
             };
 
@@ -497,8 +484,8 @@ where
         LogicalReplicationMessage::Delete(message) => {
             let Event::Delete(event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(
-                    format!("{:?}", event),
-                    "Event::Delete".to_string(),
+                    event.into(),
+                    EventType::Delete,
                 ));
             };
 
@@ -520,8 +507,8 @@ where
         LogicalReplicationMessage::Truncate(message) => {
             let Event::Truncate(mut event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(
-                    format!("{:?}", event),
-                    "Event::Truncate".to_string(),
+                    event.into(),
+                    EventType::Truncate,
                 ));
             };
 

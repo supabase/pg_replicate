@@ -1,33 +1,6 @@
-use etl::v2::conversions::event::Event;
+use etl::v2::conversions::event::{Event, EventType};
 use postgres::schema::Oid;
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum EventType {
-    Begin,
-    Commit,
-    Insert,
-    Update,
-    Delete,
-    Relation,
-    Truncate,
-    Unsupported,
-}
-
-impl From<&Event> for EventType {
-    fn from(event: &Event) -> Self {
-        match event {
-            Event::Begin(_) => EventType::Begin,
-            Event::Commit(_) => EventType::Commit,
-            Event::Insert(_) => EventType::Insert,
-            Event::Update(_) => EventType::Update,
-            Event::Delete(_) => EventType::Delete,
-            Event::Relation(_) => EventType::Relation,
-            Event::Truncate(_) => EventType::Truncate,
-            &Event::Unsupported => EventType::Unsupported,
-        }
-    }
-}
 
 pub fn group_events_by_type(events: &[Event]) -> HashMap<EventType, Vec<Event>> {
     let mut grouped = HashMap::new();
