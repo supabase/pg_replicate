@@ -22,3 +22,6 @@ Cargo.lock
 
 # macOS system files
 .DS_Store
+
+# Ignore mkdocs build directory
+site/
