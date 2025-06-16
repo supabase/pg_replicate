@@ -10,7 +10,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::tls::MakeTlsConnect;
-use tokio_postgres::types::{Kind, Type};
 use tokio_postgres::{
     config::ReplicationMode, types::PgLsn, Client, Config, Connection, CopyOutStream, NoTls,
     SimpleQueryMessage, SimpleQueryRow, Socket,

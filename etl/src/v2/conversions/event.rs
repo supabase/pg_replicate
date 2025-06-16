@@ -10,7 +10,6 @@ use postgres_replication::protocol;
 use postgres_replication::protocol::LogicalReplicationMessage;
 use std::{io, str::Utf8Error};
 use thiserror::Error;
-use tokio_postgres::types::{Kind, Type};
 
 #[derive(Debug, Error)]
 pub enum EventConversionError {
