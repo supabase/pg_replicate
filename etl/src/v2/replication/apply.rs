@@ -12,7 +12,7 @@ use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 use tracing::error;
 
-use crate::v2::concurrency::stream::BoundedBatchStream;
+use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::conversions::event::{
     BeginEvent, CommitEvent, Event, EventConversionError, EventConverter, TruncateEvent,
@@ -155,7 +155,7 @@ where
         .start_logical_replication(identity.publication_name(), &slot_name, origin_start_lsn)
         .await?;
     let logical_replication_stream = EventsStream::wrap(logical_replication_stream);
-    let logical_replication_stream = BoundedBatchStream::wrap(
+    let logical_replication_stream = BatchStream::wrap(
         logical_replication_stream,
         config.batch_config.clone(),
         shutdown_rx.clone(),

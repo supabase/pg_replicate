@@ -1,4 +1,4 @@
-use crate::v2::concurrency::stream::BoundedBatchStream;
+use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
@@ -200,11 +200,8 @@ where
                 .await?;
             let table_copy_stream =
                 TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-            let table_copy_stream = BoundedBatchStream::wrap(
-                table_copy_stream,
-                config.batch_config.clone(),
-                shutdown_rx,
-            );
+            let table_copy_stream =
+                BatchStream::wrap(table_copy_stream, config.batch_config.clone(), shutdown_rx);
             pin!(table_copy_stream);
 
             // We start consuming the table stream. If any error occurs, we will bail the entire copy since

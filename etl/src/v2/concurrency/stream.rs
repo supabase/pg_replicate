@@ -13,19 +13,11 @@ pin_project! {
     /// A stream adapter that batches items based on size limits and timeouts.
     ///
     /// This stream collects items from the underlying stream into batches, emitting them when either:
-    /// - The batch reaches its maximum size and the last item indicates it's a batch boundary
-    /// - A timeout occurs and the last item indicates it's a batch boundary
-    /// - The stream is forcefully stopped
-    ///
-    /// The stream guarantees that batches will end on items that return `true` from
-    /// [`BatchBoundary::is_on_boundary`], unless the stream is forcefully stopped.
-    ///
-    /// # Implementation Details
-    ///
-    /// The implementation is adapted from Tokio's chunks_timeout stream extension.
+    /// - The batch reaches its maximum size
+    /// - A timeout occurs
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
-    pub struct BoundedBatchStream<B, S: Stream<Item = B>> {
+    pub struct BatchStream<B, S: Stream<Item = B>> {
         #[pin]
         stream: S,
         #[pin]
@@ -39,13 +31,13 @@ pin_project! {
     }
 }
 
-impl<B, S: Stream<Item = B>> BoundedBatchStream<B, S> {
-    /// Creates a new [`BoundedBatchStream`] with the given configuration.
+impl<B, S: Stream<Item = B>> BatchStream<B, S> {
+    /// Creates a new [`BatchStream`] with the given configuration.
     ///
     /// The stream will batch items according to the provided `batch_config` and can be
     /// stopped using the `shutdown_rx` watch channel.
     pub fn wrap(stream: S, batch_config: BatchConfig, shutdown_rx: watch::Receiver<()>) -> Self {
-        BoundedBatchStream {
+        BatchStream {
             stream,
             deadline: None,
             shutdown_rx,
@@ -65,7 +57,7 @@ impl<B, S: Stream<Item = B>> BoundedBatchStream<B, S> {
     }
 }
 
-impl<B, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> {
+impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
     type Item = Vec<S::Item>;
 
     /// Polls the stream for the next batch of items.
@@ -76,8 +68,8 @@ impl<B, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> {
     /// - `Poll::Pending` when more items are needed to form a batch
     ///
     /// The stream will emit a batch when:
-    /// - The batch reaches maximum size and the last item is a batch boundary
-    /// - A timeout occurs and the last item is a batch boundary
+    /// - The batch reaches maximum size
+    /// - A timeout occurs
     /// - The stream is forcefully stopped
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.as_mut().project();
