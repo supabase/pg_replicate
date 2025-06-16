@@ -4,7 +4,7 @@ use etl::pipeline::destinations::BatchDestination;
 use etl::pipeline::sources::postgres::{PostgresSource, TableNamesFrom};
 use etl::pipeline::PipelineAction;
 use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgConnectionConfig;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -41,7 +41,7 @@ pub fn test_slot_name(slot_name: &str) -> String {
 ///
 /// Panics if the PostgreSQL source cannot be created.
 pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
-    options: &PgDatabaseConfig,
+    config: &PgConnectionConfig,
     mode: PipelineMode,
     destination: Snk,
 ) -> BatchDataPipeline<PostgresSource, Snk> {
@@ -50,7 +50,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
     let pipeline = match mode {
         PipelineMode::CopyTable { table_names } => {
             let source = PostgresSource::new(
-                options.clone(),
+                config.clone(),
                 vec![],
                 None,
                 TableNamesFrom::Vec(table_names),
@@ -65,7 +65,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
             slot_name,
         } => {
             let source = PostgresSource::new(
-                options.clone(),
+                config.clone(),
                 vec![],
                 Some(slot_name),
                 TableNamesFrom::Publication(publication),
@@ -85,11 +85,11 @@ pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
 /// This function creates a pipeline and wraps it in a [`PipelineRunner`] for
 /// easier management of the pipeline lifecycle.
 pub async fn spawn_async_pg_pipeline<Dst: BatchDestination + Send + 'static>(
-    options: &PgDatabaseConfig,
+    config: &PgConnectionConfig,
     mode: PipelineMode,
     destination: Dst,
 ) -> PipelineRunner<Dst> {
-    let pipeline = spawn_pg_pipeline(options, mode, destination).await;
+    let pipeline = spawn_pg_pipeline(config, mode, destination).await;
     PipelineRunner::new(pipeline)
 }
 

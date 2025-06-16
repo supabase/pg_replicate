@@ -1,4 +1,4 @@
-use postgres::sqlx::options::PgDatabaseOptions;
+use postgres::sqlx::config::PgConnectionConfig;
 use postgres::sqlx::test_utils::create_pg_database;
 use sqlx::PgPool;
 
@@ -8,8 +8,8 @@ use sqlx::PgPool;
 /// from the "./migrations" directory after creation. Returns a [`PgPool`]
 /// connected to the newly created and migrated database. Panics if database
 /// creation or migration fails.
-pub async fn create_etl_api_database(options: &PgDatabaseOptions) -> PgPool {
-    let connection_pool = create_pg_database(options).await;
+pub async fn create_etl_api_database(config: &PgConnectionConfig) -> PgPool {
+    let connection_pool = create_pg_database(config).await;
 
     sqlx::migrate!("./migrations")
         .run(&connection_pool)

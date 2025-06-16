@@ -1,5 +1,5 @@
 use postgres::schema::TableName;
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgConnectionConfig;
 use postgres::tokio::test_utils::PgDatabase;
 use tokio_postgres::config::SslMode;
 use tokio_postgres::Client;
@@ -33,7 +33,7 @@ pub fn test_table_name(name: &str) -> TableName {
 ///
 /// Panics if the test schema cannot be created.
 pub async fn spawn_database() -> PgDatabase<Client> {
-    let options = PgDatabaseConfig {
+    let options = PgConnectionConfig {
         host: "localhost".to_owned(),
         port: 5430,
         // We create a random database name to avoid conflicts with existing databases.

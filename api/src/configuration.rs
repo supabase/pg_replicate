@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 
 use base64::{prelude::BASE64_STANDARD, Engine};
-use postgres::sqlx::options::PgDatabaseOptions;
+use postgres::sqlx::config::PgConnectionConfig;
 use serde::{
     de::{self, MapAccess, Unexpected, Visitor},
     Deserialize, Deserializer,
@@ -99,7 +99,7 @@ impl<'de> Deserialize<'de> for ApiKey {
 
 #[derive(serde::Deserialize, Clone)]
 pub struct Settings {
-    pub database: PgDatabaseOptions,
+    pub database: PgConnectionConfig,
     pub application: ApplicationSettings,
     pub encryption_key: EncryptionKey,
     pub api_key: String,

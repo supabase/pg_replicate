@@ -1,4 +1,4 @@
-use crate::sqlx::options::PgDatabaseOptions;
+use crate::sqlx::config::PgConnectionConfig;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 
 /// Creates a new PostgreSQL database and returns a connection pool to it.
@@ -6,18 +6,18 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 /// Establishes a connection to the PostgreSQL server using the provided options,
 /// creates a new database, and returns a [`PgPool`] connected to the new database.
 /// Panics if the connection fails or if database creation fails.
-pub async fn create_pg_database(options: &PgDatabaseOptions) -> PgPool {
+pub async fn create_pg_database(config: &PgConnectionConfig) -> PgPool {
     // Create the database via a single connection.
-    let mut connection = PgConnection::connect_with(&options.without_db())
+    let mut connection = PgConnection::connect_with(&config.without_db())
         .await
         .expect("Failed to connect to Postgres");
     connection
-        .execute(&*format!(r#"create database "{}";"#, options.name))
+        .execute(&*format!(r#"create database "{}";"#, config.name))
         .await
         .expect("Failed to create database");
 
     // Create a connection pool to the database.
-    PgPool::connect_with(options.with_db())
+    PgPool::connect_with(config.with_db())
         .await
         .expect("Failed to connect to Postgres")
 }
@@ -26,11 +26,11 @@ pub async fn create_pg_database(options: &PgDatabaseOptions) -> PgPool {
 ///
 /// Connects to the PostgreSQL server, forcefully terminates all active connections
 /// to the target database, and drops the database if it exists. Useful for cleaning
-/// up test databases. Takes a reference to [`PgDatabaseOptions`] specifying the database
+/// up test databases. Takes a reference to [`PgConnectionConfig`] specifying the database
 /// to drop. Panics if any operation fails.
-pub async fn drop_pg_database(options: &PgDatabaseOptions) {
+pub async fn drop_pg_database(config: &PgConnectionConfig) {
     // Connect to the default database.
-    let mut connection = PgConnection::connect_with(&options.without_db())
+    let mut connection = PgConnection::connect_with(&config.without_db())
         .await
         .expect("Failed to connect to Postgres");
 
@@ -42,14 +42,14 @@ pub async fn drop_pg_database(options: &PgDatabaseOptions) {
             from pg_stat_activity
             where pg_stat_activity.datname = '{}'
             and pid <> pg_backend_pid();"#,
-            options.name
+            config.name
         ))
         .await
         .expect("Failed to terminate database connections");
 
     // Drop the database.
     connection
-        .execute(&*format!(r#"drop database if exists "{}";"#, options.name))
+        .execute(&*format!(r#"drop database if exists "{}";"#, config.name))
         .await
         .expect("Failed to destroy database");
 }

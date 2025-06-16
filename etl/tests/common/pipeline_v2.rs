@@ -4,7 +4,7 @@ use etl::v2::config::retry::RetryConfig;
 use etl::v2::destination::base::Destination;
 use etl::v2::pipeline::{Pipeline, PipelineIdentity};
 use etl::v2::state::store::base::StateStore;
-use postgres::tokio::options::PgDatabaseConfig;
+use postgres::tokio::config::PgConnectionConfig;
 use rand::random;
 use std::time::Duration;
 
@@ -15,7 +15,7 @@ pub fn create_pipeline_identity(publication_name: &str) -> PipelineIdentity {
 
 pub fn spawn_pg_pipeline<S, D>(
     identity: &PipelineIdentity,
-    pg_database_config: &PgDatabaseConfig,
+    pg_connection_config: &PgConnectionConfig,
     state_store: S,
     destination: D,
 ) -> Pipeline<S, D>
@@ -24,7 +24,7 @@ where
     D: Destination + Clone + Send + Sync + 'static,
 {
     let config = PipelineConfig {
-        pg_database_config: pg_database_config.clone(),
+        pg_connection_config: pg_connection_config.clone(),
         batch_config: BatchConfig {
             max_batch_size: 1,
             max_batch_fill_time: Duration::from_secs(1),
