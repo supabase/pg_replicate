@@ -174,7 +174,7 @@ impl PgReplicationSlotTransaction {
 #[derive(Debug)]
 struct ClientInner {
     client: Client,
-    pg_database_config: PgConnectionConfig,
+    pg_connection_config: PgConnectionConfig,
     trusted_root_certs: Vec<CertificateDer<'static>>,
     with_tls: bool,
 }
@@ -196,11 +196,11 @@ impl PgReplicationClient {
     ///
     /// The connection is configured for logical replication mode.
     pub async fn connect_no_tls(
-        pg_database_config: PgConnectionConfig,
+        pg_connection_config: PgConnectionConfig,
     ) -> PgReplicationResult<Self> {
         info!("connecting to postgres without TLS");
 
-        let mut config: Config = pg_database_config.clone().into();
+        let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
 
         let (client, connection) = config.connect(NoTls).await?;
@@ -210,7 +210,7 @@ impl PgReplicationClient {
 
         let inner = ClientInner {
             client,
-            pg_database_config,
+            pg_connection_config,
             trusted_root_certs: vec![],
             with_tls: false,
         };
@@ -224,12 +224,12 @@ impl PgReplicationClient {
     /// The connection is configured for logical replication mode and uses the provided
     /// trusted root certificates for TLS verification.
     pub async fn connect_tls(
-        pg_database_config: PgConnectionConfig,
+        pg_connection_config: PgConnectionConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> PgReplicationResult<Self> {
         info!("connecting to postgres with TLS");
 
-        let mut config: Config = pg_database_config.clone().into();
+        let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
 
         let mut root_store = rustls::RootCertStore::empty();
@@ -247,7 +247,7 @@ impl PgReplicationClient {
 
         let inner = ClientInner {
             client,
-            pg_database_config,
+            pg_connection_config,
             trusted_root_certs,
             with_tls: true,
         };
@@ -460,12 +460,12 @@ impl PgReplicationClient {
     pub async fn duplicate(&self) -> PgReplicationResult<PgReplicationClient> {
         let duplicated_client = if self.inner.with_tls {
             PgReplicationClient::connect_tls(
-                self.inner.pg_database_config.clone(),
+                self.inner.pg_connection_config.clone(),
                 self.inner.trusted_root_certs.clone(),
             )
             .await?
         } else {
-            PgReplicationClient::connect_no_tls(self.inner.pg_database_config.clone()).await?
+            PgReplicationClient::connect_no_tls(self.inner.pg_connection_config.clone()).await?
         };
 
         Ok(duplicated_client)
