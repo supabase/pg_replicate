@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap');
+
+:root {
+    --md-text-font: "IBM Plex Sans", "Roboto", sans-serif;
+    /* color: red; */
+}
+
+[data-md-color-scheme="slate"] {
+    --md-default-bg-color:#121212;
+    --md-default-fg-color--light: white;
+    --md-code-bg-color: #2a2929;
+    --md-code-hl-keyword-color: #569cd6;
+}
+
+.md-header, .md-tabs {
+    background-color: var(--md-default-bg-color);
+    color: var(--md-default-fg-color--light);
+    font-family: var(--md-text-font);
+}

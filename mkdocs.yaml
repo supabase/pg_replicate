@@ -1,0 +1,49 @@
+site_name: ETL
+site_url: https://supabase.github.io/etl
+site_description: Build Postgres replication apps in Rust
+copyright: Copyright &copy; Supabase
+repo_name: supabase/etl
+repo_url: https://github.com/supabase/etl
+edit_uri: edit/main/docs/
+
+nav:
+  - Home:
+      - "index.md"
+  - Development:
+      - "database-setup.md"
+  - Design:
+      - "design.md"
+
+theme:
+  name: "material"
+  favicon: "assets/favicon.ico"
+  logo: "assets/etl.svg"
+  homepage: https://supabase.github.io/etl
+  features:
+    - content.code.annotate
+    - content.code.copy
+    - navigation.expand
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.footer
+  palette:
+    scheme: slate
+    primary: green
+    accent: green
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/twitter
+      link: https://x.com/supabase
+      name: Supabase on Twitter
+    - icon: fontawesome/brands/reddit
+      link: https://reddit.com/r/supabase
+      name: Supabase on Reddit
+    - icon: fontawesome/brands/github
+      link: https://github.com/supabase/etl
+      name: ETL on GitHub
