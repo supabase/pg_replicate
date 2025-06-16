@@ -1,18 +1,16 @@
-use core::str;
-use postgres::schema::{ColumnSchema, TableId, TableSchema};
-use postgres_replication::protocol;
-use protocol::{
-    BeginBody, CommitBody, DeleteBody, InsertBody, LogicalReplicationMessage, OriginBody,
-    RelationBody, TruncateBody, TupleData, TypeBody, UpdateBody,
-};
-use std::{io, str::Utf8Error};
-use thiserror::Error;
-
 use crate::conversions::table_row::TableRow;
 use crate::conversions::text::{FromTextError, TextFormatConverter};
 use crate::conversions::Cell;
 use crate::v2::pipeline::PipelineId;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
+use core::str;
+use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use postgres::types::convert_type_oid_to_type;
+use postgres_replication::protocol;
+use postgres_replication::protocol::LogicalReplicationMessage;
+use std::{io, str::Utf8Error};
+use thiserror::Error;
+use tokio_postgres::types::{Kind, Type};
 
 #[derive(Debug, Error)]
 pub enum EventConversionError {
@@ -49,7 +47,7 @@ pub struct BeginEvent {
 }
 
 impl BeginEvent {
-    pub fn from_protocol(begin_body: &BeginBody) -> Self {
+    pub fn from_protocol(begin_body: &protocol::BeginBody) -> Self {
         Self {
             final_lsn: begin_body.final_lsn(),
             timestamp: begin_body.timestamp(),
@@ -67,7 +65,7 @@ pub struct CommitEvent {
 }
 
 impl CommitEvent {
-    pub fn from_protocol(commit_body: &CommitBody) -> Self {
+    pub fn from_protocol(commit_body: &protocol::CommitBody) -> Self {
         Self {
             flags: commit_body.flags(),
             commit_lsn: commit_body.commit_lsn(),
@@ -79,26 +77,41 @@ impl CommitEvent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelationEvent {
-    pub rel_id: u32,
-    pub namespace: String,
-    pub name: String,
-    pub replica_identity: ReplicaIdentity,
-    pub columns: Vec<Column>,
+    pub table_schema: TableSchema,
 }
 
 impl RelationEvent {
-    pub fn from_protocol(relation_body: &RelationBody) -> Result<Self, EventConversionError> {
-        Ok(Self {
-            rel_id: relation_body.rel_id(),
-            namespace: relation_body.namespace()?.to_string(),
-            name: relation_body.name()?.to_string(),
-            replica_identity: ReplicaIdentity::from_protocol(relation_body.replica_identity()),
-            columns: relation_body
-                .columns()
-                .iter()
-                .map(Column::from_protocol)
-                .collect::<Result<Vec<_>, _>>()?,
-        })
+    pub fn from_protocol(
+        relation_body: &protocol::RelationBody,
+    ) -> Result<Self, EventConversionError> {
+        let table_name = TableName::new(
+            relation_body.namespace()?.to_string(),
+            relation_body.name()?.to_string(),
+        );
+        let column_schemas = relation_body
+            .columns()
+            .iter()
+            .map(Self::build_column_schema)
+            .collect::<Result<Vec<ColumnSchema>, _>>()?;
+        let table_schema = TableSchema::new(relation_body.rel_id(), table_name, column_schemas);
+
+        Ok(Self { table_schema })
+    }
+
+    fn build_column_schema(
+        column: &protocol::Column,
+    ) -> Result<ColumnSchema, EventConversionError> {
+        Ok(ColumnSchema::new(
+            column.name()?.to_string(),
+            convert_type_oid_to_type(column.type_id() as u32),
+            column.type_modifier(),
+            // We do not have access to this information, so we default it to `false`.
+            // TODO: figure out how to fill this value correctly or how to handle the missing value
+            //  better.
+            false,
+            // Currently 1 means that the column is part of the primary key.
+            column.flags() == 1,
+        ))
     }
 }
 
@@ -128,7 +141,7 @@ pub struct TruncateEvent {
 }
 
 impl TruncateEvent {
-    pub fn from_protocol(truncate_body: &TruncateBody) -> Self {
+    pub fn from_protocol(truncate_body: &protocol::TruncateBody) -> Self {
         Self {
             options: truncate_body.options(),
             rel_ids: truncate_body.rel_ids().to_vec(),
@@ -139,44 +152,6 @@ impl TruncateEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeepAliveEvent {
     pub reply: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ReplicaIdentity {
-    Default,
-    Nothing,
-    Full,
-    Index,
-}
-
-impl ReplicaIdentity {
-    fn from_protocol(identity: &protocol::ReplicaIdentity) -> Self {
-        match identity {
-            protocol::ReplicaIdentity::Default => Self::Default,
-            protocol::ReplicaIdentity::Nothing => Self::Nothing,
-            protocol::ReplicaIdentity::Full => Self::Full,
-            protocol::ReplicaIdentity::Index => Self::Index,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Column {
-    pub flags: i8,
-    pub name: String,
-    pub type_id: i32,
-    pub type_modifier: i32,
-}
-
-impl Column {
-    fn from_protocol(column: &protocol::Column) -> Result<Self, EventConversionError> {
-        Ok(Self {
-            flags: column.flags(),
-            name: column.name()?.to_string(),
-            type_id: column.type_id(),
-            type_modifier: column.type_modifier(),
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -220,16 +195,20 @@ where
 
     fn convert_tuple_to_row(
         column_schemas: &[ColumnSchema],
-        tuple_data: &[TupleData],
+        tuple_data: &[protocol::TupleData],
     ) -> Result<TableRow, EventConversionError> {
         let mut values = Vec::with_capacity(column_schemas.len());
 
         for (i, column_schema) in column_schemas.iter().enumerate() {
             let cell = match &tuple_data[i] {
-                TupleData::Null => Cell::Null,
-                TupleData::UnchangedToast => TextFormatConverter::default_value(&column_schema.typ),
-                TupleData::Binary(_) => return Err(EventConversionError::BinaryFormatNotSupported),
-                TupleData::Text(bytes) => {
+                protocol::TupleData::Null => Cell::Null,
+                protocol::TupleData::UnchangedToast => {
+                    TextFormatConverter::default_value(&column_schema.typ)
+                }
+                protocol::TupleData::Binary(_) => {
+                    return Err(EventConversionError::BinaryFormatNotSupported)
+                }
+                protocol::TupleData::Text(bytes) => {
                     let str = str::from_utf8(&bytes[..])?;
                     TextFormatConverter::try_from_str(&column_schema.typ, str)?
                 }
@@ -242,7 +221,7 @@ where
 
     async fn convert_insert_to_event(
         &self,
-        insert_body: &InsertBody,
+        insert_body: &protocol::InsertBody,
     ) -> Result<Event, EventConversionError> {
         let table_id = insert_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;
@@ -256,7 +235,7 @@ where
 
     async fn convert_update_to_event(
         &self,
-        update_body: &UpdateBody,
+        update_body: &protocol::UpdateBody,
     ) -> Result<Event, EventConversionError> {
         let table_id = update_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;
@@ -281,7 +260,7 @@ where
 
     async fn convert_delete_to_event(
         &self,
-        delete_body: &DeleteBody,
+        delete_body: &protocol::DeleteBody,
     ) -> Result<Event, EventConversionError> {
         let table_id = delete_body.rel_id();
         let table_schema = self.get_table_schema(table_id).await?;

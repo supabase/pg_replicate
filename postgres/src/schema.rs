@@ -20,6 +20,10 @@ pub struct TableName {
 }
 
 impl TableName {
+    pub fn new(schema: String, name: String) -> TableName {
+        Self { schema, name }
+    }
+
     /// Returns the table name as a properly quoted PostgreSQL identifier.
     ///
     /// This method ensures the schema and table names are properly escaped according to
@@ -59,6 +63,24 @@ pub struct ColumnSchema {
     pub nullable: bool,
     /// Whether the column is part of the table's primary key
     pub primary: bool,
+}
+
+impl ColumnSchema {
+    pub fn new(
+        name: String,
+        typ: Type,
+        modifier: TypeModifier,
+        nullable: bool,
+        primary: bool,
+    ) -> ColumnSchema {
+        Self {
+            name,
+            typ,
+            modifier,
+            nullable,
+            primary,
+        }
+    }
 }
 
 /// A type alias for PostgreSQL table OIDs.

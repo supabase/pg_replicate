@@ -1,6 +1,7 @@
 use pg_escape::{quote_identifier, quote_literal};
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::options::PgDatabaseConfig;
+use postgres::types::convert_type_oid_to_type;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use std::collections::HashMap;
@@ -693,12 +694,7 @@ impl PgReplicationClient {
                 let primary =
                     Self::get_row_value::<String>(&row, "primary", "pg_index").await? == "t";
 
-                let typ = Type::from_oid(type_oid).unwrap_or(Type::new(
-                    format!("unnamed(oid: {type_oid})"),
-                    type_oid,
-                    Kind::Simple,
-                    "pg_catalog".to_string(),
-                ));
+                let typ = convert_type_oid_to_type(type_oid);
 
                 column_schemas.push(ColumnSchema {
                     name,

@@ -53,13 +53,6 @@ impl Destination for MemoryDestination {
         Ok(())
     }
 
-    async fn apply_event(&self, event: Event) -> Result<(), DestinationError> {
-        let mut inner = self.inner.write().await;
-        inner.events.push(event);
-
-        Ok(())
-    }
-
     async fn apply_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.events.extend(events);

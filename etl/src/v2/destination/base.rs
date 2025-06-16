@@ -20,11 +20,6 @@ pub trait Destination {
         rows: Vec<TableRow>,
     ) -> impl Future<Output = Result<(), DestinationError>> + Send;
 
-    fn apply_event(
-        &self,
-        events: Event,
-    ) -> impl Future<Output = Result<(), DestinationError>> + Send;
-
     fn apply_events(
         &self,
         events: Vec<Event>,

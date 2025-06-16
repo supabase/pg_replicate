@@ -9,3 +9,4 @@ pub mod sqlx;
 pub mod time;
 #[cfg(feature = "tokio")]
 pub mod tokio;
+pub mod types;
