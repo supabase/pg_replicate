@@ -99,7 +99,9 @@ impl EventsStream {
     /// This is used to inform the server about the client's progress in processing replication events.
     pub async fn send_status_update(
         self: Pin<&mut Self>,
-        lsn: PgLsn,
+        write_lsn: PgLsn,
+        flush_lsn: PgLsn,
+        apply_lsn: PgLsn,
     ) -> Result<(), EventsStreamError> {
         let this = self.project();
         // The client's system clock at the time of transmission, as microseconds since midnight
@@ -109,7 +111,7 @@ impl EventsStream {
         let ts = POSTGRES_EPOCH.elapsed()?.as_micros() as i64;
 
         this.stream
-            .standby_status_update(lsn, lsn, lsn, ts, 0)
+            .standby_status_update(write_lsn, flush_lsn, apply_lsn, ts, 0)
             .await?;
 
         Ok(())

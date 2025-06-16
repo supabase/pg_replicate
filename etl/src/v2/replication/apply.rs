@@ -57,6 +57,9 @@ pub enum ApplyLoopError {
     #[error("An error occurred when interacting with the destination in the apply loop: {0}")]
     Destination(#[from] DestinationError),
 
+    #[error("A transaction should have started for the action ({0}) to be performed")]
+    InvalidTransaction(String),
+
     #[error("Incorrect commit LSN {0} in COMMIT message (expected {1})")]
     InvalidCommitLsn(PgLsn, PgLsn),
 
@@ -101,26 +104,73 @@ pub trait ApplyLoopHook {
     fn slot_usage(&self) -> SlotUsage;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+struct StatusUpdate {
+    write_lsn: PgLsn,
+    flush_lsn: PgLsn,
+    apply_lsn: PgLsn,
+}
+
+impl StatusUpdate {
+    fn update_write_lsn(&mut self, new_write_lsn: PgLsn) {
+        if new_write_lsn <= self.write_lsn {
+            return;
+        }
+
+        self.write_lsn = new_write_lsn;
+    }
+
+    fn update_flush_lsn(&mut self, flush_lsn: PgLsn) {
+        if flush_lsn <= self.flush_lsn {
+            return;
+        }
+
+        self.flush_lsn = flush_lsn;
+    }
+
+    fn update_apply_lsn(&mut self, apply_lsn: PgLsn) {
+        if apply_lsn <= self.apply_lsn {
+            return;
+        }
+
+        self.apply_lsn = apply_lsn;
+    }
+}
+
+#[derive(Debug)]
 struct ApplyLoopState {
-    /// The highest LSN of the received events.
+    /// The highest LSN received from the `end_lsn` field of replication messages.
     ///
-    /// This LSN is extracted from the `start_lsn` and `end_lsn` of each incoming event.
-    last_received: PgLsn,
+    /// This LSN is set with the `end_lsn` of each incoming message, and it's used for:
+    /// - Storing how far we have come when it comes to processing events (stored in the replication
+    /// origin state)
+    /// - Notifying Postgres about how far we have flushed events in our destination (so that Postgres
+    /// can perform WAL pruning)
+    last_end_lsn: Option<PgLsn>,
     /// The LSN of the commit WAL entry of the transaction that is currently being processed.
     ///
-    /// This LSN is set at every `BEGIN` of a new transaction.
-    remote_final_lsn: PgLsn,
-    /// The LSN extracted from `end_lsn` of `COMMIT` message.
-    ///
-    /// This LSN is set at every `COMMIT` message and signals the LSN from where to restart replication
-    /// in case of restarts.
-    ///
-    /// When set, the replication origin state should be updated with its value, if not set, nothing
-    /// should be done.
-    last_commit_end_lsn: Option<PgLsn>,
+    /// This LSN is set at every `BEGIN` of a new transaction, and it's used to know the `commit_lsn`
+    /// of the transaction which is currently being processed.
+    remote_final_lsn: Option<PgLsn>,
+    /// The LSNs of the status update that we want to send to Postgres.
+    next_status_update: StatusUpdate,
     /// A boolean indicating whether the loop should be completed.
     should_complete: bool,
+}
+
+impl ApplyLoopState {
+    fn update_last_end_lsn(&mut self, new_last_end_lsn: PgLsn) {
+        let Some(last_end_lsn) = &mut self.last_end_lsn else {
+            self.last_end_lsn = Some(new_last_end_lsn);
+            return;
+        };
+
+        if new_last_end_lsn <= *last_end_lsn {
+            return;
+        }
+
+        *last_end_lsn = new_last_end_lsn;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -140,11 +190,29 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
+    // The last status update is defaulted from the origin start lsn since at this point we haven't
+    // processed anything.
+    let last_status_update = StatusUpdate {
+        write_lsn: origin_start_lsn,
+        flush_lsn: origin_start_lsn,
+        apply_lsn: origin_start_lsn,
+    };
+
+    if let SlotUsage::ApplyWorker = hook.slot_usage() {
+        let write_lsn: u64 = last_status_update.write_lsn.into();
+        let flush_lsn: u64 = last_status_update.flush_lsn.into();
+        let apply_lsn: u64 = last_status_update.apply_lsn.into();
+        println!(
+            "INITIAL STATUS write: {:?}, flush: {:?}, apply: {:?}",
+            write_lsn, flush_lsn, apply_lsn
+        );
+    }
+
     // We initialize the shared state that is used throughout the loop to track progress.
     let mut state = ApplyLoopState {
-        last_received: origin_start_lsn,
-        remote_final_lsn: PgLsn::from(0),
-        last_commit_end_lsn: None,
+        last_end_lsn: None,
+        remote_final_lsn: None,
+        next_status_update: last_status_update,
         should_complete: false,
     };
 
@@ -194,7 +262,7 @@ where
                let logical_replication_stream = logical_replication_stream.as_mut();
                let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
 
-               events_stream.send_status_update(state.last_received).await?;
+               events_stream.send_status_update(state.next_status_update.write_lsn, state.next_status_update.flush_lsn, state.next_status_update.apply_lsn).await?;
             }
         }
     }
@@ -243,15 +311,21 @@ where
     // We apply the batch of events to the destination.
     destination.apply_events(events_batch).await?;
 
-    // If we have a `last_commit_end_lsn`, it means that this batch contains one or more `COMMIT` messages and
-    // the LSN here is the highest LSN of the ones that were encountered, so we want to use this to update
-    // our progress in the replication origin.
-    if let Some(last_commit_end_lsn) = state.last_commit_end_lsn.take() {
+    // At this point, the `last_end_lsn` will contain the LSN of the next entry that we want to fetch.
+    if let Some(last_end_lsn) = state.last_end_lsn.take() {
+        // We store the LSN in the replication origin state in order to be able to restart from that
+        // LSN.
         let replication_origin_state =
-            ReplicationOriginState::new(identity.id(), None, last_commit_end_lsn);
+            ReplicationOriginState::new(identity.id(), None, last_end_lsn);
         state_store
             .store_replication_origin_state(replication_origin_state, true)
             .await?;
+
+        // We also prepare the next status update for Postgres, where we will confirm that we flushed
+        // data up to this LSN to allow for WAL pruning on the database side.
+        // TODO: check if we want to send `apply_lsn` as a different value.
+        state.next_status_update.update_flush_lsn(last_end_lsn);
+        state.next_status_update.update_apply_lsn(last_end_lsn);
     }
 
     Ok(())
@@ -272,26 +346,26 @@ where
     match message {
         ReplicationMessage::XLogData(message) => {
             let start_lsn = PgLsn::from(message.wal_start());
-            if start_lsn > state.last_received {
-                state.last_received = start_lsn;
-            }
+            state.next_status_update.update_write_lsn(start_lsn);
 
             let end_lsn = PgLsn::from(message.wal_end());
-            if end_lsn > state.last_received {
-                state.last_received = end_lsn;
-            }
+            state.next_status_update.update_write_lsn(end_lsn);
+            state.update_last_end_lsn(end_lsn);
 
             handle_logical_replication_message(state, message.into_data(), event_converter, hook)
                 .await
         }
         ReplicationMessage::PrimaryKeepAlive(message) => {
             let end_lsn = PgLsn::from(message.wal_end());
-            if end_lsn > state.last_received {
-                state.last_received = end_lsn;
-            }
+            state.next_status_update.update_write_lsn(end_lsn);
+            state.update_last_end_lsn(end_lsn);
 
             events_stream
-                .send_status_update(state.last_received)
+                .send_status_update(
+                    state.next_status_update.write_lsn,
+                    state.next_status_update.flush_lsn,
+                    state.next_status_update.apply_lsn,
+                )
                 .await?;
 
             Ok(None)
@@ -327,7 +401,8 @@ where
 
             // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
             // `Commit` message.
-            state.remote_final_lsn = message.final_lsn().into();
+            let final_lsn = PgLsn::from(message.final_lsn());
+            state.remote_final_lsn = Some(final_lsn);
 
             Ok(Some(Event::Begin(event)))
         }
@@ -339,28 +414,32 @@ where
                 ));
             };
 
+            // We take the LSN that belongs to the current transaction, however, if there is no
+            // LSN, it means that a `BEGIN` message was not received before this `COMMIT` which means
+            // we are in an inconsistent state.
+            let Some(remote_final_lsn) = state.remote_final_lsn.take() else {
+                return Err(ApplyLoopError::InvalidTransaction(
+                    "handle_commit_message".to_owned(),
+                ));
+            };
+
             // If the commit lsn of the message is different from the remote final lsn, it means that the
             // transaction that was started expect a different commit lsn in the commit message. In this case,
             // we want to bail assuming we are in an inconsistent state.
             let commit_lsn = PgLsn::from(message.commit_lsn());
-            if commit_lsn != state.remote_final_lsn {
+            if commit_lsn != remote_final_lsn {
                 return Err(ApplyLoopError::InvalidCommitLsn(
                     commit_lsn,
-                    state.remote_final_lsn,
+                    remote_final_lsn,
                 ));
             }
-
-            // We track the `end_lsn` of this commit since we will use this to update the replication origin
-            // state once the batch is processed.
-            state.last_commit_end_lsn = Some(PgLsn::from(message.end_lsn()));
 
             // We process syncing tables since we just arrived at the end of a transaction, and we want to
             // synchronize all the workers.
             //
             // The `end_lsn` here refers to the LSN of the record right after the commit record.
-            let continue_loop = hook
-                .process_syncing_tables(message.end_lsn().into())
-                .await?;
+            let end_lsn = PgLsn::from(message.end_lsn());
+            let continue_loop = hook.process_syncing_tables(end_lsn).await?;
             if !continue_loop {
                 state.should_complete = true;
             }
@@ -377,8 +456,14 @@ where
                 ));
             };
 
+            let Some(remote_final_lsn) = state.remote_final_lsn else {
+                return Err(ApplyLoopError::InvalidTransaction(
+                    "handle_insert_message".to_owned(),
+                ));
+            };
+
             if !hook
-                .should_apply_changes(message.rel_id(), state.remote_final_lsn)
+                .should_apply_changes(message.rel_id(), remote_final_lsn)
                 .await?
             {
                 return Ok(None);
@@ -394,8 +479,14 @@ where
                 ));
             };
 
+            let Some(remote_final_lsn) = state.remote_final_lsn else {
+                return Err(ApplyLoopError::InvalidTransaction(
+                    "handle_update_message".to_owned(),
+                ));
+            };
+
             if !hook
-                .should_apply_changes(message.rel_id(), state.remote_final_lsn)
+                .should_apply_changes(message.rel_id(), remote_final_lsn)
                 .await?
             {
                 return Ok(None);
@@ -411,8 +502,14 @@ where
                 ));
             };
 
+            let Some(remote_final_lsn) = state.remote_final_lsn else {
+                return Err(ApplyLoopError::InvalidTransaction(
+                    "handle_delete_message".to_owned(),
+                ));
+            };
+
             if !hook
-                .should_apply_changes(message.rel_id(), state.remote_final_lsn)
+                .should_apply_changes(message.rel_id(), remote_final_lsn)
                 .await?
             {
                 return Ok(None);
@@ -428,10 +525,16 @@ where
                 ));
             };
 
+            let Some(remote_final_lsn) = state.remote_final_lsn else {
+                return Err(ApplyLoopError::InvalidTransaction(
+                    "handle_truncate_message".to_owned(),
+                ));
+            };
+
             let mut rel_ids = Vec::with_capacity(message.rel_ids().len());
             for &table_id in message.rel_ids().iter() {
                 if hook
-                    .should_apply_changes(table_id, state.remote_final_lsn)
+                    .should_apply_changes(table_id, remote_final_lsn)
                     .await?
                 {
                     rel_ids.push(table_id);
