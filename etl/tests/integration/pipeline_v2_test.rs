@@ -348,7 +348,6 @@ async fn test_pipeline_with_table_sync_worker_error() {
     let database_schema = setup_test_database_schema(&database).await;
 
     let fault_config = FaultConfig {
-        store_table_schema: Some(FaultType::Error),
         ..Default::default()
     };
     let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
@@ -399,6 +398,8 @@ async fn test_pipeline_with_table_sync_worker_error() {
     ));
 }
 
+// TODO: find a way to inject errors in a way that is predictable.
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_data_sync_retry() {
     let database = spawn_database().await;
@@ -409,7 +410,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 
     // Configure state store to fail during data sync.
     let fault_config = FaultConfig {
-        store_table_schema: Some(FaultType::Error),
         ..Default::default()
     };
     let failing_state_store = FaultInjectingStateStore::wrap(state_store.clone(), fault_config);

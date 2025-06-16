@@ -1,10 +1,10 @@
 use crate::conversions::table_row::TableRow;
 use crate::conversions::text::{FromTextError, TextFormatConverter};
 use crate::conversions::Cell;
-use crate::v2::pipeline::PipelineId;
-use crate::v2::state::store::base::{StateStore, StateStoreError};
+use crate::v2::schema::cache::SchemaCache;
+use crate::v2::state::store::base::StateStoreError;
 use core::str;
-use postgres::schema::{ColumnSchema, TableId, TableName, TableSchema};
+use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::types::convert_type_oid_to_type;
 use postgres_replication::protocol;
 use postgres_replication::protocol::LogicalReplicationMessage;
@@ -23,7 +23,7 @@ pub enum EventConversionError {
     MissingTupleInDeleteBody,
 
     #[error("Table schema not found for table id {0}")]
-    MissingSchema(TableId),
+    MissingSchema(Oid),
 
     #[error("Error converting from bytes: {0}")]
     FromBytes(#[from] FromTextError),
@@ -116,20 +116,20 @@ impl RelationEvent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InsertEvent {
-    pub table_id: TableId,
+    pub table_id: Oid,
     pub row: TableRow,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateEvent {
-    pub table_id: TableId,
+    pub table_id: Oid,
     pub row: TableRow,
     pub identity_row: TableRow,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeleteEvent {
-    pub table_id: TableId,
+    pub table_id: Oid,
     pub identity_row: TableRow,
 }
 
@@ -213,30 +213,20 @@ impl From<Event> for EventType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct EventConverter<S> {
-    pipeline_id: PipelineId,
-    state_store: S,
+#[derive(Debug, Clone)]
+pub struct EventConverter {
+    schema_cache: SchemaCache,
 }
 
-impl<S> EventConverter<S>
-where
-    S: StateStore,
-{
-    pub fn new(pipeline_id: PipelineId, state_store: S) -> Self {
-        Self {
-            pipeline_id,
-            state_store,
-        }
+impl EventConverter {
+    pub fn new(schema_cache: SchemaCache) -> Self {
+        Self { schema_cache }
     }
 
-    async fn get_table_schema(
-        &self,
-        table_id: TableId,
-    ) -> Result<TableSchema, EventConversionError> {
-        self.state_store
-            .load_table_schema(self.pipeline_id, table_id)
-            .await?
+    async fn get_table_schema(&self, table_id: Oid) -> Result<TableSchema, EventConversionError> {
+        self.schema_cache
+            .get_table_schema(&table_id)
+            .await
             .ok_or(EventConversionError::MissingSchema(table_id))
     }
 

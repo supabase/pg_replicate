@@ -15,6 +15,7 @@ use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopH
 use crate::v2::replication::client::PgReplicationClient;
 use crate::v2::replication::slot::SlotUsage;
 use crate::v2::replication::table_sync::{start_table_sync, TableSyncError, TableSyncResult};
+use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
@@ -194,6 +195,7 @@ pub struct TableSyncWorker<S, D> {
     replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
     table_id: Oid,
+    schema_cache: SchemaCache,
     state_store: S,
     destination: D,
     shutdown_rx: watch::Receiver<()>,
@@ -207,6 +209,7 @@ impl<S, D> TableSyncWorker<S, D> {
         replication_client: PgReplicationClient,
         pool: TableSyncWorkerPool,
         table_id: Oid,
+        schema_cache: SchemaCache,
         state_store: S,
         destination: D,
         shutdown_rx: watch::Receiver<()>,
@@ -217,6 +220,7 @@ impl<S, D> TableSyncWorker<S, D> {
             replication_client,
             pool,
             table_id,
+            schema_cache,
             state_store,
             destination,
             shutdown_rx,
@@ -263,6 +267,7 @@ where
                 self.replication_client.clone(),
                 self.table_id,
                 state_clone.clone(),
+                self.schema_cache.clone(),
                 self.state_store.clone(),
                 self.destination.clone(),
                 self.shutdown_rx.clone(),
@@ -282,6 +287,7 @@ where
                 origin_start_lsn,
                 self.config,
                 self.replication_client,
+                self.schema_cache,
                 self.state_store.clone(),
                 self.destination,
                 Hook::new(self.table_id, state_clone, self.state_store),

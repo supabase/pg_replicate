@@ -11,7 +11,6 @@ use crate::v2::state::table::TableReplicationState;
 #[derive(Debug)]
 struct Inner {
     table_replication_states: HashMap<(PipelineId, Oid), TableReplicationState>,
-    table_schemas: HashMap<(PipelineId, Oid), TableSchema>,
     replication_origin_states: HashMap<(PipelineId, Option<Oid>), ReplicationOriginState>,
 }
 
@@ -24,7 +23,6 @@ impl MemoryStateStore {
     pub fn new() -> Self {
         let inner = Inner {
             table_replication_states: HashMap::new(),
-            table_schemas: HashMap::new(),
             replication_origin_states: HashMap::new(),
         };
 
@@ -104,47 +102,6 @@ impl StateStore for MemoryStateStore {
         }
 
         inner.table_replication_states.insert(key, state);
-
-        Ok(true)
-    }
-
-    async fn load_table_schemas(
-        &self,
-        pipeline_id: PipelineId,
-    ) -> Result<Vec<TableSchema>, StateStoreError> {
-        let inner = self.inner.read().await;
-        Ok(inner
-            .table_schemas
-            .iter()
-            .filter(|((pid, _), _)| pid == &pipeline_id)
-            .map(|(_, schema)| schema.clone())
-            .collect())
-    }
-
-    async fn load_table_schema(
-        &self,
-        pipeline_id: PipelineId,
-        table_id: Oid,
-    ) -> Result<Option<TableSchema>, StateStoreError> {
-        let inner = self.inner.read().await;
-
-        Ok(inner.table_schemas.get(&(pipeline_id, table_id)).cloned())
-    }
-
-    async fn store_table_schema(
-        &self,
-        pipeline_id: PipelineId,
-        table_schema: TableSchema,
-        overwrite: bool,
-    ) -> Result<bool, StateStoreError> {
-        let mut inner = self.inner.write().await;
-        let key = (pipeline_id, table_schema.id);
-
-        if !overwrite && inner.table_schemas.contains_key(&key) {
-            return Ok(false);
-        }
-
-        inner.table_schemas.insert(key, table_schema);
 
         Ok(true)
     }

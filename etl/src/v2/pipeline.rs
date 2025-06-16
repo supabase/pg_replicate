@@ -8,6 +8,7 @@ use tracing::{error, info};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
+use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
@@ -126,12 +127,18 @@ where
         // We create the table sync workers pool to manage all table sync workers in a central place.
         let pool = TableSyncWorkerPool::new();
 
+        // We initialize the schema cache, which is local to a pipeline, and we try to load existing
+        // schemas that were previously stored at the destination (if any).
+        let schema_cache = SchemaCache::new();
+        // TODO: load schemas from destination and populate cache.
+
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
             self.identity.clone(),
             self.config.clone(),
             replication_client,
             pool.clone(),
+            schema_cache,
             self.state_store.clone(),
             self.destination.clone(),
             self.shutdown_tx.subscribe(),

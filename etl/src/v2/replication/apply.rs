@@ -19,6 +19,7 @@ use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::replication::stream::{EventsStream, EventsStreamError};
+use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::workers::apply::ApplyWorkerHookError;
@@ -179,6 +180,7 @@ pub async fn start_apply_loop<S, D, T>(
     origin_start_lsn: PgLsn,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
+    schema_cache: SchemaCache,
     state_store: S,
     destination: D,
     hook: T,
@@ -228,7 +230,7 @@ where
 
     // We build the event converter, which will convert all the messages from the logical replication
     // protocol to events that are usable by the downstream destination.
-    let event_converter = EventConverter::new(identity.id(), state_store.clone());
+    let event_converter = EventConverter::new(schema_cache);
 
     loop {
         if state.should_complete {
@@ -263,7 +265,7 @@ async fn handle_replication_message_batch<S, D, T>(
     state: &mut ApplyLoopState,
     mut stream: Pin<&mut EventsStream>,
     messages_batch: Vec<Result<ReplicationMessage<LogicalReplicationMessage>, EventsStreamError>>,
-    event_converter: &EventConverter<S>,
+    event_converter: &EventConverter,
     state_store: &S,
     destination: &D,
     hook: &T,
@@ -321,15 +323,14 @@ where
     Ok(())
 }
 
-async fn handle_replication_message<S, T>(
+async fn handle_replication_message<T>(
     state: &mut ApplyLoopState,
     events_stream: Pin<&mut EventsStream>,
     message: ReplicationMessage<LogicalReplicationMessage>,
-    event_converter: &EventConverter<S>,
+    event_converter: &EventConverter,
     hook: &T,
 ) -> Result<Option<Event>, ApplyLoopError>
 where
-    S: StateStore + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
@@ -364,14 +365,13 @@ where
     }
 }
 
-async fn handle_logical_replication_message<S, T>(
+async fn handle_logical_replication_message<T>(
     state: &mut ApplyLoopState,
     message: LogicalReplicationMessage,
-    event_converter: &EventConverter<S>,
+    event_converter: &EventConverter,
     hook: &T,
 ) -> Result<Option<Event>, ApplyLoopError>
 where
-    S: StateStore + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {

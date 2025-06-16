@@ -6,6 +6,7 @@ use crate::v2::replication::client::{
     GetOrCreateSlotResult, PgReplicationClient, PgReplicationError,
 };
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
+use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
@@ -82,6 +83,7 @@ pub struct ApplyWorker<S, D> {
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
+    schema_cache: SchemaCache,
     state_store: S,
     destination: D,
     shutdown_rx: watch::Receiver<()>,
@@ -93,6 +95,7 @@ impl<S, D> ApplyWorker<S, D> {
         config: Arc<PipelineConfig>,
         replication_client: PgReplicationClient,
         pool: TableSyncWorkerPool,
+        schema_cache: SchemaCache,
         state_store: S,
         destination: D,
         shutdown_rx: watch::Receiver<()>,
@@ -102,6 +105,7 @@ impl<S, D> ApplyWorker<S, D> {
             config,
             replication_client,
             pool,
+            schema_cache,
             state_store,
             destination,
             shutdown_rx,
@@ -133,6 +137,7 @@ where
                 origin_start_lsn,
                 self.config.clone(),
                 self.replication_client.clone(),
+                self.schema_cache.clone(),
                 self.state_store.clone(),
                 self.destination.clone(),
                 Hook::new(
@@ -140,6 +145,7 @@ where
                     self.config,
                     self.replication_client,
                     self.pool,
+                    self.schema_cache,
                     self.state_store,
                     self.destination,
                     self.shutdown_rx.clone(),
@@ -221,6 +227,7 @@ struct Hook<S, D> {
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
+    schema_cache: SchemaCache,
     state_store: S,
     destination: D,
     shutdown_rx: watch::Receiver<()>,
@@ -232,6 +239,7 @@ impl<S, D> Hook<S, D> {
         config: Arc<PipelineConfig>,
         replication_client: PgReplicationClient,
         pool: TableSyncWorkerPool,
+        schema_cache: SchemaCache,
         state_store: S,
         destination: D,
         shutdown_rx: watch::Receiver<()>,
@@ -241,6 +249,7 @@ impl<S, D> Hook<S, D> {
             config,
             replication_client,
             pool,
+            schema_cache,
             state_store,
             destination,
             shutdown_rx,
@@ -262,6 +271,7 @@ where
             replication_client,
             self.pool.clone(),
             table_id,
+            self.schema_cache.clone(),
             self.state_store.clone(),
             self.destination.clone(),
             self.shutdown_rx.clone(),

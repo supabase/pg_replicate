@@ -5,6 +5,7 @@ use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
 use crate::v2::replication::stream::{TableCopyStream, TableCopyStreamError};
+use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
@@ -58,6 +59,7 @@ pub async fn start_table_sync<S, D>(
     replication_client: PgReplicationClient,
     table_id: Oid,
     table_sync_worker_state: TableSyncWorkerState,
+    schema_cache: SchemaCache,
     state_store: S,
     destination: D,
     mut shutdown_rx: watch::Receiver<()>,
@@ -79,6 +81,7 @@ where
             replication_client,
             table_id,
             table_sync_worker_state,
+            schema_cache,
             state_store,
             destination,
             shutdown_rx_clone
@@ -95,6 +98,7 @@ pub async fn sync_table<S, D>(
     replication_client: PgReplicationClient,
     table_id: Oid,
     table_sync_worker_state: TableSyncWorkerState,
+    schema_cache: SchemaCache,
     state_store: S,
     destination: D,
     shutdown_rx: watch::Receiver<()>,
@@ -189,9 +193,7 @@ where
             let table_schema = transaction
                 .get_table_schema(table_id, Some(identity.publication_name()))
                 .await?;
-            state_store
-                .store_table_schema(identity.id(), table_schema.clone(), true)
-                .await?;
+            schema_cache.add_table_schema(table_schema.clone()).await;
             destination.write_table_schema(table_schema.clone()).await?;
 
             // We create the copy table stream.
