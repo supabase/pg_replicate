@@ -12,7 +12,7 @@ use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 use tracing::error;
 
-use crate::v2::concurrency::stream::{BatchBoundary, BoundedBatchStream};
+use crate::v2::concurrency::stream::BoundedBatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::conversions::event::{
     BeginEvent, CommitEvent, Event, EventConversionError, EventConverter, TruncateEvent,
@@ -102,18 +102,6 @@ pub trait ApplyLoopHook {
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     fn slot_usage(&self) -> SlotUsage;
-}
-
-impl BatchBoundary for ReplicationMessage<LogicalReplicationMessage> {
-    fn is_on_boundary(&self) -> bool {
-        match self {
-            ReplicationMessage::XLogData(message) => {
-                matches!(message.data(), LogicalReplicationMessage::Commit(_))
-            }
-            ReplicationMessage::PrimaryKeepAlive(_) => true,
-            &_ => true,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -536,16 +524,16 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // We remove the table ids from the truncate event of the tables that we should not apply changes
-    // for.
-    for (index, table_id) in message.rel_ids().iter().enumerate() {
-        if !hook
-            .should_apply_changes(*table_id, state.remote_final_lsn)
+    let mut rel_ids = Vec::with_capacity(message.rel_ids().len());
+    for &table_id in message.rel_ids().iter() {
+        if hook
+            .should_apply_changes(table_id, state.remote_final_lsn)
             .await?
         {
-            event.rel_ids.remove(index);
+            rel_ids.push(table_id);
         }
     }
+    event.rel_ids = rel_ids;
 
     destination.apply_event(Event::Truncate(event)).await?;
 

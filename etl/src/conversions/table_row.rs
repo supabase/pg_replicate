@@ -6,9 +6,9 @@ use thiserror::Error;
 use tokio_postgres::types::Type;
 use tracing::error;
 
-use super::{text::FromTextError, Cell};
-use crate::v2::concurrency::stream::BatchBoundary;
 use crate::{conversions::text::TextFormatConverter, pipeline::batching::BatchBoundaryV1};
+
+use super::{text::FromTextError, Cell};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableRow {
@@ -17,14 +17,6 @@ pub struct TableRow {
 
 impl BatchBoundaryV1 for TableRow {
     fn is_last_in_batch(&self) -> bool {
-        true
-    }
-}
-
-impl BatchBoundary for TableRow {
-    fn is_on_boundary(&self) -> bool {
-        // A table row is always considered a boundary element since it's received when performing
-        // table copy.
         true
     }
 }

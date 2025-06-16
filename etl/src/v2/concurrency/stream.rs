@@ -7,29 +7,6 @@ use tracing::info;
 
 use crate::v2::config::batch::BatchConfig;
 
-/// A trait that determines whether an item in a stream marks the end of a batch.
-///
-/// Types implementing this trait can signal when they should be the last item in a batch,
-/// allowing for intelligent batch boundary decisions in streaming operations.
-pub trait BatchBoundary: Sized {
-    /// Returns `true` if this item should be the last in its batch, that is, the item is on
-    /// a boundary.
-    ///
-    /// This method is used by [`BoundedBatchStream`] to determine when to emit a batch.
-    fn is_on_boundary(&self) -> bool;
-}
-
-impl<T: BatchBoundary, E> BatchBoundary for Result<T, E> {
-    fn is_on_boundary(&self) -> bool {
-        match self {
-            Ok(v) => v.is_on_boundary(),
-            // We return true since in case of error we want to fail fast, since the batch is
-            // anyway going to fail.
-            Err(_) => true,
-        }
-    }
-}
-
 // Implementation adapted from:
 //  https://github.com/tokio-rs/tokio/blob/master/tokio-stream/src/stream_ext/chunks_timeout.rs
 pin_project! {
@@ -48,7 +25,7 @@ pin_project! {
     /// The implementation is adapted from Tokio's chunks_timeout stream extension.
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
-    pub struct BoundedBatchStream<B: BatchBoundary, S: Stream<Item = B>> {
+    pub struct BoundedBatchStream<B, S: Stream<Item = B>> {
         #[pin]
         stream: S,
         #[pin]
@@ -62,7 +39,7 @@ pin_project! {
     }
 }
 
-impl<B: BatchBoundary, S: Stream<Item = B>> BoundedBatchStream<B, S> {
+impl<B, S: Stream<Item = B>> BoundedBatchStream<B, S> {
     /// Creates a new [`BoundedBatchStream`] with the given configuration.
     ///
     /// The stream will batch items according to the provided `batch_config` and can be
@@ -88,7 +65,7 @@ impl<B: BatchBoundary, S: Stream<Item = B>> BoundedBatchStream<B, S> {
     }
 }
 
-impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> {
+impl<B, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> {
     type Item = Vec<S::Item>;
 
     /// Polls the stream for the next batch of items.
@@ -133,15 +110,19 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> 
                 )));
                 *this.reset_timer = false;
             }
+
             if this.items.is_empty() {
                 this.items.reserve_exact(this.batch_config.max_batch_size);
             }
+
             match this.stream.as_mut().poll_next(cx) {
                 Poll::Pending => break,
                 Poll::Ready(Some(item)) => {
-                    let is_last_in_batch = item.is_on_boundary();
                     this.items.push(item);
-                    if this.items.len() >= this.batch_config.max_batch_size && is_last_in_batch {
+
+                    // If we reached the `max_batch_size` we want to return the batch and reset the
+                    // timer.
+                    if this.items.len() >= this.batch_config.max_batch_size {
                         *this.reset_timer = true;
                         return Poll::Ready(Some(std::mem::take(this.items)));
                     }
@@ -161,13 +142,13 @@ impl<B: BatchBoundary, S: Stream<Item = B>> Stream for BoundedBatchStream<B, S> 
             }
         }
 
-        if let Some(last_item) = this.items.last() {
+        // If there are items, we want to check the deadline, if it's met, we return the batch
+        // we currently have in memory, otherwise, we return.
+        if !this.items.is_empty() {
             if let Some(deadline) = this.deadline.as_pin_mut() {
                 ready!(deadline.poll(cx));
-            }
-
-            if last_item.is_on_boundary() {
                 *this.reset_timer = true;
+
                 return Poll::Ready(Some(std::mem::take(this.items)));
             }
         }
