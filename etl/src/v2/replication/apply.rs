@@ -13,7 +13,9 @@ use tracing::error;
 
 use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::conversions::event::{Event, EventConversionError, EventConverter, EventType};
+use crate::v2::conversions::event::{
+    convert_message_to_event, Event, EventConversionError, EventType,
+};
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
@@ -228,10 +230,6 @@ where
     );
     pin!(logical_replication_stream);
 
-    // We build the event converter, which will convert all the messages from the logical replication
-    // protocol to events that are usable by the downstream destination.
-    let event_converter = EventConverter::new(schema_cache);
-
     loop {
         if state.should_complete {
             return Ok(ApplyLoopResult::ApplyCompleted);
@@ -247,7 +245,7 @@ where
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
 
-                handle_replication_message_batch(&identity, &mut state, events_stream, messages_batch, &event_converter, &state_store, &destination, &hook).await?;
+                handle_replication_message_batch(&identity, &mut state, events_stream, messages_batch, &schema_cache, &state_store, &destination, &hook).await?;
             }
             _ = tokio::time::sleep(SYNCING_FREQUENCY_SECONDS) => {
                 // TODO: this is a great place to perform cleanup operations.
@@ -265,7 +263,7 @@ async fn handle_replication_message_batch<S, D, T>(
     state: &mut ApplyLoopState,
     mut stream: Pin<&mut EventsStream>,
     messages_batch: Vec<Result<ReplicationMessage<LogicalReplicationMessage>, EventsStreamError>>,
-    event_converter: &EventConverter,
+    schema_cache: &SchemaCache,
     state_store: &S,
     destination: &D,
     hook: &T,
@@ -281,7 +279,7 @@ where
 
     for message in messages_batch {
         let event =
-            handle_replication_message(state, stream.as_mut(), message?, event_converter, hook)
+            handle_replication_message(state, stream.as_mut(), message?, schema_cache, hook)
                 .await?;
 
         if let Some(event) = event {
@@ -327,7 +325,7 @@ async fn handle_replication_message<T>(
     state: &mut ApplyLoopState,
     events_stream: Pin<&mut EventsStream>,
     message: ReplicationMessage<LogicalReplicationMessage>,
-    event_converter: &EventConverter,
+    schema_cache: &SchemaCache,
     hook: &T,
 ) -> Result<Option<Event>, ApplyLoopError>
 where
@@ -343,8 +341,7 @@ where
             state.next_status_update.update_write_lsn(end_lsn);
             state.update_last_end_lsn(end_lsn);
 
-            handle_logical_replication_message(state, message.into_data(), event_converter, hook)
-                .await
+            handle_logical_replication_message(state, message.into_data(), schema_cache, hook).await
         }
         ReplicationMessage::PrimaryKeepAlive(message) => {
             let end_lsn = PgLsn::from(message.wal_end());
@@ -368,7 +365,7 @@ where
 async fn handle_logical_replication_message<T>(
     state: &mut ApplyLoopState,
     message: LogicalReplicationMessage,
-    event_converter: &EventConverter,
+    schema_cache: &SchemaCache,
     hook: &T,
 ) -> Result<Option<Event>, ApplyLoopError>
 where
@@ -377,7 +374,7 @@ where
 {
     // We perform the conversion of the message to our own event format which is used downstream
     // by the destination.
-    let event = event_converter.convert(&message).await?;
+    let event = convert_message_to_event(&schema_cache, &message).await?;
 
     // For each message, we handle it separately.
     match message {
@@ -433,8 +430,19 @@ where
 
             Ok(Some(Event::Commit(event)))
         }
-        // TODO: update schema cache.
-        LogicalReplicationMessage::Relation(_) => Ok(None),
+        LogicalReplicationMessage::Relation(message) => {
+            let Event::Relation(event) = event else {
+                return Err(ApplyLoopError::InvalidEvent(
+                    event.into(),
+                    EventType::Relation,
+                ));
+            };
+
+            // We compare the table schema from the relation message.
+            // TODO:
+
+            Ok(None)
+        }
         LogicalReplicationMessage::Insert(message) => {
             let Event::Insert(event) = event else {
                 return Err(ApplyLoopError::InvalidEvent(

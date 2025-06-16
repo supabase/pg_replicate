@@ -1,4 +1,4 @@
-use postgres::schema::{Oid, TableSchema};
+use postgres::schema::Oid;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

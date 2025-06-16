@@ -213,138 +213,128 @@ impl From<Event> for EventType {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct EventConverter {
-    schema_cache: SchemaCache,
+async fn get_table_schema(
+    schema_cache: &SchemaCache,
+    table_id: Oid,
+) -> Result<TableSchema, EventConversionError> {
+    schema_cache
+        .get_table_schema(&table_id)
+        .await
+        .ok_or(EventConversionError::MissingSchema(table_id))
 }
 
-impl EventConverter {
-    pub fn new(schema_cache: SchemaCache) -> Self {
-        Self { schema_cache }
+fn convert_tuple_to_row(
+    column_schemas: &[ColumnSchema],
+    tuple_data: &[protocol::TupleData],
+) -> Result<TableRow, EventConversionError> {
+    let mut values = Vec::with_capacity(column_schemas.len());
+
+    for (i, column_schema) in column_schemas.iter().enumerate() {
+        let cell = match &tuple_data[i] {
+            protocol::TupleData::Null => Cell::Null,
+            protocol::TupleData::UnchangedToast => {
+                TextFormatConverter::default_value(&column_schema.typ)
+            }
+            protocol::TupleData::Binary(_) => {
+                return Err(EventConversionError::BinaryFormatNotSupported)
+            }
+            protocol::TupleData::Text(bytes) => {
+                let str = str::from_utf8(&bytes[..])?;
+                TextFormatConverter::try_from_str(&column_schema.typ, str)?
+            }
+        };
+        values.push(cell);
     }
 
-    async fn get_table_schema(&self, table_id: Oid) -> Result<TableSchema, EventConversionError> {
-        self.schema_cache
-            .get_table_schema(&table_id)
-            .await
-            .ok_or(EventConversionError::MissingSchema(table_id))
-    }
+    Ok(TableRow { values })
+}
 
-    fn convert_tuple_to_row(
-        column_schemas: &[ColumnSchema],
-        tuple_data: &[protocol::TupleData],
-    ) -> Result<TableRow, EventConversionError> {
-        let mut values = Vec::with_capacity(column_schemas.len());
+async fn convert_insert_to_event(
+    schema_cache: &SchemaCache,
+    insert_body: &protocol::InsertBody,
+) -> Result<Event, EventConversionError> {
+    let table_id = insert_body.rel_id();
+    let table_schema = get_table_schema(schema_cache, table_id).await?;
+    let row = convert_tuple_to_row(
+        &table_schema.column_schemas,
+        insert_body.tuple().tuple_data(),
+    )?;
 
-        for (i, column_schema) in column_schemas.iter().enumerate() {
-            let cell = match &tuple_data[i] {
-                protocol::TupleData::Null => Cell::Null,
-                protocol::TupleData::UnchangedToast => {
-                    TextFormatConverter::default_value(&column_schema.typ)
-                }
-                protocol::TupleData::Binary(_) => {
-                    return Err(EventConversionError::BinaryFormatNotSupported)
-                }
-                protocol::TupleData::Text(bytes) => {
-                    let str = str::from_utf8(&bytes[..])?;
-                    TextFormatConverter::try_from_str(&column_schema.typ, str)?
-                }
-            };
-            values.push(cell);
+    Ok(Event::Insert(InsertEvent { table_id, row }))
+}
+
+async fn convert_update_to_event(
+    schema_cache: &SchemaCache,
+    update_body: &protocol::UpdateBody,
+) -> Result<Event, EventConversionError> {
+    let table_id = update_body.rel_id();
+    let table_schema = get_table_schema(schema_cache, table_id).await?;
+    let identity = update_body
+        .key_tuple()
+        .or(update_body.old_tuple())
+        .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
+
+    let identity_row = convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
+    let row = convert_tuple_to_row(
+        &table_schema.column_schemas,
+        update_body.new_tuple().tuple_data(),
+    )?;
+
+    Ok(Event::Update(UpdateEvent {
+        table_id,
+        row,
+        identity_row,
+    }))
+}
+
+async fn convert_delete_to_event(
+    schema_cache: &SchemaCache,
+    delete_body: &protocol::DeleteBody,
+) -> Result<Event, EventConversionError> {
+    let table_id = delete_body.rel_id();
+    let table_schema = get_table_schema(schema_cache, table_id).await?;
+    let identity = delete_body
+        .key_tuple()
+        .or(delete_body.old_tuple())
+        .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
+
+    let identity_row = convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
+
+    Ok(Event::Delete(DeleteEvent {
+        table_id,
+        identity_row,
+    }))
+}
+
+pub async fn convert_message_to_event(
+    schema_cache: &SchemaCache,
+    message: &LogicalReplicationMessage,
+) -> Result<Event, EventConversionError> {
+    match message {
+        LogicalReplicationMessage::Begin(begin_body) => {
+            Ok(Event::Begin(BeginEvent::from_protocol(begin_body)))
         }
-
-        Ok(TableRow { values })
-    }
-
-    async fn convert_insert_to_event(
-        &self,
-        insert_body: &protocol::InsertBody,
-    ) -> Result<Event, EventConversionError> {
-        let table_id = insert_body.rel_id();
-        let table_schema = self.get_table_schema(table_id).await?;
-        let row = Self::convert_tuple_to_row(
-            &table_schema.column_schemas,
-            insert_body.tuple().tuple_data(),
-        )?;
-
-        Ok(Event::Insert(InsertEvent { table_id, row }))
-    }
-
-    async fn convert_update_to_event(
-        &self,
-        update_body: &protocol::UpdateBody,
-    ) -> Result<Event, EventConversionError> {
-        let table_id = update_body.rel_id();
-        let table_schema = self.get_table_schema(table_id).await?;
-        let identity = update_body
-            .key_tuple()
-            .or(update_body.old_tuple())
-            .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
-
-        let identity_row =
-            Self::convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
-        let row = Self::convert_tuple_to_row(
-            &table_schema.column_schemas,
-            update_body.new_tuple().tuple_data(),
-        )?;
-
-        Ok(Event::Update(UpdateEvent {
-            table_id,
-            row,
-            identity_row,
-        }))
-    }
-
-    async fn convert_delete_to_event(
-        &self,
-        delete_body: &protocol::DeleteBody,
-    ) -> Result<Event, EventConversionError> {
-        let table_id = delete_body.rel_id();
-        let table_schema = self.get_table_schema(table_id).await?;
-        let identity = delete_body
-            .key_tuple()
-            .or(delete_body.old_tuple())
-            .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
-
-        let identity_row =
-            Self::convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
-
-        Ok(Event::Delete(DeleteEvent {
-            table_id,
-            identity_row,
-        }))
-    }
-
-    pub async fn convert(
-        &self,
-        message: &LogicalReplicationMessage,
-    ) -> Result<Event, EventConversionError> {
-        match message {
-            LogicalReplicationMessage::Begin(begin_body) => {
-                Ok(Event::Begin(BeginEvent::from_protocol(begin_body)))
-            }
-            LogicalReplicationMessage::Commit(commit_body) => {
-                Ok(Event::Commit(CommitEvent::from_protocol(commit_body)))
-            }
-            LogicalReplicationMessage::Relation(relation_body) => Ok(Event::Relation(
-                RelationEvent::from_protocol(relation_body)?,
-            )),
-            LogicalReplicationMessage::Insert(insert_body) => {
-                self.convert_insert_to_event(insert_body).await
-            }
-            LogicalReplicationMessage::Update(update_body) => {
-                self.convert_update_to_event(update_body).await
-            }
-            LogicalReplicationMessage::Delete(delete_body) => {
-                self.convert_delete_to_event(delete_body).await
-            }
-            LogicalReplicationMessage::Truncate(truncate_body) => {
-                Ok(Event::Truncate(TruncateEvent::from_protocol(truncate_body)))
-            }
-            LogicalReplicationMessage::Origin(_) | LogicalReplicationMessage::Type(_) => {
-                Ok(Event::Unsupported)
-            }
-            _ => Err(EventConversionError::UnknownReplicationMessage),
+        LogicalReplicationMessage::Commit(commit_body) => {
+            Ok(Event::Commit(CommitEvent::from_protocol(commit_body)))
         }
+        LogicalReplicationMessage::Relation(relation_body) => Ok(Event::Relation(
+            RelationEvent::from_protocol(relation_body)?,
+        )),
+        LogicalReplicationMessage::Insert(insert_body) => {
+            convert_insert_to_event(schema_cache, insert_body).await
+        }
+        LogicalReplicationMessage::Update(update_body) => {
+            convert_update_to_event(schema_cache, update_body).await
+        }
+        LogicalReplicationMessage::Delete(delete_body) => {
+            convert_delete_to_event(schema_cache, delete_body).await
+        }
+        LogicalReplicationMessage::Truncate(truncate_body) => {
+            Ok(Event::Truncate(TruncateEvent::from_protocol(truncate_body)))
+        }
+        LogicalReplicationMessage::Origin(_) | LogicalReplicationMessage::Type(_) => {
+            Ok(Event::Unsupported)
+        }
+        _ => Err(EventConversionError::UnknownReplicationMessage),
     }
 }

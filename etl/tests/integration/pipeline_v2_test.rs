@@ -17,80 +17,113 @@ use crate::common::state_store::{
     FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
 };
 
+#[derive(Debug, Clone, Copy)]
+enum TableSelection {
+    Both,
+    UsersOnly,
+    OrdersOnly,
+}
+
 #[derive(Debug)]
 struct TestDatabaseSchema {
-    users_table_schema: TableSchema,
-    orders_table_schema: TableSchema,
+    users_table_schema: Option<TableSchema>,
+    orders_table_schema: Option<TableSchema>,
     publication_name: String,
+}
+
+impl TestDatabaseSchema {
+    /// Returns a clone of the users table schema, panicking if it doesn't exist.
+    fn users_schema(&self) -> TableSchema {
+        self.users_table_schema
+            .clone()
+            .expect("Users table schema not found")
+    }
+
+    /// Returns a clone of the orders table schema, panicking if it doesn't exist.
+    fn orders_schema(&self) -> TableSchema {
+        self.orders_table_schema
+            .clone()
+            .expect("Orders table schema not found")
+    }
 }
 
 async fn setup_test_database_schema<G: GenericClient>(
     database: &PgDatabase<G>,
+    selection: TableSelection,
 ) -> TestDatabaseSchema {
-    let users_table_name = test_table_name("users");
-    let users_table_id = database
-        .create_table(
-            users_table_name.clone(),
-            &[("name", "text not null"), ("age", "integer not null")],
-        )
-        .await
-        .expect("Failed to create users table");
+    let mut tables_to_publish = Vec::new();
+    let mut users_table_schema = None;
+    let mut orders_table_schema = None;
 
-    let orders_table_name = test_table_name("orders");
-    let orders_table_id = database
-        .create_table(
-            orders_table_name.clone(),
-            &[("description", "text not null")],
-        )
-        .await
-        .expect("Failed to create orders table");
+    if matches!(selection, TableSelection::Both | TableSelection::UsersOnly) {
+        let users_table_name = test_table_name("users");
+        let users_table_id = database
+            .create_table(
+                users_table_name.clone(),
+                &[("name", "text not null"), ("age", "integer not null")],
+            )
+            .await
+            .expect("Failed to create users table");
 
-    // Create publication for both tables.
-    let publication_name = "users_orders_pub";
+        tables_to_publish.push(users_table_name.clone());
+
+        users_table_schema = Some(TableSchema::new(
+            users_table_id,
+            users_table_name,
+            vec![
+                id_column_schema(),
+                ColumnSchema {
+                    name: "name".to_string(),
+                    typ: Type::TEXT,
+                    modifier: -1,
+                    nullable: false,
+                    primary: false,
+                },
+                ColumnSchema {
+                    name: "age".to_string(),
+                    typ: Type::INT4,
+                    modifier: -1,
+                    nullable: false,
+                    primary: false,
+                },
+            ],
+        ));
+    }
+
+    if matches!(selection, TableSelection::Both | TableSelection::OrdersOnly) {
+        let orders_table_name = test_table_name("orders");
+        let orders_table_id = database
+            .create_table(
+                orders_table_name.clone(),
+                &[("description", "text not null")],
+            )
+            .await
+            .expect("Failed to create orders table");
+
+        tables_to_publish.push(orders_table_name.clone());
+
+        orders_table_schema = Some(TableSchema::new(
+            orders_table_id,
+            orders_table_name,
+            vec![
+                id_column_schema(),
+                ColumnSchema {
+                    name: "description".to_string(),
+                    typ: Type::TEXT,
+                    modifier: -1,
+                    nullable: false,
+                    primary: false,
+                },
+            ],
+        ));
+    }
+
+    // Create publication for selected tables
+    let publication_name = "test_pub";
     database
-        .create_publication(
-            publication_name,
-            &[users_table_name.clone(), orders_table_name.clone()],
-        )
+        .create_publication(publication_name, &tables_to_publish)
         .await
         .expect("Failed to create publication");
-
-    let users_table_schema = TableSchema::new(
-        users_table_id,
-        users_table_name,
-        vec![
-            id_column_schema(),
-            ColumnSchema {
-                name: "name".to_string(),
-                typ: Type::TEXT,
-                modifier: -1,
-                nullable: false,
-                primary: false,
-            },
-            ColumnSchema {
-                name: "age".to_string(),
-                typ: Type::INT4,
-                modifier: -1,
-                nullable: false,
-                primary: false,
-            },
-        ],
-    );
-
-    let orders_table_schema = TableSchema::new(
-        orders_table_id,
-        orders_table_name,
-        vec![
-            id_column_schema(),
-            ColumnSchema {
-                name: "description".to_string(),
-                typ: Type::TEXT,
-                modifier: -1,
-                nullable: false,
-                primary: false,
-            },
-        ],
-    );
 
     TestDatabaseSchema {
         users_table_schema,
@@ -229,7 +262,7 @@ fn build_expected_orders_inserts(
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_apply_worker_panic() {
     let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     // Configure state store to panic when storing replication origin state.
     let fault_config = FaultConfig {
@@ -258,7 +291,7 @@ async fn test_pipeline_with_apply_worker_panic() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_apply_worker_error() {
     let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     // Configure state store to return error when storing replication origin state.
     let fault_config = FaultConfig {
@@ -292,7 +325,7 @@ async fn test_pipeline_with_apply_worker_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_table_sync_worker_panic() {
     let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     let fault_config = FaultConfig {
         store_table_replication_state: Some(FaultType::Panic),
@@ -315,7 +348,7 @@ async fn test_pipeline_with_table_sync_worker_panic() {
         .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::DataSync,
         )
         .await;
@@ -323,7 +356,7 @@ async fn test_pipeline_with_table_sync_worker_panic() {
         .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::DataSync,
         )
         .await;
@@ -345,7 +378,7 @@ async fn test_pipeline_with_table_sync_worker_panic() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_pipeline_with_table_sync_worker_error() {
     let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     let fault_config = FaultConfig {
         ..Default::default()
@@ -367,7 +400,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
         .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::DataSync,
         )
         .await;
@@ -375,7 +408,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
         .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::DataSync,
         )
         .await;
@@ -403,7 +436,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_data_sync_retry() {
     let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
@@ -426,7 +459,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         .get_inner()
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::DataSync,
         )
         .await;
@@ -434,7 +467,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         .get_inner()
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::DataSync,
         )
         .await;
@@ -465,14 +498,14 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
@@ -490,7 +523,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
-            .get(&(identity.id(), database_schema.users_table_schema.id))
+            .get(&(identity.id(), database_schema.users_schema().id))
             .unwrap()
             .phase
             .as_type(),
@@ -498,7 +531,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     );
     assert_eq!(
         table_replication_states
-            .get(&(identity.id(), database_schema.orders_table_schema.id))
+            .get(&(identity.id(), database_schema.orders_schema().id))
             .unwrap()
             .phase
             .as_type(),
@@ -509,14 +542,14 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let mut first_table_schemas = destination.get_table_schemas().await;
     first_table_schemas.sort();
     assert_eq!(first_table_schemas.len(), 2);
-    assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
-    assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
+    assert_eq!(first_table_schemas[0], database_schema.orders_schema());
+    assert_eq!(first_table_schemas[1], database_schema.users_schema());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_finished_copy_retry() {
     let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
@@ -538,14 +571,14 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     let users_state_notify = state_store
         .notify_on_replication_phase(
             pipeline_id,
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
             pipeline_id,
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
@@ -563,7 +596,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.users_table_schema.id))
+            .get(&(pipeline_id, database_schema.users_schema().id))
             .unwrap()
             .phase
             .as_type(),
@@ -571,7 +604,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     );
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.orders_table_schema.id))
+            .get(&(pipeline_id, database_schema.orders_schema().id))
             .unwrap()
             .phase
             .as_type(),
@@ -582,13 +615,13 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     let mut first_table_schemas = destination.get_table_schemas().await;
     first_table_schemas.sort();
     assert_eq!(first_table_schemas.len(), 2);
-    assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
-    assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
+    assert_eq!(first_table_schemas[0], database_schema.orders_schema());
+    assert_eq!(first_table_schemas[1], database_schema.users_schema());
 
     // We assume now that the schema of a table changes before sync done is performed.
     database
         .alter_table(
-            database_schema.orders_table_schema.name.clone(),
+            database_schema.orders_schema().name.clone(),
             &[TableModification::AddColumn {
                 name: "date",
                 data_type: "integer",
@@ -596,7 +629,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
         )
         .await
         .unwrap();
-    let mut extended_orders_table_schema = database_schema.orders_table_schema.clone();
+    let mut extended_orders_table_schema = database_schema.orders_schema().clone();
     extended_orders_table_schema
         .column_schemas
         .push(ColumnSchema {
@@ -631,21 +664,21 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     let mut first_table_schemas = destination.get_table_schemas().await;
     first_table_schemas.sort();
     assert_eq!(first_table_schemas.len(), 2);
-    assert_eq!(first_table_schemas[0], database_schema.orders_table_schema);
-    assert_eq!(first_table_schemas[1], database_schema.users_table_schema);
+    assert_eq!(first_table_schemas[0], database_schema.orders_schema());
+    assert_eq!(first_table_schemas[1], database_schema.users_schema());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy() {
     let mut database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     // Insert initial test data.
     let rows_inserted = 10;
     insert_mock_data(
         &mut database,
-        &database_schema.users_table_schema.name,
-        &database_schema.orders_table_schema.name,
+        &database_schema.users_schema().name,
+        &database_schema.orders_schema().name,
         1..=rows_inserted,
         false,
     )
@@ -667,14 +700,14 @@ async fn test_table_copy() {
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
@@ -688,33 +721,29 @@ async fn test_table_copy() {
 
     // Verify copied data.
     let table_rows = destination.get_table_rows().await;
-    let users_table_rows = table_rows
-        .get(&database_schema.users_table_schema.id)
-        .unwrap();
-    let orders_table_rows = table_rows
-        .get(&database_schema.orders_table_schema.id)
-        .unwrap();
+    let users_table_rows = table_rows.get(&database_schema.users_schema().id).unwrap();
+    let orders_table_rows = table_rows.get(&database_schema.orders_schema().id).unwrap();
     assert_eq!(users_table_rows.len(), rows_inserted);
     assert_eq!(orders_table_rows.len(), rows_inserted);
 
     // Verify age sum calculation.
     let expected_age_sum = get_n_integers_sum(rows_inserted);
     let age_sum =
-        get_users_age_sum_from_rows(&destination, database_schema.users_table_schema.id).await;
+        get_users_age_sum_from_rows(&destination, database_schema.users_schema().id).await;
     assert_eq!(age_sum, expected_age_sum);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy_and_sync() {
     let mut database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database).await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
 
     // Insert initial test data.
     let rows_inserted = 10;
     insert_mock_data(
         &mut database,
-        &database_schema.users_table_schema.name,
-        &database_schema.orders_table_schema.name,
+        &database_schema.users_schema().name,
+        &database_schema.orders_schema().name,
         1..=rows_inserted,
         false,
     )
@@ -736,14 +765,14 @@ async fn test_table_copy_and_sync() {
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
@@ -757,14 +786,14 @@ async fn test_table_copy_and_sync() {
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::SyncDone,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::SyncDone,
         )
         .await;
@@ -772,8 +801,8 @@ async fn test_table_copy_and_sync() {
     // Insert additional data to test streaming.
     insert_mock_data(
         &mut database,
-        &database_schema.users_table_schema.name,
-        &database_schema.orders_table_schema.name,
+        &database_schema.users_schema().name,
+        &database_schema.orders_schema().name,
         (rows_inserted + 1)..=(rows_inserted + 2),
         true,
     )
@@ -786,14 +815,14 @@ async fn test_table_copy_and_sync() {
     let users_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.users_table_schema.id,
+            database_schema.users_schema().id,
             TableReplicationPhaseType::Ready,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
             identity.id(),
-            database_schema.orders_table_schema.id,
+            database_schema.orders_schema().id,
             TableReplicationPhaseType::Ready,
         )
         .await;
@@ -806,8 +835,8 @@ async fn test_table_copy_and_sync() {
     // Insert more data to test apply worker processing.
     insert_mock_data(
         &mut database,
-        &database_schema.users_table_schema.name,
-        &database_schema.orders_table_schema.name,
+        &database_schema.users_schema().name,
+        &database_schema.orders_schema().name,
         (rows_inserted + 3)..=(rows_inserted + 4),
         true,
     )
@@ -821,19 +850,15 @@ async fn test_table_copy_and_sync() {
 
     // Verify initial table copy data.
     let table_rows = destination.get_table_rows().await;
-    let users_table_rows = table_rows
-        .get(&database_schema.users_table_schema.id)
-        .unwrap();
-    let orders_table_rows = table_rows
-        .get(&database_schema.orders_table_schema.id)
-        .unwrap();
+    let users_table_rows = table_rows.get(&database_schema.users_schema().id).unwrap();
+    let orders_table_rows = table_rows.get(&database_schema.orders_schema().id).unwrap();
     assert_eq!(users_table_rows.len(), rows_inserted);
     assert_eq!(orders_table_rows.len(), rows_inserted);
 
     // Verify age sum calculation.
     let expected_age_sum = get_n_integers_sum(rows_inserted);
     let age_sum =
-        get_users_age_sum_from_rows(&destination, database_schema.users_table_schema.id).await;
+        get_users_age_sum_from_rows(&destination, database_schema.users_schema().id).await;
     assert_eq!(age_sum, expected_age_sum);
 
     // Get all the events that were produced to the destination and assert them individually by table
@@ -844,16 +869,16 @@ async fn test_table_copy_and_sync() {
     let events = destination.get_events().await;
     let grouped_events = group_events_by_type_and_table_id(&events);
     let users_inserts = grouped_events
-        .get(&(EventType::Insert, database_schema.users_table_schema.id))
+        .get(&(EventType::Insert, database_schema.users_schema().id))
         .unwrap();
     let orders_inserts = grouped_events
-        .get(&(EventType::Insert, database_schema.orders_table_schema.id))
+        .get(&(EventType::Insert, database_schema.orders_schema().id))
         .unwrap();
 
     // Build expected events for verification
     let expected_users_inserts = build_expected_users_inserts(
         11,
-        database_schema.users_table_schema.id,
+        database_schema.users_schema().id,
         vec![
             ("user_11", 11),
             ("user_12", 12),
@@ -863,7 +888,7 @@ async fn test_table_copy_and_sync() {
     );
     let expected_orders_inserts = build_expected_orders_inserts(
         11,
-        database_schema.orders_table_schema.id,
+        database_schema.orders_schema().id,
         vec![
             "description_11",
             "description_12",
@@ -873,4 +898,80 @@ async fn test_table_copy_and_sync() {
     );
     assert_eq!(*users_inserts, expected_users_inserts);
     assert_eq!(*orders_inserts, expected_orders_inserts);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_table_copy_and_sync_with_changed_schema() {
+    let database = spawn_database().await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::OrdersOnly).await;
+
+    // Insert data in the table.
+    database
+        .insert_values(
+            database_schema.orders_schema().name.clone(),
+            &["description"],
+            &[&"description_1"],
+        )
+        .await
+        .unwrap();
+
+    let state_store = TestStateStore::new();
+    let destination = TestDestination::new();
+
+    // Start pipeline from scratch.
+    let identity = create_pipeline_identity(&database_schema.publication_name);
+    let mut pipeline = spawn_pg_pipeline(
+        &identity,
+        &database.config,
+        state_store.clone(),
+        destination.clone(),
+    );
+
+    // Register notifications for initial table copy completion.
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            identity.id(),
+            database_schema.orders_schema().id,
+            TableReplicationPhaseType::FinishedCopy,
+        )
+        .await;
+
+    pipeline.start().await.unwrap();
+
+    orders_state_notify.notified().await;
+
+    // Register notifications for sync completion.
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            identity.id(),
+            database_schema.orders_schema().id,
+            TableReplicationPhaseType::SyncDone,
+        )
+        .await;
+
+    // Change the schema of orders by adding a new column.
+    database
+        .alter_table(
+            database_schema.orders_schema().name.clone(),
+            &[TableModification::AddColumn {
+                name: "date",
+                data_type: "integer",
+            }],
+        )
+        .await
+        .unwrap();
+
+    // Insert new data in the table.
+    database
+        .insert_values(
+            database_schema.orders_schema().name.clone(),
+            &["description", "date"],
+            &[&"description_with_date", &(10i32)],
+        )
+        .await
+        .unwrap();
+
+    orders_state_notify.notified().await;
+
+    pipeline.shutdown_and_wait().await.unwrap();
 }
