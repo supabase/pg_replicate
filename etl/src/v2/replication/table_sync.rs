@@ -3,12 +3,13 @@ use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
-use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
+use crate::v2::replication::slot::{get_slot_name, SlotError};
 use crate::v2::replication::stream::{TableCopyStream, TableCopyStreamError};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
+use crate::v2::workers::base::WorkerType;
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use futures::StreamExt;
 use postgres::schema::Oid;
@@ -137,7 +138,7 @@ where
     // good to reduce the length of the critical section.
     drop(inner);
 
-    let slot_name = get_slot_name(&identity, SlotUsage::TableSyncWorker { table_id })?;
+    let slot_name = get_slot_name(&identity, WorkerType::TableSync { table_id })?;
 
     // There are three phases in which the table can be in:
     // - `Init` -> this means that the table sync was never done, so we just perform it.

@@ -5,12 +5,12 @@ use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopH
 use crate::v2::replication::client::{
     GetOrCreateSlotResult, PgReplicationClient, PgReplicationError,
 };
-use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
+use crate::v2::replication::slot::{get_slot_name, SlotError};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
-use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerType, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerError, TableSyncWorkerState, TableSyncWorkerStateError,
@@ -177,7 +177,7 @@ where
     let mut attempt = 0;
     loop {
         // We get or create the slot name for the apply worker.
-        let slot_name = get_slot_name(identity, SlotUsage::ApplyWorker)?;
+        let slot_name = get_slot_name(identity, WorkerType::Apply)?;
         let slot = replication_client.get_or_create_slot(&slot_name).await?;
 
         // If we just created a slot, we will use its consistent point to start the apply loop,
@@ -440,7 +440,7 @@ where
         Ok(should_apply_changes)
     }
 
-    fn slot_usage(&self) -> SlotUsage {
-        SlotUsage::ApplyWorker
+    fn worker_type(&self) -> WorkerType {
+        WorkerType::Apply
     }
 }

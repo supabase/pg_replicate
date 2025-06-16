@@ -1,6 +1,7 @@
 use futures::StreamExt;
-use postgres::schema::Oid;
+use postgres::schema::{Oid, TableId};
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
+use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -19,12 +20,13 @@ use crate::v2::conversions::event::{
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
-use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
+use crate::v2::replication::slot::{get_slot_name, SlotError};
 use crate::v2::replication::stream::{EventsStream, EventsStreamError};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::workers::apply::ApplyWorkerHookError;
+use crate::v2::workers::base::WorkerType;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
 
 /// The amount of seconds that pass between syncing via the hook in case nothing else is going on
@@ -68,6 +70,9 @@ pub enum ApplyLoopError {
 
     #[error("An invalid event {0} was received (expected {1})")]
     InvalidEvent(EventType, EventType),
+
+    #[error("The table schema for table {0} was not found in the cache")]
+    MissingTableSchema(Oid),
 }
 
 impl From<ApplyWorkerHookError> for ApplyLoopError {
@@ -82,7 +87,7 @@ impl From<TableSyncWorkerHookError> for ApplyLoopError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum ApplyLoopResult {
     ApplyStopped,
     ApplyCompleted,
@@ -104,7 +109,7 @@ pub trait ApplyLoopHook {
         remote_final_lsn: PgLsn,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    fn slot_usage(&self) -> SlotUsage;
+    fn worker_type(&self) -> WorkerType;
 }
 
 #[derive(Debug)]
@@ -159,6 +164,11 @@ struct ApplyLoopState {
     next_status_update: StatusUpdate,
     /// A boolean indicating whether the loop should be completed.
     should_complete: bool,
+    /// The set of table ids which should be skipped when processing their messages.
+    // TODO: figure out if when stopping the pipeline in the middle of a transaction, we are resuming
+    //  from the middle, in that case, we might need to persist which tables are skipped, since we might
+    //  not get a relation message.
+    skipped_table_ids: HashSet<Oid>,
 }
 
 impl ApplyLoopState {
@@ -173,6 +183,10 @@ impl ApplyLoopState {
         }
 
         *last_end_lsn = new_last_end_lsn;
+    }
+
+    fn skip_table(&mut self, table_id: TableId) {
+        self.skipped_table_ids.insert(table_id);
     }
 }
 
@@ -208,6 +222,7 @@ where
         remote_final_lsn: None,
         next_status_update: last_status_update,
         should_complete: false,
+        skipped_table_ids: HashSet::new(),
     };
 
     // We initialize the apply loop which is based on the hook implementation.
@@ -215,7 +230,7 @@ where
 
     // We compute the slot name for the replication slot that we are going to use for the logical
     // replication. At this point we assume that the slot already exists.
-    let slot_name = get_slot_name(&identity, hook.slot_usage())?;
+    let slot_name = get_slot_name(&identity, hook.worker_type())?;
 
     // We start the logical replication stream with the supplied parameters at a given lsn. That
     // lsn is the last lsn from which we need to start fetching events.
@@ -294,7 +309,7 @@ where
         // want to process those elements, otherwise if we do, the apply worker will process them too
         // causing duplicate data.
         if state.should_complete {
-            return Ok(());
+            break;
         }
     }
 
@@ -424,6 +439,7 @@ where
             // The `end_lsn` here refers to the LSN of the record right after the commit record.
             let end_lsn = PgLsn::from(message.end_lsn());
             let continue_loop = hook.process_syncing_tables(end_lsn).await?;
+            // If we are told to stop the loop, we prepare for a graceful stop of the loop.
             if !continue_loop {
                 state.should_complete = true;
             }
@@ -438,8 +454,46 @@ where
                 ));
             };
 
-            // We compare the table schema from the relation message.
-            // TODO:
+            let Some(existing_table_schema) =
+                schema_cache.get_table_schema(&message.rel_id()).await
+            else {
+                return Err(ApplyLoopError::MissingTableSchema(message.rel_id()));
+            };
+
+            // We compare the table schema from the relation message with the existing schema (if any).
+            // The purpose of this comparison is that we want to throw an error and stop the processing
+            // of any table that incurs in a schema change after the initial table sync is performed.
+            if !existing_table_schema.partial_eq(&event.table_schema) {
+                match hook.worker_type() {
+                    WorkerType::Apply => {
+                        // If we are in an apply worker, we are processing multiple tables, so we
+                        // just want to exclude this table from being processed.
+                        state.skip_table(message.rel_id());
+                        return Ok(None);
+                    }
+                    WorkerType::TableSync { table_id } if table_id == message.rel_id() => {
+                        // If we are in a table sync worker and the relation message is of the table
+                        // id which this table sync worker is working with, we just want to gracefully
+                        // stop it.
+                        state.should_complete = true;
+                        return Ok(None);
+                    }
+                    WorkerType::TableSync { .. } => {}
+                }
+            }
+
+            let Some(remote_final_lsn) = state.remote_final_lsn else {
+                return Err(ApplyLoopError::InvalidTransaction(
+                    "handle_relation_message".to_owned(),
+                ));
+            };
+
+            if !hook
+                .should_apply_changes(message.rel_id(), remote_final_lsn)
+                .await?
+            {
+                return Ok(None);
+            }
 
             Ok(None)
         }

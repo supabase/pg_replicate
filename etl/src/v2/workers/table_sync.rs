@@ -13,14 +13,13 @@ use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::apply::{start_apply_loop, ApplyLoopError, ApplyLoopHook};
 use crate::v2::replication::client::PgReplicationClient;
-use crate::v2::replication::slot::SlotUsage;
 use crate::v2::replication::table_sync::{start_table_sync, TableSyncError, TableSyncResult};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{
     TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
 };
-use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerType, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
 const PHASE_CHANGE_REFRESH_FREQUENCY: Duration = Duration::from_millis(100);
@@ -384,8 +383,8 @@ where
         Ok(should_apply)
     }
 
-    fn slot_usage(&self) -> SlotUsage {
-        SlotUsage::TableSyncWorker {
+    fn worker_type(&self) -> WorkerType {
+        WorkerType::TableSync {
             table_id: self.table_id,
         }
     }

@@ -20,6 +20,7 @@ use crate::common::state_store::{
 #[derive(Debug, Clone, Copy)]
 enum TableSelection {
     Both,
+    #[allow(dead_code)]
     UsersOnly,
     OrdersOnly,
 }
