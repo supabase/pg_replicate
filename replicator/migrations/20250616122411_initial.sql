@@ -1,0 +1,1 @@
+create namespace replication if not exists;

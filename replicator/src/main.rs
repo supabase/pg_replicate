@@ -16,7 +16,10 @@ use postgres::tokio::config::PgConnectionConfig;
 use telemetry::init_tracing;
 use tracing::{info, instrument};
 
+use crate::migrations::migrate_source_database;
+
 mod configuration;
+mod migrations;
 
 // APP_SOURCE__POSTGRES__PASSWORD and APP_DESTINATION__BIG_QUERY__PROJECT_ID environment variables must be set
 // before running because these are sensitive values which can't be configured in the config files
@@ -36,6 +39,8 @@ async fn start_replication(settings: Settings) -> anyhow::Result<()> {
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("failed to install default crypto provider");
+
+    migrate_source_database(&settings.source, &settings.tls).await?;
 
     let SourceSettings::Postgres {
         host,
