@@ -8,9 +8,8 @@ use tokio_postgres::types::Type;
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::destination_v2::TestDestination;
 use crate::common::pipeline_v2::spawn_pg_pipeline;
-use crate::common::state_store::{
-    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
-};
+use crate::common::state_store::{StateStoreMethod, TestStateStore};
+use fail::FailScenario;
 
 #[derive(Debug)]
 struct DatabaseSchema {
@@ -146,11 +145,9 @@ async fn test_pipeline_with_apply_worker_panic() {
     let database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
-    let fault_config = FaultConfig {
-        load_replication_origin_state: Some(FaultType::Panic),
-        ..Default::default()
-    };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
+    let _scenario = FailScenario::setup();
+    fail::cfg("apply_worker_load_replication_origin_state", "panic").unwrap();
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -174,11 +171,9 @@ async fn test_pipeline_with_apply_worker_error() {
     let database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
-    let fault_config = FaultConfig {
-        load_replication_origin_state: Some(FaultType::Error),
-        ..Default::default()
-    };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
+    let _scenario = FailScenario::setup();
+    fail::cfg("apply_worker_load_replication_origin_state", "return").unwrap();
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -205,11 +200,9 @@ async fn test_pipeline_with_table_sync_worker_panic() {
     let database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
-    let fault_config = FaultConfig {
-        store_table_schema: Some(FaultType::Panic),
-        ..Default::default()
-    };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
+    let _scenario = FailScenario::setup();
+    fail::cfg("table_sync_worker_store_table_schema", "panic").unwrap();
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -223,7 +216,6 @@ async fn test_pipeline_with_table_sync_worker_panic() {
 
     // We register the interest in waiting for both table syncs to have started.
     let users_state_notify = state_store
-        .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
             database_schema.users_table_schema.id,
@@ -231,7 +223,6 @@ async fn test_pipeline_with_table_sync_worker_panic() {
         )
         .await;
     let orders_state_notify = state_store
-        .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
             database_schema.orders_table_schema.id,
@@ -256,11 +247,9 @@ async fn test_pipeline_with_table_sync_worker_error() {
     let database = spawn_database().await;
     let database_schema = setup_database(&database).await;
 
-    let fault_config = FaultConfig {
-        store_table_schema: Some(FaultType::Error),
-        ..Default::default()
-    };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
+    let _scenario = FailScenario::setup();
+    fail::cfg("table_sync_worker_store_table_schema", "return").unwrap();
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -274,7 +263,6 @@ async fn test_pipeline_with_table_sync_worker_error() {
 
     // We register the interest in waiting for both table syncs to have started.
     let users_state_notify = state_store
-        .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
             database_schema.users_table_schema.id,
@@ -282,7 +270,6 @@ async fn test_pipeline_with_table_sync_worker_error() {
         )
         .await;
     let orders_state_notify = state_store
-        .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
             database_schema.orders_table_schema.id,
@@ -306,6 +293,8 @@ async fn test_pipeline_with_table_sync_worker_error() {
         errors[1],
         WorkerWaitError::TableSyncWorkerPropagated(_)
     ));
+
+    fail::remove("table_sync_worker_store_table_schema");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -316,13 +305,11 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
-    // We start the pipeline from scratch with a faulty state store in order to have a failure during
+    // We start the pipeline from scratch with fail points enabled in order to have a failure during
     // data sync.
-    let fault_config = FaultConfig {
-        store_table_schema: Some(FaultType::Error),
-        ..Default::default()
-    };
-    let failing_state_store = FaultInjectingStateStore::wrap(state_store.clone(), fault_config);
+    let _scenario = FailScenario::setup();
+    fail::cfg("table_sync_worker_store_table_schema", "return").unwrap();
+    let failing_state_store = state_store.clone();
     let mut pipeline = spawn_pg_pipeline(
         &database_schema.publication_name,
         &database.options,
@@ -333,7 +320,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 
     // We register the interest in waiting for both table syncs to have started.
     let users_state_notify = failing_state_store
-        .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
             database_schema.users_table_schema.id,
@@ -341,7 +327,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         )
         .await;
     let orders_state_notify = failing_state_store
-        .get_inner()
         .notify_on_replication_phase(
             pipeline_id,
             database_schema.orders_table_schema.id,

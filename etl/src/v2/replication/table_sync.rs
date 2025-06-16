@@ -11,6 +11,7 @@ use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use futures::StreamExt;
 use std::sync::Arc;
+use fail::fail_point;
 use thiserror::Error;
 use tokio::pin;
 use tokio::sync::watch;
@@ -150,6 +151,14 @@ where
             let table_schema = transaction
                 .get_table_schema(table_id, Some(identity.publication_name()))
                 .await?;
+            fail_point!(
+                "table_sync_worker_store_table_schema",
+                |_| -> Result<TableSyncResult, TableSyncError> {
+                    Err(TableSyncError::StateStore(
+                        StateStoreError::TableReplicationStateNotFound,
+                    ))
+                }
+            );
             state_store
                 .store_table_schema(identity.id(), table_schema.clone(), true)
                 .await?;

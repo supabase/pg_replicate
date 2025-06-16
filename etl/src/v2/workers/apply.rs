@@ -13,6 +13,7 @@ use crate::v2::workers::table_sync::{
 };
 use postgres::schema::Oid;
 use std::sync::Arc;
+use fail::fail_point;
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -103,6 +104,15 @@ where
         info!("Starting apply worker");
 
         let apply_worker = async move {
+            fail_point!(
+                "apply_worker_load_replication_origin_state",
+                |_| -> Result<(), ApplyWorkerError> {
+                    Err(ApplyWorkerError::StateStoreError(
+                        StateStoreError::ReplicationOriginStateNotFound,
+                    ))
+                }
+            );
+
             // TODO: get the slot of the main apply worker or create it if needed.
             // We load or initialize the initial state that will be used for the apply worker.
             let replication_origin_state = match self
