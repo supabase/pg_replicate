@@ -89,6 +89,8 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.keys
   - admonition
+  - tables
+  - footnotes
 
 plugins:
   - search
