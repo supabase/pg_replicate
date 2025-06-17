@@ -57,6 +57,7 @@ pub enum TableReplicationPhase {
         /// The LSN of the apply worker which set this state to ready.
         lsn: PgLsn,
     },
+    Skipped,
     Unknown,
 }
 
@@ -77,23 +78,41 @@ pub enum TableReplicationPhaseType {
     Catchup,
     SyncDone,
     Ready,
+    Skipped,
     Unknown,
 }
 
 impl TableReplicationPhaseType {
+    /// Returns `true` if the phase should be saved into the state store, `false` otherwise.
     pub fn should_store(&self) -> bool {
-        // TODO: we might want to statically enforce the two different phase type groups.
         match self {
             Self::Init => true,
             Self::DataSync => true,
             Self::FinishedCopy => true,
-            Self::SyncDone => true,
-            Self::Ready => true,
-            // We set `false` to the statuses which are exclusively used for cross-task synchronization
-            // and do not need to be stored.
             Self::SyncWait => false,
             Self::Catchup => false,
+            Self::SyncDone => true,
+            Self::Ready => true,
+            Self::Skipped => true,
             Self::Unknown => false,
+        }
+    }
+
+    /// Returns `true` if a table with this phase is done processing, `false` otherwise.
+    ///
+    /// A table is done processing, when its events are being processed by the apply worker instead
+    /// of a table sync worker.
+    pub fn is_done(&self) -> bool {
+        match self {
+            Self::Init => false,
+            Self::DataSync => false,
+            Self::FinishedCopy => false,
+            Self::SyncWait => false,
+            Self::Catchup => false,
+            Self::SyncDone => false,
+            Self::Ready => true,
+            Self::Skipped => true,
+            Self::Unknown => true,
         }
     }
 }
@@ -108,6 +127,7 @@ impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
             TableReplicationPhase::Catchup { .. } => Self::Catchup,
             TableReplicationPhase::SyncDone { .. } => Self::SyncDone,
             TableReplicationPhase::Ready { .. } => Self::Ready,
+            TableReplicationPhase::Skipped => Self::Skipped,
             TableReplicationPhase::Unknown => Self::Unknown,
         }
     }
@@ -123,6 +143,7 @@ impl fmt::Display for TableReplicationPhaseType {
             Self::Catchup => write!(f, "catchup"),
             Self::SyncDone => write!(f, "sync_done"),
             Self::Ready => write!(f, "ready"),
+            Self::Skipped => write!(f, "skipped"),
             Self::Unknown => write!(f, "unknown"),
         }
     }

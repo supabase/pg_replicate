@@ -10,7 +10,9 @@ use crate::v2::replication::slot::{get_slot_name, SlotError};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
+use crate::v2::state::table::{
+    TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
+};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerType, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::{
@@ -296,7 +298,7 @@ where
     ) -> Result<bool, ApplyWorkerHookError> {
         let table_sync_worker_state = {
             let pool = self.pool.read().await;
-            pool.get_worker_state(table_id)
+            pool.get_active_worker_state(table_id)
         };
 
         let Some(table_sync_worker_state) = table_sync_worker_state else {
@@ -350,6 +352,15 @@ where
 
         Ok(true)
     }
+
+    async fn active_table_replication_states(
+        &self,
+    ) -> Result<Vec<TableReplicationState>, ApplyWorkerHookError> {
+        let mut table_replication_states = self.state_store.load_table_replication_states().await?;
+        table_replication_states.retain(|s| !s.phase.as_type().is_done());
+
+        Ok(table_replication_states)
+    }
 }
 
 impl<S, D> ApplyLoopHook for Hook<S, D>
@@ -360,14 +371,14 @@ where
     type Error = ApplyWorkerHookError;
 
     async fn initialize(&self) -> Result<(), Self::Error> {
-        let table_replication_states = self.state_store.load_table_replication_states().await?;
+        let table_replication_states = self.active_table_replication_states().await?;
 
         for table_replication_state in table_replication_states {
             let table_id = table_replication_state.table_id;
 
             let table_sync_worker_state = {
                 let pool = self.pool.read().await;
-                pool.get_worker_state(table_id)
+                pool.get_active_worker_state(table_id)
             };
 
             if table_sync_worker_state.is_none() {
@@ -381,7 +392,7 @@ where
     }
 
     async fn process_syncing_tables(&self, current_lsn: PgLsn) -> Result<bool, Self::Error> {
-        let table_replication_states = self.state_store.load_table_replication_states().await?;
+        let table_replication_states = self.active_table_replication_states().await?;
         info!(
             "Processing syncing tables for apply worker with LSN {}",
             current_lsn
@@ -392,10 +403,6 @@ where
             // read the shared state which can contain also non-persisted states.
             let table_id = table_replication_state.table_id;
             match table_replication_state.phase {
-                TableReplicationPhase::Ready { .. } => {
-                    info!("Found table {} with ready state, skipping it", table_id);
-                    continue;
-                }
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
@@ -414,6 +421,32 @@ where
         Ok(true)
     }
 
+    async fn skip_table(&self, table_id: Oid) -> Result<bool, Self::Error> {
+        let table_sync_worker_state = {
+            let pool = self.pool.read().await;
+            pool.get_active_worker_state(table_id)
+        };
+
+        // In case we have the state in memory, we will also update that.
+        if let Some(table_sync_worker_state) = table_sync_worker_state {
+            let mut inner = table_sync_worker_state.get_inner().write().await;
+            inner.set_phase(TableReplicationPhase::Skipped);
+        }
+
+        // We store the new skipped state in the state store, since we want to still skip a table in
+        // case of pipeline restarts.
+        let table_replication_state = TableReplicationState::new(
+            self.identity.id(),
+            table_id,
+            TableReplicationPhase::Skipped,
+        );
+        self.state_store
+            .store_table_replication_state(table_replication_state, true)
+            .await?;
+
+        Ok(true)
+    }
+
     async fn should_apply_changes(
         &self,
         table_id: Oid,
@@ -421,18 +454,20 @@ where
     ) -> Result<bool, Self::Error> {
         let pool = self.pool.read().await;
 
-        let replication_phase = match pool.get_worker_state(table_id) {
+        // We try to load the state first from memory, if we don't find it, we try to load from the
+        // state store.
+        let replication_phase = match pool.get_active_worker_state(table_id) {
             Some(state) => {
                 let inner = state.get_inner().read().await;
                 inner.replication_phase()
             }
             None => {
-                // If we don't even find the state for this table, we skip the event entirely.
                 let Some(state) = self
                     .state_store
                     .load_table_replication_state(self.identity.id(), table_id)
                     .await?
                 else {
+                    // If we don't even find the state for this table, we skip the event entirely.
                     return Ok(false);
                 };
 

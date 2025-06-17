@@ -64,7 +64,7 @@ impl TableSyncWorkerPoolInner {
         Ok(true)
     }
 
-    pub fn get_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
+    pub fn get_active_worker_state(&self, table_id: Oid) -> Option<TableSyncWorkerState> {
         let state = self.active.get(&table_id)?.state().clone();
         info!("Retrieved worker state for table {}", table_id);
 

@@ -59,7 +59,7 @@ pub struct TableSyncWorkerStateInner {
 }
 
 impl TableSyncWorkerStateInner {
-    fn set_phase(&mut self, phase: TableReplicationPhase) {
+    pub fn set_phase(&mut self, phase: TableReplicationPhase) {
         info!(
             "Table {} phase changing from {:?} to {:?}",
             self.table_replication_state.table_id, self.table_replication_state.phase, phase
@@ -108,6 +108,8 @@ impl TableSyncWorkerStateInner {
     }
 }
 
+// TODO: we would like to put the state of tables in a shared state structure which can be referenced
+//  by table sync workers.
 #[derive(Debug, Clone)]
 pub struct TableSyncWorkerState {
     inner: Arc<RwLock<TableSyncWorkerStateInner>>,
@@ -393,20 +395,33 @@ where
         Ok(true)
     }
 
+    async fn skip_table(&self, table_id: Oid) -> Result<bool, Self::Error> {
+        if self.table_id != table_id {
+            return Ok(true);
+        }
+
+        let mut inner = self.table_sync_worker_state.get_inner().write().await;
+        inner
+            .set_phase_with(TableReplicationPhase::Skipped, self.state_store.clone())
+            .await?;
+
+        Ok(false)
+    }
+
     async fn should_apply_changes(
         &self,
         table_id: Oid,
         _remote_final_lsn: PgLsn,
     ) -> Result<bool, Self::Error> {
-        let should_apply = self.table_id == table_id;
-        if should_apply {
-            info!(
-                "Table sync worker for table {} will apply changes",
-                table_id
-            );
-        }
+        let inner = self.table_sync_worker_state.get_inner().write().await;
+        let is_skipped = matches!(
+            inner.table_replication_state.phase.as_type(),
+            TableReplicationPhaseType::Skipped
+        );
 
-        Ok(should_apply)
+        let should_apply_changes = !is_skipped && self.table_id == table_id;
+
+        Ok(should_apply_changes)
     }
 
     fn worker_type(&self) -> WorkerType {

@@ -6,8 +6,6 @@ use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
 use std::ops::RangeInclusive;
-use std::time::Duration;
-use tokio::time::timeout;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, GenericClient};
 
@@ -972,9 +970,5 @@ async fn test_table_copy_and_sync_with_changed_schema() {
 
     events_notify.notified().await;
 
-    // TODO: assert errors.
-    timeout(Duration::from_secs(1), pipeline.shutdown_and_wait())
-        .await
-        .unwrap()
-        .unwrap();
+    pipeline.shutdown_and_wait().await.unwrap();
 }

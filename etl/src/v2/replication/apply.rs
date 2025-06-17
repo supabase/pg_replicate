@@ -15,18 +15,17 @@ use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::workers::apply::ApplyWorkerHookError;
 use crate::v2::workers::base::WorkerType;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
+
 use futures::StreamExt;
 use postgres::schema::Oid;
 use postgres_replication::protocol;
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
-use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::pin;
-use tokio::sync::Mutex;
 use tokio_postgres::types::PgLsn;
 use tracing::error;
 
@@ -107,6 +106,8 @@ pub trait ApplyLoopHook {
         current_lsn: PgLsn,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
+    fn skip_table(&self, table_id: Oid) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+
     fn should_apply_changes(
         &self,
         table_id: Oid,
@@ -155,15 +156,6 @@ enum BatchEarlyBreak {
     BreakAndDiscard,
 }
 
-#[derive(Debug)]
-struct SharedApplyLoopState {
-    /// The set of table ids which should be skipped when processing their messages.
-    // TODO: figure out if when stopping the pipeline in the middle of a transaction, we are resuming
-    //  from the middle, in that case, we might need to persist which tables are skipped, since we might
-    //  not get a relation message.
-    skipped_table_ids: HashSet<Oid>,
-}
-
 #[derive(Debug, Clone)]
 struct ApplyLoopState {
     /// The highest LSN received from the `end_lsn` field of replication messages.
@@ -181,31 +173,18 @@ struct ApplyLoopState {
     remote_final_lsn: Option<PgLsn>,
     /// The LSNs of the status update that we want to send to Postgres.
     next_status_update: StatusUpdate,
-    /// A boolean indicating whether the loop should be completed.
-    ///
-    /// This boolean is checked when processing a batch of messages and assumes that when set to `true`,
-    /// the message processed before the check is expected to be successfully applied.
-    should_break_early: Option<BatchEarlyBreak>,
-    /// A portion of the state that is shared and not copied when performing state clones.
-    ///
-    /// We use a `Mutex` instead of `RwLock` since in our case we will have zero contention because
-    /// the state is only modified by one thread (can be different threads but there won't be any
-    /// contention) and a `Mutex` is more performant in these cases.
-    shared: Arc<Mutex<SharedApplyLoopState>>,
+    /// An enum indicating whether the processing of a batch should be terminated early, with a consequent
+    /// termination of the main apply loop too.
+    early_break: Option<BatchEarlyBreak>,
 }
 
 impl ApplyLoopState {
     fn new(next_status_update: StatusUpdate) -> Self {
-        let shared = SharedApplyLoopState {
-            skipped_table_ids: HashSet::new(),
-        };
-
         Self {
             last_end_lsn: None,
             remote_final_lsn: None,
             next_status_update,
-            should_break_early: None,
-            shared: Arc::new(Mutex::new(shared)),
+            early_break: None,
         }
     }
 
@@ -220,16 +199,6 @@ impl ApplyLoopState {
         }
 
         *last_end_lsn = new_last_end_lsn;
-    }
-
-    async fn skip_table(&mut self, table_id: Oid) {
-        let mut shared = self.shared.lock().await;
-        shared.skipped_table_ids.insert(table_id);
-    }
-
-    async fn should_skip_table(&self, table_id: Oid) -> bool {
-        let shared = self.shared.lock().await;
-        shared.skipped_table_ids.contains(&table_id)
     }
 }
 
@@ -406,7 +375,7 @@ where
         // but its batch contained more elements after the caught up element, in that case we don't
         // want to process those elements, otherwise if we do, the apply worker will process them too
         // causing duplicate data.
-        match state.should_break_early {
+        match state.early_break {
             Some(BatchEarlyBreak::Break) => {
                 stop_apply_loop = true;
                 break;
@@ -600,9 +569,11 @@ where
     let end_lsn = PgLsn::from(message.end_lsn());
     let continue_loop = hook.process_syncing_tables(end_lsn).await?;
 
-    // If we are told to stop the loop, we prepare for a graceful stop of the loop.
+    // If we are told to stop the loop, it means we reached the end of processing for this specific
+    // worker, so we gracefully stop processing the batch, but we include in the batch the last processed
+    // element, in this case the `Commit` message.
     if !continue_loop {
-        state.should_break_early = Some(BatchEarlyBreak::Break);
+        state.early_break = Some(BatchEarlyBreak::Break);
     }
 
     Ok(Some(Event::Commit(event)))
@@ -650,24 +621,15 @@ where
     // The purpose of this comparison is that we want to throw an error and stop the processing
     // of any table that incurs in a schema change after the initial table sync is performed.
     if !existing_table_schema.partial_eq(&event.table_schema) {
-        match hook.worker_type() {
-            WorkerType::Apply => {
-                // If we are in an apply worker, we are processing multiple tables, so we
-                // just want to exclude this table from being processed.
-                state.skip_table(message.rel_id()).await;
+        let continue_loop = hook.skip_table(message.rel_id()).await?;
 
-                return Ok(None);
-            }
-            WorkerType::TableSync { table_id } if table_id == message.rel_id() => {
-                // If we are in a table sync worker and the relation message is of the table
-                // id which this table sync worker is working with, we just want to gracefully
-                // stop it and discard this message.
-                state.should_break_early = Some(BatchEarlyBreak::BreakAndDiscard);
-
-                return Ok(None);
-            }
-            WorkerType::TableSync { .. } => {}
+        // If we are told to stop the loop, we want to break the batch processing and discard the
+        // current element being processed, in this case the `Relation` message.
+        if !continue_loop {
+            state.early_break = Some(BatchEarlyBreak::BreakAndDiscard);
         }
+
+        return Ok(None);
     }
 
     Ok(Some(Event::Relation(event)))
@@ -696,7 +658,10 @@ where
         ));
     };
 
-    if !should_apply_changes(state, message.rel_id(), remote_final_lsn, hook).await? {
+    if !hook
+        .should_apply_changes(message.rel_id(), remote_final_lsn)
+        .await?
+    {
         return Ok(None);
     }
 
@@ -726,7 +691,10 @@ where
         ));
     };
 
-    if !should_apply_changes(state, message.rel_id(), remote_final_lsn, hook).await? {
+    if !hook
+        .should_apply_changes(message.rel_id(), remote_final_lsn)
+        .await?
+    {
         return Ok(None);
     }
 
@@ -756,7 +724,10 @@ where
         ));
     };
 
-    if !should_apply_changes(state, message.rel_id(), remote_final_lsn, hook).await? {
+    if !hook
+        .should_apply_changes(message.rel_id(), remote_final_lsn)
+        .await?
+    {
         return Ok(None);
     }
 
@@ -788,36 +759,14 @@ where
 
     let mut rel_ids = Vec::with_capacity(message.rel_ids().len());
     for &table_id in message.rel_ids().iter() {
-        if should_apply_changes(state, table_id, remote_final_lsn, hook).await? {
+        if hook
+            .should_apply_changes(table_id, remote_final_lsn)
+            .await?
+        {
             rel_ids.push(table_id)
         }
     }
     event.rel_ids = rel_ids;
 
     Ok(Some(Event::Truncate(event)))
-}
-
-async fn should_apply_changes<T>(
-    state: &ApplyLoopState,
-    table_id: Oid,
-    remote_final_lsn: PgLsn,
-    hook: &T,
-) -> Result<bool, ApplyLoopError>
-where
-    T: ApplyLoopHook,
-    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
-{
-    // If we are in an apply worker and the table is marked as skipped, we will discard all the
-    // events.
-    if let WorkerType::Apply = hook.worker_type() {
-        if state.should_skip_table(table_id).await {
-            return Ok(false);
-        }
-    }
-
-    let should_apply_changes = hook
-        .should_apply_changes(table_id, remote_final_lsn)
-        .await?;
-
-    Ok(should_apply_changes)
 }
