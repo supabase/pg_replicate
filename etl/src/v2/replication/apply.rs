@@ -1,6 +1,5 @@
 use futures::StreamExt;
 use postgres::schema::Oid;
-use postgres_protocol::Lsn;
 use postgres_replication::protocol;
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
 use std::collections::HashSet;
@@ -10,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::pin;
-use tokio::sync::{watch, Mutex, RwLock};
+use tokio::sync::{watch, Mutex};
 use tokio_postgres::types::PgLsn;
 use tracing::error;
 
@@ -284,32 +283,63 @@ where
     pin!(logical_replication_stream);
 
     loop {
-        if state.should_break_early.is_some() {
-            break;
-        }
-
         tokio::select! {
             biased;
 
+            // Shutdown signal received, exit loop
             _ = shutdown_rx.changed() => {
                 break;
             }
+
+            // Process a batch of replication messages
             Some(messages_batch) = logical_replication_stream.next() => {
                 let logical_replication_stream = logical_replication_stream.as_mut();
-                let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
+                let events_stream = unsafe {
+                    Pin::new_unchecked(
+                        logical_replication_stream
+                            .get_unchecked_mut()
+                            .get_inner_mut()
+                    )
+                };
 
-                handle_replication_message_batch(&identity, &mut state, events_stream, messages_batch, &schema_cache, &state_store, &destination, &hook).await?;
+                let stop_apply_loop = handle_replication_message_batch(
+                    &identity,
+                    &mut state,
+                    events_stream,
+                    messages_batch,
+                    &schema_cache,
+                    &state_store,
+                    &destination,
+                    &hook,
+                )
+                .await?;
+                if stop_apply_loop {
+                    break;
+                }
             }
-            _ = tokio::time::sleep(SYNCING_FREQUENCY_SECONDS) => {
-                // TODO: this is a great place to perform cleanup operations.
-               let logical_replication_stream = logical_replication_stream.as_mut();
-               let events_stream = unsafe { Pin::new_unchecked(logical_replication_stream.get_unchecked_mut().get_inner_mut()) };
 
-               events_stream.send_status_update(state.next_status_update.write_lsn, state.next_status_update.flush_lsn, state.next_status_update.apply_lsn).await?;
+            // Periodic status update when idle
+            _ = tokio::time::sleep(SYNCING_FREQUENCY_SECONDS) => {
+                let logical_replication_stream = logical_replication_stream.as_mut();
+                let events_stream = unsafe {
+                    Pin::new_unchecked(
+                        logical_replication_stream
+                            .get_unchecked_mut()
+                            .get_inner_mut()
+                    )
+                };
+
+                events_stream
+                    .send_status_update(
+                        state.next_status_update.write_lsn,
+                        state.next_status_update.flush_lsn,
+                        state.next_status_update.apply_lsn,
+                    )
+                    .await?;
             }
         }
     }
-    
+
     Ok(ApplyLoopResult::ApplyCompleted)
 }
 
@@ -322,15 +352,15 @@ async fn handle_replication_message_batch<S, D, T>(
     state_store: &S,
     destination: &D,
     hook: &T,
-) -> Result<(), ApplyLoopError>
+) -> Result<bool, ApplyLoopError>
 where
     S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    let batch_size = messages_batch.len();
-    let mut events_batch = Vec::with_capacity(batch_size);
+    let mut stop_apply_loop = false;
+    let mut events_batch = Vec::with_capacity(messages_batch.len());
 
     for message in messages_batch {
         // We store the previous state to use it in case we have to restore it because we processed
@@ -365,6 +395,7 @@ where
         // causing duplicate data.
         match state.should_break_early {
             Some(BatchEarlyBreak::Break) => {
+                stop_apply_loop = true;
                 break;
             }
             Some(BatchEarlyBreak::BreakAndDiscard) => {
@@ -372,11 +403,16 @@ where
                     events_batch.pop();
                 }
                 *state = previous_state;
+                stop_apply_loop = true;
 
                 break;
             }
             None => {}
         }
+    }
+
+    if events_batch.is_empty() {
+        return Ok(stop_apply_loop);
     }
 
     // We apply the batch of events to the destination.
@@ -404,7 +440,7 @@ where
         state.next_status_update.update_apply_lsn(last_end_lsn);
     }
 
-    Ok(())
+    Ok(stop_apply_loop)
 }
 
 async fn handle_replication_message<T>(
