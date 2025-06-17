@@ -8,11 +8,15 @@ edit_uri: edit/main/docs/
 
 nav:
   - Home:
-      - "index.md"
-  - Development:
-      - "database-setup.md"
+      - index.md
+  - Tutorials:
+      - getting-started.md
+  - Guides:
+      - database-setup.md
   - Design:
-      - "design.md"
+      - design.md
+  - Reference:
+      - reference.md
 
 theme:
   name: "material"
