@@ -22,3 +22,11 @@ Cargo.lock
 
 # macOS system files
 .DS_Store
+
+# mkdocs build directory
+site/
+
+# venv files
+bin/
+lib/
+pyvenv.cfg
