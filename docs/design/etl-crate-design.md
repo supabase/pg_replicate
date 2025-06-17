@@ -1,5 +1,3 @@
-## Design
-
 Applications can use data sources and destinations from `etl` to build a data pipeline to continually copy data from the source to the destination. For example, a data pipeline to copy data from Postgres to DuckDB takes about 100 lines of Rust.
 
 There are three components in a data pipeline:

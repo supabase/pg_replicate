@@ -10,13 +10,16 @@ nav:
   - Home:
       - index.md
   - Tutorials:
-      - getting-started.md
+      - Tutorials: tutorials/index.md
+      - Getting started: tutorials/getting-started.md
   - Guides:
-      - database-setup.md
+      - Guides: guides/index.md
+      - Database setup: guides/database-setup.md
   - Design:
-      - design.md
+      - Design: design/index.md
+      - ETL crate design: design/etl-crate-design.md
   - Reference:
-      - reference.md
+      - Reference: reference/index.md
 
 theme:
   name: "material"
