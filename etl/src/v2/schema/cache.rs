@@ -35,3 +35,9 @@ impl SchemaCache {
         inner.table_schemas.get(table_id).cloned()
     }
 }
+
+impl Default for SchemaCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}

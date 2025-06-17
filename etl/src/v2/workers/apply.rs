@@ -92,6 +92,7 @@ pub struct ApplyWorker<S, D> {
 }
 
 impl<S, D> ApplyWorker<S, D> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         identity: PipelineIdentity,
         config: Arc<PipelineConfig>,
@@ -236,6 +237,7 @@ struct Hook<S, D> {
 }
 
 impl<S, D> Hook<S, D> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         identity: PipelineIdentity,
         config: Arc<PipelineConfig>,

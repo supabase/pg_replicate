@@ -161,10 +161,10 @@ struct ApplyLoopState {
     /// The highest LSN received from the `end_lsn` field of replication messages.
     ///
     /// This LSN is set with the `end_lsn` of each incoming message, and it's used for:
-    /// - Storing how far we have come when it comes to processing events (stored in the replication
-    /// origin state)
-    /// - Notifying Postgres about how far we have flushed events in our destination (so that Postgres
-    /// can perform WAL pruning)
+    /// - Storing how far we have come when it comes to processing events (stored in the replication 
+    ///   origin state)
+    /// - Notifying Postgres about how far we have flushed events in our destination (so that Postgres 
+    ///   can perform WAL pruning)
     last_end_lsn: Option<PgLsn>,
     /// The LSN of the commit WAL entry of the transaction that is currently being processed.
     ///
@@ -325,6 +325,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_replication_message_batch<S, D, T>(
     identity: &PipelineIdentity,
     state: &mut ApplyLoopState,
@@ -478,7 +479,7 @@ where
 {
     // We perform the conversion of the message to our own event format which is used downstream
     // by the destination.
-    let event = convert_message_to_event(&schema_cache, &message).await?;
+    let event = convert_message_to_event(schema_cache, &message).await?;
 
     match message {
         LogicalReplicationMessage::Begin(message) => {

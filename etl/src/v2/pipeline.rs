@@ -128,7 +128,7 @@ where
 
         // We initialize the schema cache, which is local to a pipeline, and we try to load existing
         // schemas that were previously stored at the destination (if any).
-        let schema_cache = SchemaCache::new();
+        let schema_cache = SchemaCache::default();
         // TODO: load schemas from destination and populate cache.
 
         // We create and start the apply worker.
