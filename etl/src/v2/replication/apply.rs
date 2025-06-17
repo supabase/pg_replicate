@@ -1,18 +1,4 @@
-use futures::StreamExt;
-use postgres::schema::Oid;
-use postgres_replication::protocol;
-use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
-use std::collections::HashSet;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
-use thiserror::Error;
-use tokio::pin;
-use tokio::sync::{watch, Mutex};
-use tokio_postgres::types::PgLsn;
-use tracing::error;
-
+use crate::v2::concurrency::shutdown::{ShutdownResult, ShutdownRx};
 use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::conversions::event::{
@@ -29,6 +15,20 @@ use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::workers::apply::ApplyWorkerHookError;
 use crate::v2::workers::base::WorkerType;
 use crate::v2::workers::table_sync::TableSyncWorkerHookError;
+use futures::StreamExt;
+use postgres::schema::Oid;
+use postgres_replication::protocol;
+use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
+use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+use thiserror::Error;
+use tokio::pin;
+use tokio::sync::Mutex;
+use tokio_postgres::types::PgLsn;
+use tracing::error;
 
 /// The amount of seconds that pass between syncing via the hook in case nothing else is going on
 /// in the system (e.g., no data from the stream and no shutdown signal).
@@ -243,7 +243,7 @@ pub async fn start_apply_loop<S, D, T>(
     state_store: S,
     destination: D,
     hook: T,
-    mut shutdown_rx: watch::Receiver<()>,
+    mut shutdown_rx: ShutdownRx,
 ) -> Result<ApplyLoopResult, ApplyLoopError>
 where
     S: StateStore + Clone + Send + 'static,
@@ -288,11 +288,11 @@ where
 
             // Shutdown signal received, exit loop.
             _ = shutdown_rx.changed() => {
-                break;
+                return Ok(ApplyLoopResult::ApplyStopped);
             }
 
             // Process a batch of replication messages.
-            Some(messages_batch) = logical_replication_stream.next() => {
+            Some(result) = logical_replication_stream.next() => {
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe {
                     Pin::new_unchecked(
@@ -302,19 +302,34 @@ where
                     )
                 };
 
-                let stop_apply_loop = handle_replication_message_batch(
-                    &identity,
-                    &mut state,
-                    events_stream,
-                    messages_batch,
-                    &schema_cache,
-                    &state_store,
-                    &destination,
-                    &hook,
-                )
-                .await?;
-                if stop_apply_loop {
-                    break;
+                match result {
+                    ShutdownResult::Ok(messages_batch) => {
+                        let stop_apply_loop = handle_replication_message_batch(
+                            &identity,
+                            &mut state,
+                            events_stream,
+                            messages_batch,
+                            &schema_cache,
+                            &state_store,
+                            &destination,
+                            &hook,
+                        )
+                        .await?;
+
+                        // If we are told to stop the apply loop, we will do it.
+                        if stop_apply_loop {
+                            return Ok(ApplyLoopResult::ApplyStopped);
+                        }
+                    }
+                    ShutdownResult::Shutdown(_) => {
+                        // If we incurred in a shutdown within the stream, we also return that we
+                        // stopped.
+                        // This branch is technically not really needed since we have the shutdown
+                        // handler also in the `select!`, however this code path could react faster
+                        // in case we have a shutdown signal sent while we are running the blocking
+                        // loop in the stream.
+                        return Ok(ApplyLoopResult::ApplyStopped);
+                    }
                 }
             }
 
@@ -339,8 +354,6 @@ where
             }
         }
     }
-
-    Ok(ApplyLoopResult::ApplyCompleted)
 }
 
 async fn handle_replication_message_batch<S, D, T>(
@@ -586,7 +599,7 @@ where
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
     let end_lsn = PgLsn::from(message.end_lsn());
     let continue_loop = hook.process_syncing_tables(end_lsn).await?;
-    
+
     // If we are told to stop the loop, we prepare for a graceful stop of the loop.
     if !continue_loop {
         state.should_break_early = Some(BatchEarlyBreak::Break);

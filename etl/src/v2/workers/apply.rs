@@ -1,3 +1,4 @@
+use crate::v2::concurrency::shutdown::ShutdownRx;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
@@ -18,7 +19,6 @@ use crate::v2::workers::table_sync::{
 use postgres::schema::Oid;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 use tracing::{error, info};
@@ -86,7 +86,7 @@ pub struct ApplyWorker<S, D> {
     schema_cache: SchemaCache,
     state_store: S,
     destination: D,
-    shutdown_rx: watch::Receiver<()>,
+    shutdown_rx: ShutdownRx,
 }
 
 impl<S, D> ApplyWorker<S, D> {
@@ -98,7 +98,7 @@ impl<S, D> ApplyWorker<S, D> {
         schema_cache: SchemaCache,
         state_store: S,
         destination: D,
-        shutdown_rx: watch::Receiver<()>,
+        shutdown_rx: ShutdownRx,
     ) -> Self {
         Self {
             identity,
@@ -230,7 +230,7 @@ struct Hook<S, D> {
     schema_cache: SchemaCache,
     state_store: S,
     destination: D,
-    shutdown_rx: watch::Receiver<()>,
+    shutdown_rx: ShutdownRx,
 }
 
 impl<S, D> Hook<S, D> {
@@ -242,7 +242,7 @@ impl<S, D> Hook<S, D> {
         schema_cache: SchemaCache,
         state_store: S,
         destination: D,
-        shutdown_rx: watch::Receiver<()>,
+        shutdown_rx: ShutdownRx,
     ) -> Self {
         Self {
             identity,
@@ -293,7 +293,7 @@ where
         &self,
         table_id: Oid,
         current_lsn: PgLsn,
-    ) -> Result<(), ApplyWorkerHookError> {
+    ) -> Result<bool, ApplyWorkerHookError> {
         let table_sync_worker_state = {
             let pool = self.pool.read().await;
             pool.get_worker_state(table_id)
@@ -303,7 +303,7 @@ where
             info!("Creating new sync worker for table {}", table_id);
             self.start_table_sync_worker(table_id).await?;
 
-            return Ok(());
+            return Ok(true);
         };
 
         self.handle_existing_worker(table_id, table_sync_worker_state, current_lsn)
@@ -315,7 +315,7 @@ where
         table_id: Oid,
         table_sync_worker_state: TableSyncWorkerState,
         current_lsn: PgLsn,
-    ) -> Result<(), ApplyWorkerHookError> {
+    ) -> Result<bool, ApplyWorkerHookError> {
         let mut catchup_started = false;
         {
             let mut inner = table_sync_worker_state.get_inner().write().await;
@@ -332,13 +332,23 @@ where
         }
 
         if catchup_started {
-            let _ = table_sync_worker_state
-                .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
+            let result = table_sync_worker_state
+                .wait_for_phase_type(
+                    TableReplicationPhaseType::SyncDone,
+                    self.shutdown_rx.clone(),
+                )
                 .await;
+
+            // If we are told to shut down while waiting for a phase change, we will signal this to
+            // the caller.
+            if result.should_shutdown() {
+                return Ok(false);
+            }
+
             info!("Sync completed for table {}", table_id);
         }
 
-        Ok(())
+        Ok(true)
     }
 }
 

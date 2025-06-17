@@ -1,3 +1,4 @@
+use crate::v2::concurrency::shutdown::{ShutdownResult, ShutdownRx};
 use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::{Destination, DestinationError};
@@ -16,7 +17,6 @@ use postgres::schema::Oid;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::pin;
-use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Error)]
@@ -63,49 +63,7 @@ pub async fn start_table_sync<S, D>(
     schema_cache: SchemaCache,
     state_store: S,
     destination: D,
-    mut shutdown_rx: watch::Receiver<()>,
-) -> Result<TableSyncResult, TableSyncError>
-where
-    S: StateStore + Clone + Send + 'static,
-    D: Destination + Clone + Send + 'static,
-{
-    let shutdown_rx_clone = shutdown_rx.clone();
-    tokio::select! {
-        biased;
-
-        // Shutdown signal received, exit loop.
-        _ = shutdown_rx.changed() => {
-            Ok(TableSyncResult::SyncStopped)
-        }
-        
-        // Perform table sync.
-        result = sync_table(
-            identity,
-            config,
-            replication_client,
-            table_id,
-            table_sync_worker_state,
-            schema_cache,
-            state_store,
-            destination,
-            shutdown_rx_clone
-        ) => {
-            result
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn sync_table<S, D>(
-    identity: PipelineIdentity,
-    config: Arc<PipelineConfig>,
-    replication_client: PgReplicationClient,
-    table_id: Oid,
-    table_sync_worker_state: TableSyncWorkerState,
-    schema_cache: SchemaCache,
-    state_store: S,
-    destination: D,
-    shutdown_rx: watch::Receiver<()>,
+    shutdown_rx: ShutdownRx,
 ) -> Result<TableSyncResult, TableSyncError>
 where
     S: StateStore + Clone + Send + 'static,
@@ -206,15 +164,28 @@ where
                 .await?;
             let table_copy_stream =
                 TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-            let table_copy_stream =
-                BatchStream::wrap(table_copy_stream, config.batch_config.clone(), shutdown_rx);
+            let table_copy_stream = BatchStream::wrap(
+                table_copy_stream,
+                config.batch_config.clone(),
+                shutdown_rx.clone(),
+            );
             pin!(table_copy_stream);
 
             // We start consuming the table stream. If any error occurs, we will bail the entire copy since
             // we want to be fully consistent.
-            while let Some(table_rows) = table_copy_stream.next().await {
-                let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
-                destination.copy_table_rows(table_id, table_rows).await?;
+            while let Some(result) = table_copy_stream.next().await {
+                match result {
+                    ShutdownResult::Ok(table_rows) => {
+                        let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
+                        destination.copy_table_rows(table_id, table_rows).await?;
+                    }
+                    ShutdownResult::Shutdown(_) => {
+                        // If we received a shutdown in the middle of a table copy, we bail knowing
+                        // that the system can automatically recover if a table copy has failed in
+                        // the middle of processing.
+                        return Ok(TableSyncResult::SyncStopped);
+                    }
+                }
             }
 
             // We commit the transaction before starting the apply loop, otherwise it will fail
@@ -248,9 +219,15 @@ where
     }
 
     // We also wait to be signaled to catchup with the main apply worker up to a specific lsn.
-    let _ = table_sync_worker_state
-        .wait_for_phase_type(TableReplicationPhaseType::Catchup)
+    let result = table_sync_worker_state
+        .wait_for_phase_type(TableReplicationPhaseType::Catchup, shutdown_rx.clone())
         .await;
+
+    // If we are told to shut down while waiting for a phase change, we will signal this to
+    // the caller.
+    if result.should_shutdown() {
+        return Ok(TableSyncResult::SyncStopped);
+    }
 
     Ok(TableSyncResult::SyncCompleted {
         origin_start_lsn: replication_origin_state.remote_lsn,

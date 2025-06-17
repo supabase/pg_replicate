@@ -1,11 +1,10 @@
+use crate::v2::concurrency::shutdown::{ShutdownResult, ShutdownRx};
+use crate::v2::config::batch::BatchConfig;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::{ready, Future, Stream};
 use pin_project_lite::pin_project;
-use tokio::sync::watch;
 use tracing::info;
-
-use crate::v2::config::batch::BatchConfig;
 
 // Implementation adapted from:
 //  https://github.com/tokio-rs/tokio/blob/master/tokio-stream/src/stream_ext/chunks_timeout.rs
@@ -22,7 +21,7 @@ pin_project! {
         stream: S,
         #[pin]
         deadline: Option<tokio::time::Sleep>,
-        shutdown_rx: watch::Receiver<()>,
+        shutdown_rx: ShutdownRx,
         items: Vec<S::Item>,
         batch_config: BatchConfig,
         reset_timer: bool,
@@ -36,7 +35,7 @@ impl<B, S: Stream<Item = B>> BatchStream<B, S> {
     ///
     /// The stream will batch items according to the provided `batch_config` and can be
     /// stopped using the `shutdown_rx` watch channel.
-    pub fn wrap(stream: S, batch_config: BatchConfig, shutdown_rx: watch::Receiver<()>) -> Self {
+    pub fn wrap(stream: S, batch_config: BatchConfig, shutdown_rx: ShutdownRx) -> Self {
         BatchStream {
             stream,
             deadline: None,
@@ -58,7 +57,7 @@ impl<B, S: Stream<Item = B>> BatchStream<B, S> {
 }
 
 impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
-    type Item = Vec<S::Item>;
+    type Item = ShutdownResult<Vec<S::Item>, Vec<S::Item>>;
 
     /// Polls the stream for the next batch of items.
     ///
@@ -89,11 +88,9 @@ impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
                 info!("the stream has been forcefully stopped");
                 *this.stream_stopped = true;
 
-                return if !this.items.is_empty() {
-                    Poll::Ready(Some(std::mem::take(this.items)))
-                } else {
-                    Poll::Ready(None)
-                };
+                // Even if we have no items, we return this result, since we signal that a shutdown
+                // signal was received and the consumer side of the stream, can decide what to do.
+                return Poll::Ready(Some(ShutdownResult::Shutdown(std::mem::take(this.items))));
             }
 
             if *this.reset_timer {
@@ -116,7 +113,7 @@ impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
                     // timer.
                     if this.items.len() >= this.batch_config.max_batch_size {
                         *this.reset_timer = true;
-                        return Poll::Ready(Some(std::mem::take(this.items)));
+                        return Poll::Ready(Some(ShutdownResult::Ok(std::mem::take(this.items))));
                     }
                 }
                 Poll::Ready(None) => {
@@ -124,7 +121,7 @@ impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
                         None
                     } else {
                         *this.reset_timer = true;
-                        Some(std::mem::take(this.items))
+                        Some(ShutdownResult::Ok(std::mem::take(this.items)))
                     };
 
                     *this.inner_stream_ended = true;
@@ -141,7 +138,7 @@ impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
                 ready!(deadline.poll(cx));
                 *this.reset_timer = true;
 
-                return Poll::Ready(Some(std::mem::take(this.items)));
+                return Poll::Ready(Some(ShutdownResult::Ok(std::mem::take(this.items))));
             }
         }
 

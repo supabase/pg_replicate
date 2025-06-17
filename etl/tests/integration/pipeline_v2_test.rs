@@ -971,7 +971,10 @@ async fn test_table_copy_and_sync_with_changed_schema() {
         .unwrap();
 
     events_notify.notified().await;
-    
+
     // TODO: assert errors.
-    timeout(Duration::from_secs(1), pipeline.shutdown_and_wait()).await.unwrap();
+    timeout(Duration::from_secs(1), pipeline.shutdown_and_wait())
+        .await
+        .unwrap()
+        .unwrap();
 }

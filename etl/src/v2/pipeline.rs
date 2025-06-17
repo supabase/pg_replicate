@@ -1,10 +1,4 @@
-use rustls::pki_types::CertificateDer;
-use std::sync::Arc;
-use thiserror::Error;
-use tokio::sync::watch;
-use tokio_postgres::config::SslMode;
-use tracing::{error, info};
-
+use crate::v2::concurrency::shutdown::{create_shutdown_channel, ShutdownTx};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
@@ -14,6 +8,11 @@ use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
+use rustls::pki_types::CertificateDer;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio_postgres::config::SslMode;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
@@ -74,7 +73,7 @@ pub struct Pipeline<S, D> {
     state_store: S,
     destination: D,
     workers: PipelineWorkers,
-    shutdown_tx: watch::Sender<()>,
+    shutdown_tx: ShutdownTx,
 }
 
 impl<S, D> Pipeline<S, D>
@@ -91,7 +90,7 @@ where
     ) -> Self {
         // We create a watch channel of unit types since this is just used to notify all subscribers
         // that shutdown is needed.
-        let (shutdown_tx, _) = watch::channel(());
+        let (shutdown_tx, _) = create_shutdown_channel();
 
         Self {
             identity,

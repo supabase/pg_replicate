@@ -2,12 +2,13 @@ use postgres::schema::Oid;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::{watch, Notify, RwLock, RwLockReadGuard};
+use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio_postgres::types::PgLsn;
 use tracing::{info, warn};
 
 use crate::v2::concurrency::future::ReactiveFuture;
+use crate::v2::concurrency::shutdown::{ShutdownResult, ShutdownRx};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::pipeline::PipelineIdentity;
@@ -128,38 +129,61 @@ impl TableSyncWorkerState {
         &self.inner
     }
 
+    async fn wait(
+        &self,
+        phase_type: TableReplicationPhaseType,
+    ) -> Option<RwLockReadGuard<'_, TableSyncWorkerStateInner>> {
+        // We grab hold of the phase change notify in case we don't immediately have the state
+        // that we want.
+        let phase_change = {
+            let inner = self.inner.read().await;
+            if inner.table_replication_state.phase.as_type() == phase_type {
+                info!(
+                    "Phase type '{:?}' was already set, no need to wait",
+                    phase_type
+                );
+                return Some(inner);
+            }
+
+            inner.phase_change.clone()
+        };
+
+        // We wait for a state change within a timeout. This is done since it might be that a
+        // notification is missed and in that case we want to avoid blocking indefinitely.
+        let _ = tokio::time::timeout(PHASE_CHANGE_REFRESH_FREQUENCY, phase_change.notified()).await;
+
+        // We read the state and return the lock to the state.
+        let inner = self.inner.read().await;
+        if inner.table_replication_state.phase.as_type() == phase_type {
+            info!("Phase type '{:?}' was noticed", phase_type);
+            return Some(inner);
+        }
+
+        None
+    }
+
     pub async fn wait_for_phase_type(
         &self,
         phase_type: TableReplicationPhaseType,
-    ) -> RwLockReadGuard<'_, TableSyncWorkerStateInner> {
+        mut shutdown_rx: ShutdownRx,
+    ) -> ShutdownResult<RwLockReadGuard<'_, TableSyncWorkerStateInner>, ()> {
         info!("Waiting for phase type '{:?}'", phase_type);
 
         loop {
-            // We grab hold of the phase change notify in case we don't immediately have the state
-            // that we want.
-            let phase_change = {
-                let inner = self.inner.read().await;
-                if inner.table_replication_state.phase.as_type() == phase_type {
-                    info!(
-                        "Phase type '{:?}' was already set, no need to wait",
-                        phase_type
-                    );
-                    return inner;
+            tokio::select! {
+                biased;
+
+                // Shutdown signal received, exit loop.
+                _ = shutdown_rx.changed() => {
+                    return ShutdownResult::Shutdown(());
                 }
 
-                inner.phase_change.clone()
-            };
-
-            // We wait for a state change within a timeout. This is done since it might be that a
-            // notification is missed and in that case we want to avoid blocking indefinitely.
-            let _ =
-                tokio::time::timeout(PHASE_CHANGE_REFRESH_FREQUENCY, phase_change.notified()).await;
-            
-            // We read the state and return the lock to the state.
-            let inner = self.inner.read().await;
-            if inner.table_replication_state.phase.as_type() == phase_type {
-                info!("Phase type '{:?}' was noticed", phase_type);
-                return inner;
+                // Try to wait for the phase type.
+                acquired = self.wait(phase_type) => {
+                    if let Some(acquired) = acquired {
+                        return ShutdownResult::Ok(acquired);
+                    }
+                }
             }
         }
     }
@@ -197,7 +221,7 @@ pub struct TableSyncWorker<S, D> {
     schema_cache: SchemaCache,
     state_store: S,
     destination: D,
-    shutdown_rx: watch::Receiver<()>,
+    shutdown_rx: ShutdownRx,
 }
 
 impl<S, D> TableSyncWorker<S, D> {
@@ -211,7 +235,7 @@ impl<S, D> TableSyncWorker<S, D> {
         schema_cache: SchemaCache,
         state_store: S,
         destination: D,
-        shutdown_rx: watch::Receiver<()>,
+        shutdown_rx: ShutdownRx,
     ) -> Self {
         Self {
             identity,
@@ -346,6 +370,7 @@ where
         );
 
         let mut inner = self.table_sync_worker_state.get_inner().write().await;
+
         // If we caught up with the lsn, we mark this table as `SyncDone` and stop the worker.
         if let TableReplicationPhase::Catchup { lsn } = inner.replication_phase() {
             if current_lsn >= lsn {
@@ -360,7 +385,8 @@ where
             // We drop the lock since we don't need to hold it while cleaning resources.
             drop(inner);
 
-            // TODO: cleanup slot and replication origin.
+            // TODO: implement cleanup of slot and replication origin.
+
             return Ok(false);
         }
 
