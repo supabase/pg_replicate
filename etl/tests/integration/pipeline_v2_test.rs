@@ -974,5 +974,6 @@ async fn test_table_copy_and_sync_with_changed_schema() {
 
     orders_state_notify.notified().await;
 
+    // TODO: assert errors.
     pipeline.shutdown_and_wait().await.unwrap();
 }

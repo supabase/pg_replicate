@@ -1,5 +1,7 @@
 use futures::StreamExt;
-use postgres::schema::{Oid, TableId};
+use postgres::schema::Oid;
+use postgres_protocol::Lsn;
+use postgres_replication::protocol;
 use postgres_replication::protocol::{LogicalReplicationMessage, ReplicationMessage};
 use std::collections::HashSet;
 use std::future::Future;
@@ -8,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::pin;
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex, RwLock};
 use tokio_postgres::types::PgLsn;
 use tracing::error;
 
@@ -73,6 +75,9 @@ pub enum ApplyLoopError {
 
     #[error("The table schema for table {0} was not found in the cache")]
     MissingTableSchema(Oid),
+
+    #[error("The received table schema doesn't match the table schema loaded during table sync")]
+    MismatchedTableSchema,
 }
 
 impl From<ApplyWorkerHookError> for ApplyLoopError {
@@ -112,7 +117,7 @@ pub trait ApplyLoopHook {
     fn worker_type(&self) -> WorkerType;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct StatusUpdate {
     write_lsn: PgLsn,
     flush_lsn: PgLsn,
@@ -145,7 +150,22 @@ impl StatusUpdate {
     }
 }
 
+#[derive(Debug, Clone)]
+enum BatchEarlyBreak {
+    Break,
+    BreakAndDiscard,
+}
+
 #[derive(Debug)]
+struct SharedApplyLoopState {
+    /// The set of table ids which should be skipped when processing their messages.
+    // TODO: figure out if when stopping the pipeline in the middle of a transaction, we are resuming
+    //  from the middle, in that case, we might need to persist which tables are skipped, since we might
+    //  not get a relation message.
+    skipped_table_ids: HashSet<Oid>,
+}
+
+#[derive(Debug, Clone)]
 struct ApplyLoopState {
     /// The highest LSN received from the `end_lsn` field of replication messages.
     ///
@@ -163,15 +183,33 @@ struct ApplyLoopState {
     /// The LSNs of the status update that we want to send to Postgres.
     next_status_update: StatusUpdate,
     /// A boolean indicating whether the loop should be completed.
-    should_complete: bool,
-    /// The set of table ids which should be skipped when processing their messages.
-    // TODO: figure out if when stopping the pipeline in the middle of a transaction, we are resuming
-    //  from the middle, in that case, we might need to persist which tables are skipped, since we might
-    //  not get a relation message.
-    skipped_table_ids: HashSet<Oid>,
+    ///
+    /// This boolean is checked when processing a batch of messages and assumes that when set to `true`,
+    /// the message processed before the check is expected to be successfully applied.
+    should_break_early: Option<BatchEarlyBreak>,
+    /// A portion of the state that is shared and not copied when performing state clones.
+    ///
+    /// We use a `Mutex` instead of `RwLock` since in our case we will have zero contention because
+    /// the state is only modified by one thread (can be different threads but there won't be any
+    /// contention) and a `Mutex` is more performant in these cases.
+    shared: Arc<Mutex<SharedApplyLoopState>>,
 }
 
 impl ApplyLoopState {
+    fn new(next_status_update: StatusUpdate) -> Self {
+        let shared = SharedApplyLoopState {
+            skipped_table_ids: HashSet::new(),
+        };
+
+        Self {
+            last_end_lsn: None,
+            remote_final_lsn: None,
+            next_status_update,
+            should_break_early: None,
+            shared: Arc::new(Mutex::new(shared)),
+        }
+    }
+
     fn update_last_end_lsn(&mut self, new_last_end_lsn: PgLsn) {
         let Some(last_end_lsn) = &mut self.last_end_lsn else {
             self.last_end_lsn = Some(new_last_end_lsn);
@@ -185,8 +223,14 @@ impl ApplyLoopState {
         *last_end_lsn = new_last_end_lsn;
     }
 
-    fn skip_table(&mut self, table_id: TableId) {
-        self.skipped_table_ids.insert(table_id);
+    async fn skip_table(&mut self, table_id: Oid) {
+        let mut shared = self.shared.lock().await;
+        shared.skipped_table_ids.insert(table_id);
+    }
+
+    async fn should_skip_table(&self, table_id: Oid) -> bool {
+        let shared = self.shared.lock().await;
+        shared.skipped_table_ids.contains(&table_id)
     }
 }
 
@@ -208,22 +252,16 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // The last status update is defaulted from the origin start lsn since at this point we haven't
+    // The first status update is defaulted from the origin start lsn since at this point we haven't
     // processed anything.
-    let last_status_update = StatusUpdate {
+    let first_status_update = StatusUpdate {
         write_lsn: origin_start_lsn,
         flush_lsn: origin_start_lsn,
         apply_lsn: origin_start_lsn,
     };
 
     // We initialize the shared state that is used throughout the loop to track progress.
-    let mut state = ApplyLoopState {
-        last_end_lsn: None,
-        remote_final_lsn: None,
-        next_status_update: last_status_update,
-        should_complete: false,
-        skipped_table_ids: HashSet::new(),
-    };
+    let mut state = ApplyLoopState::new(first_status_update);
 
     // We initialize the apply loop which is based on the hook implementation.
     hook.initialize().await?;
@@ -246,7 +284,7 @@ where
     pin!(logical_replication_stream);
 
     loop {
-        if state.should_complete {
+        if state.should_break_early.is_some() {
             return Ok(ApplyLoopResult::ApplyCompleted);
         }
 
@@ -293,23 +331,49 @@ where
     let mut events_batch = Vec::with_capacity(batch_size);
 
     for message in messages_batch {
+        // We store the previous state to use it in case we have to restore it because we processed
+        // a message that lead to an early break and discard.
+        //
+        // Note that the `shared` part of the state will be shared amongst the clones, so you have to
+        // make sure the data there is expected to be shared.
+        let previous_state = state.clone();
+
+        // An error while processing a message in a batch will lead to the entire batch being discarded.
         let event =
             handle_replication_message(state, stream.as_mut(), message?, schema_cache, hook)
                 .await?;
 
+        let mut event_inserted = false;
         if let Some(event) = event {
             events_batch.push(event);
+            event_inserted = true;
         }
 
-        // If we should complete after processing a message, we want to finish the loop early, to
-        // avoid processing additional elements which might lead to duplication.
+        // If we should break early after processing a message, we can do this in many ways:
+        // - break -> this breaks out of the loop and assumes that the last processed message was
+        //  successfully processed, so we apply all the messages up to this one.
+        // - break and discard -> this breaks out of the loop and assumes that the last processed
+        //  message was not fully processed, so we reset the `last_end_lsn` to the one of the message
+        //  before this one, so that when we apply events and notify Postgres, it's done as if the
+        //  last message was not processed.
         //
-        // This can happen for example when a table sync worker has caught up with the apply worker
+        // Early breaking can happen for example when a table sync worker has caught up with the apply worker
         // but its batch contained more elements after the caught up element, in that case we don't
         // want to process those elements, otherwise if we do, the apply worker will process them too
         // causing duplicate data.
-        if state.should_complete {
-            break;
+        match state.should_break_early {
+            Some(BatchEarlyBreak::Break) => {
+                break;
+            }
+            Some(BatchEarlyBreak::BreakAndDiscard) => {
+                if event_inserted {
+                    events_batch.pop();
+                }
+                *state = previous_state;
+
+                break;
+            }
+            None => {}
         }
     }
 
@@ -328,6 +392,11 @@ where
 
         // We also prepare the next status update for Postgres, where we will confirm that we flushed
         // data up to this LSN to allow for WAL pruning on the database side.
+        //
+        // Note that we do this ONLY once a batch is fully saved, since that is the only place where
+        // we are guaranteed that data has been safely persisted. In all the other cases, we just update
+        // the `write_lsn` which is used by Postgres to get an acknowledgement of how far we have processed
+        // messages but not flushed them.
         // TODO: check if we want to send `apply_lsn` as a different value.
         state.next_status_update.update_flush_lsn(last_end_lsn);
         state.next_status_update.update_apply_lsn(last_end_lsn);
@@ -391,210 +460,313 @@ where
     // by the destination.
     let event = convert_message_to_event(&schema_cache, &message).await?;
 
-    // For each message, we handle it separately.
     match message {
         LogicalReplicationMessage::Begin(message) => {
-            let Event::Begin(event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(event.into(), EventType::Begin));
-            };
-
-            // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
-            // `Commit` message.
-            let final_lsn = PgLsn::from(message.final_lsn());
-            state.remote_final_lsn = Some(final_lsn);
-
-            Ok(Some(Event::Begin(event)))
+            handle_begin_message(state, event, &message).await
         }
         LogicalReplicationMessage::Commit(message) => {
-            let Event::Commit(event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(
-                    event.into(),
-                    EventType::Commit,
-                ));
-            };
-
-            // We take the LSN that belongs to the current transaction, however, if there is no
-            // LSN, it means that a `BEGIN` message was not received before this `COMMIT` which means
-            // we are in an inconsistent state.
-            let Some(remote_final_lsn) = state.remote_final_lsn.take() else {
-                return Err(ApplyLoopError::InvalidTransaction(
-                    "handle_commit_message".to_owned(),
-                ));
-            };
-
-            // If the commit lsn of the message is different from the remote final lsn, it means that the
-            // transaction that was started expect a different commit lsn in the commit message. In this case,
-            // we want to bail assuming we are in an inconsistent state.
-            let commit_lsn = PgLsn::from(message.commit_lsn());
-            if commit_lsn != remote_final_lsn {
-                return Err(ApplyLoopError::InvalidCommitLsn(
-                    commit_lsn,
-                    remote_final_lsn,
-                ));
-            }
-
-            // We process syncing tables since we just arrived at the end of a transaction, and we want to
-            // synchronize all the workers.
-            //
-            // The `end_lsn` here refers to the LSN of the record right after the commit record.
-            let end_lsn = PgLsn::from(message.end_lsn());
-            let continue_loop = hook.process_syncing_tables(end_lsn).await?;
-            // If we are told to stop the loop, we prepare for a graceful stop of the loop.
-            if !continue_loop {
-                state.should_complete = true;
-            }
-
-            Ok(Some(Event::Commit(event)))
+            handle_commit_message(state, event, &message, hook).await
         }
         LogicalReplicationMessage::Relation(message) => {
-            let Event::Relation(event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(
-                    event.into(),
-                    EventType::Relation,
-                ));
-            };
-
-            let Some(existing_table_schema) =
-                schema_cache.get_table_schema(&message.rel_id()).await
-            else {
-                return Err(ApplyLoopError::MissingTableSchema(message.rel_id()));
-            };
-
-            // We compare the table schema from the relation message with the existing schema (if any).
-            // The purpose of this comparison is that we want to throw an error and stop the processing
-            // of any table that incurs in a schema change after the initial table sync is performed.
-            if !existing_table_schema.partial_eq(&event.table_schema) {
-                match hook.worker_type() {
-                    WorkerType::Apply => {
-                        // If we are in an apply worker, we are processing multiple tables, so we
-                        // just want to exclude this table from being processed.
-                        state.skip_table(message.rel_id());
-                        return Ok(None);
-                    }
-                    WorkerType::TableSync { table_id } if table_id == message.rel_id() => {
-                        // If we are in a table sync worker and the relation message is of the table
-                        // id which this table sync worker is working with, we just want to gracefully
-                        // stop it.
-                        state.should_complete = true;
-                        return Ok(None);
-                    }
-                    WorkerType::TableSync { .. } => {}
-                }
-            }
-
-            let Some(remote_final_lsn) = state.remote_final_lsn else {
-                return Err(ApplyLoopError::InvalidTransaction(
-                    "handle_relation_message".to_owned(),
-                ));
-            };
-
-            if !hook
-                .should_apply_changes(message.rel_id(), remote_final_lsn)
-                .await?
-            {
-                return Ok(None);
-            }
-
-            Ok(None)
+            handle_relation_message(state, event, &message, schema_cache, hook).await
         }
         LogicalReplicationMessage::Insert(message) => {
-            let Event::Insert(event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(
-                    event.into(),
-                    EventType::Insert,
-                ));
-            };
-
-            let Some(remote_final_lsn) = state.remote_final_lsn else {
-                return Err(ApplyLoopError::InvalidTransaction(
-                    "handle_insert_message".to_owned(),
-                ));
-            };
-
-            if !hook
-                .should_apply_changes(message.rel_id(), remote_final_lsn)
-                .await?
-            {
-                return Ok(None);
-            }
-
-            Ok(Some(Event::Insert(event)))
+            handle_insert_message(state, event, &message, hook).await
         }
         LogicalReplicationMessage::Update(message) => {
-            let Event::Update(event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(
-                    event.into(),
-                    EventType::Update,
-                ));
-            };
-
-            let Some(remote_final_lsn) = state.remote_final_lsn else {
-                return Err(ApplyLoopError::InvalidTransaction(
-                    "handle_update_message".to_owned(),
-                ));
-            };
-
-            if !hook
-                .should_apply_changes(message.rel_id(), remote_final_lsn)
-                .await?
-            {
-                return Ok(None);
-            }
-
-            Ok(Some(Event::Update(event)))
+            handle_update_message(state, event, &message, hook).await
         }
         LogicalReplicationMessage::Delete(message) => {
-            let Event::Delete(event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(
-                    event.into(),
-                    EventType::Delete,
-                ));
-            };
-
-            let Some(remote_final_lsn) = state.remote_final_lsn else {
-                return Err(ApplyLoopError::InvalidTransaction(
-                    "handle_delete_message".to_owned(),
-                ));
-            };
-
-            if !hook
-                .should_apply_changes(message.rel_id(), remote_final_lsn)
-                .await?
-            {
-                return Ok(None);
-            }
-
-            Ok(Some(Event::Delete(event)))
+            handle_delete_message(state, event, &message, hook).await
         }
         LogicalReplicationMessage::Truncate(message) => {
-            let Event::Truncate(mut event) = event else {
-                return Err(ApplyLoopError::InvalidEvent(
-                    event.into(),
-                    EventType::Truncate,
-                ));
-            };
-
-            let Some(remote_final_lsn) = state.remote_final_lsn else {
-                return Err(ApplyLoopError::InvalidTransaction(
-                    "handle_truncate_message".to_owned(),
-                ));
-            };
-
-            let mut rel_ids = Vec::with_capacity(message.rel_ids().len());
-            for &table_id in message.rel_ids().iter() {
-                if hook
-                    .should_apply_changes(table_id, remote_final_lsn)
-                    .await?
-                {
-                    rel_ids.push(table_id);
-                }
-            }
-            event.rel_ids = rel_ids;
-
-            Ok(Some(Event::Truncate(event)))
+            handle_truncate_message(state, event, &message, hook).await
         }
         LogicalReplicationMessage::Origin(_) => Ok(None),
         LogicalReplicationMessage::Type(_) => Ok(None),
         _ => Ok(None),
     }
+}
+
+async fn handle_begin_message(
+    state: &mut ApplyLoopState,
+    event: Event,
+    message: &protocol::BeginBody,
+) -> Result<Option<Event>, ApplyLoopError> {
+    let Event::Begin(event) = event else {
+        return Err(ApplyLoopError::InvalidEvent(event.into(), EventType::Begin));
+    };
+
+    // We track the final lsn of this transaction, which should be equal to the `commit_lsn` of the
+    // `Commit` message.
+    let final_lsn = PgLsn::from(message.final_lsn());
+    state.remote_final_lsn = Some(final_lsn);
+
+    Ok(Some(Event::Begin(event)))
+}
+
+async fn handle_commit_message<T>(
+    state: &mut ApplyLoopState,
+    event: Event,
+    message: &protocol::CommitBody,
+    hook: &T,
+) -> Result<Option<Event>, ApplyLoopError>
+where
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    let Event::Commit(event) = event else {
+        return Err(ApplyLoopError::InvalidEvent(
+            event.into(),
+            EventType::Commit,
+        ));
+    };
+
+    // We take the LSN that belongs to the current transaction, however, if there is no
+    // LSN, it means that a `BEGIN` message was not received before this `COMMIT` which means
+    // we are in an inconsistent state.
+    let Some(remote_final_lsn) = state.remote_final_lsn.take() else {
+        return Err(ApplyLoopError::InvalidTransaction(
+            "handle_commit_message".to_owned(),
+        ));
+    };
+
+    // If the commit lsn of the message is different from the remote final lsn, it means that the
+    // transaction that was started expect a different commit lsn in the commit message. In this case,
+    // we want to bail assuming we are in an inconsistent state.
+    let commit_lsn = PgLsn::from(message.commit_lsn());
+    if commit_lsn != remote_final_lsn {
+        return Err(ApplyLoopError::InvalidCommitLsn(
+            commit_lsn,
+            remote_final_lsn,
+        ));
+    }
+
+    // We process syncing tables since we just arrived at the end of a transaction, and we want to
+    // synchronize all the workers.
+    //
+    // The `end_lsn` here refers to the LSN of the record right after the commit record.
+    let end_lsn = PgLsn::from(message.end_lsn());
+    let continue_loop = hook.process_syncing_tables(end_lsn).await?;
+
+    // If we are told to stop the loop, we prepare for a graceful stop of the loop.
+    if !continue_loop {
+        state.should_break_early = Some(BatchEarlyBreak::Break);
+    }
+
+    Ok(Some(Event::Commit(event)))
+}
+
+async fn handle_relation_message<T>(
+    state: &mut ApplyLoopState,
+    event: Event,
+    message: &protocol::RelationBody,
+    schema_cache: &SchemaCache,
+    hook: &T,
+) -> Result<Option<Event>, ApplyLoopError>
+where
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    let Event::Relation(event) = event else {
+        return Err(ApplyLoopError::InvalidEvent(
+            event.into(),
+            EventType::Relation,
+        ));
+    };
+
+    let Some(remote_final_lsn) = state.remote_final_lsn else {
+        return Err(ApplyLoopError::InvalidTransaction(
+            "handle_relation_message".to_owned(),
+        ));
+    };
+
+    if !hook
+        .should_apply_changes(message.rel_id(), remote_final_lsn)
+        .await?
+    {
+        return Ok(None);
+    }
+
+    // If no table schema is found, it means that something went wrong and we throw an error, which is
+    // dealt with differently based on the worker type.
+    // TODO: explore how to deal with applying relation messages to the schema (creating it if missing).
+    let Some(existing_table_schema) = schema_cache.get_table_schema(&message.rel_id()).await else {
+        return Err(ApplyLoopError::MissingTableSchema(message.rel_id()));
+    };
+
+    // We compare the table schema from the relation message with the existing schema (if any).
+    // The purpose of this comparison is that we want to throw an error and stop the processing
+    // of any table that incurs in a schema change after the initial table sync is performed.
+    if !existing_table_schema.partial_eq(&event.table_schema) {
+        match hook.worker_type() {
+            WorkerType::Apply => {
+                // If we are in an apply worker, we are processing multiple tables, so we
+                // just want to exclude this table from being processed.
+                state.skip_table(message.rel_id()).await;
+
+                return Ok(None);
+            }
+            WorkerType::TableSync { table_id } if table_id == message.rel_id() => {
+                // If we are in a table sync worker and the relation message is of the table
+                // id which this table sync worker is working with, we just want to gracefully
+                // stop it and discard this message.
+                state.should_break_early = Some(BatchEarlyBreak::BreakAndDiscard);
+
+                return Ok(None);
+            }
+            WorkerType::TableSync { .. } => {}
+        }
+    }
+
+    Ok(Some(Event::Relation(event)))
+}
+
+async fn handle_insert_message<T>(
+    state: &mut ApplyLoopState,
+    event: Event,
+    message: &protocol::InsertBody,
+    hook: &T,
+) -> Result<Option<Event>, ApplyLoopError>
+where
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    let Event::Insert(event) = event else {
+        return Err(ApplyLoopError::InvalidEvent(
+            event.into(),
+            EventType::Insert,
+        ));
+    };
+
+    let Some(remote_final_lsn) = state.remote_final_lsn else {
+        return Err(ApplyLoopError::InvalidTransaction(
+            "handle_insert_message".to_owned(),
+        ));
+    };
+
+    if !should_apply_changes(state, message.rel_id(), remote_final_lsn, hook).await? {
+        return Ok(None);
+    }
+
+    Ok(Some(Event::Insert(event)))
+}
+
+async fn handle_update_message<T>(
+    state: &mut ApplyLoopState,
+    event: Event,
+    message: &protocol::UpdateBody,
+    hook: &T,
+) -> Result<Option<Event>, ApplyLoopError>
+where
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    let Event::Update(event) = event else {
+        return Err(ApplyLoopError::InvalidEvent(
+            event.into(),
+            EventType::Update,
+        ));
+    };
+
+    let Some(remote_final_lsn) = state.remote_final_lsn else {
+        return Err(ApplyLoopError::InvalidTransaction(
+            "handle_update_message".to_owned(),
+        ));
+    };
+
+    if !should_apply_changes(state, message.rel_id(), remote_final_lsn, hook).await? {
+        return Ok(None);
+    }
+
+    Ok(Some(Event::Update(event)))
+}
+
+async fn handle_delete_message<T>(
+    state: &mut ApplyLoopState,
+    event: Event,
+    message: &protocol::DeleteBody,
+    hook: &T,
+) -> Result<Option<Event>, ApplyLoopError>
+where
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    let Event::Delete(event) = event else {
+        return Err(ApplyLoopError::InvalidEvent(
+            event.into(),
+            EventType::Delete,
+        ));
+    };
+
+    let Some(remote_final_lsn) = state.remote_final_lsn else {
+        return Err(ApplyLoopError::InvalidTransaction(
+            "handle_delete_message".to_owned(),
+        ));
+    };
+
+    if !should_apply_changes(state, message.rel_id(), remote_final_lsn, hook).await? {
+        return Ok(None);
+    }
+
+    Ok(Some(Event::Delete(event)))
+}
+
+async fn handle_truncate_message<T>(
+    state: &mut ApplyLoopState,
+    event: Event,
+    message: &protocol::TruncateBody,
+    hook: &T,
+) -> Result<Option<Event>, ApplyLoopError>
+where
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    let Event::Truncate(mut event) = event else {
+        return Err(ApplyLoopError::InvalidEvent(
+            event.into(),
+            EventType::Truncate,
+        ));
+    };
+
+    let Some(remote_final_lsn) = state.remote_final_lsn else {
+        return Err(ApplyLoopError::InvalidTransaction(
+            "handle_truncate_message".to_owned(),
+        ));
+    };
+
+    let mut rel_ids = Vec::with_capacity(message.rel_ids().len());
+    for &table_id in message.rel_ids().iter() {
+        if should_apply_changes(state, table_id, remote_final_lsn, hook).await? {
+            rel_ids.push(table_id)
+        }
+    }
+    event.rel_ids = rel_ids;
+
+    Ok(Some(Event::Truncate(event)))
+}
+
+async fn should_apply_changes<T>(
+    state: &ApplyLoopState,
+    table_id: Oid,
+    remote_final_lsn: PgLsn,
+    hook: &T,
+) -> Result<bool, ApplyLoopError>
+where
+    T: ApplyLoopHook,
+    ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
+{
+    // If we are in an apply worker and the table is marked as skipped, we will discard all the 
+    // events.
+    if let WorkerType::Apply = hook.worker_type() {
+        if state.should_skip_table(table_id).await {
+            return Ok(false);
+        }
+    }
+
+    let should_apply_changes = hook
+        .should_apply_changes(table_id, remote_final_lsn)
+        .await?;
+
+    Ok(should_apply_changes)
 }

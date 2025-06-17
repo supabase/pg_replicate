@@ -140,6 +140,7 @@ impl TableSchema {
     pub fn partial_eq(&self, other: &TableSchema) -> bool {
         self.id == other.id
             && self.name == other.name
+            && self.column_schemas.len() == other.column_schemas.len()
             && self
                 .column_schemas
                 .iter()
