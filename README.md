@@ -1,6 +1,6 @@
 # ETL
 
-> **Note:** Version 2 is currently under development under `/v2`, which includes a complete rework of the pipeline 
+> **Note:** Version 2 is currently under development under `/v2`, which includes a complete rework of the pipeline
 > architecture for improved performance and scalability.
 
 A Rust crate to quickly build replication solutions for Postgres. It provides building blocks to construct data pipelines which can continually copy data from Postgres to other systems. It builds abstractions on top of Postgres's [logical streaming replication protocol](https://www.postgresql.org/docs/current/protocol-logical-replication.html) and pushes users towards the pit of success without letting them worry about low level details of the protocol.
@@ -67,7 +67,7 @@ For code examples on how to use `etl`, please refer to the [examples](https://gi
 ## Database Setup
 
 Before running the examples, tests, or the API and replicator components, you'll need to set up a PostgreSQL database.
-We provide a convenient script to help you with this setup. For detailed instructions on how to use the database setup script, please refer to our [Database Setup Guide](docs/database-setup.md).
+We provide a convenient script to help you with this setup. For detailed instructions on how to use the database setup script, please refer to our [Database Setup Guide](docs/guides/database-setup.md).
 
 ## Running Tests
 
@@ -91,7 +91,7 @@ docker build -f ./api/Dockerfile .
 
 ## Architecture
 
-For a detailed explanation of the ETL architecture and design decisions, please refer to our [Design Document](docs/etl-design.md).
+For a detailed explanation of the ETL architecture and design decisions, please refer to our [Design Document](docs/design/etl-crate-design.md).
 
 ## Troubleshooting
 

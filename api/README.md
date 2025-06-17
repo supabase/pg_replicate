@@ -26,7 +26,7 @@ This API service provides a RESTful interface for managing PostgreSQL replicatio
 
 ## Prerequisites
 
-Before you begin, please refer to our [Database Setup Guide](../docs/database-setup.md).
+Before you begin, please refer to our [Database Setup Guide](../docs/guides/database-setup.md).
 
 ## Development
 
