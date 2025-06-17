@@ -285,14 +285,14 @@ where
 
     loop {
         if state.should_break_early.is_some() {
-            return Ok(ApplyLoopResult::ApplyCompleted);
+            break;
         }
 
         tokio::select! {
             biased;
 
             _ = shutdown_rx.changed() => {
-                return Ok(ApplyLoopResult::ApplyStopped);
+                break;
             }
             Some(messages_batch) = logical_replication_stream.next() => {
                 let logical_replication_stream = logical_replication_stream.as_mut();
@@ -309,6 +309,8 @@ where
             }
         }
     }
+    
+    Ok(ApplyLoopResult::ApplyCompleted)
 }
 
 async fn handle_replication_message_batch<S, D, T>(
@@ -756,7 +758,7 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // If we are in an apply worker and the table is marked as skipped, we will discard all the 
+    // If we are in an apply worker and the table is marked as skipped, we will discard all the
     // events.
     if let WorkerType::Apply = hook.worker_type() {
         if state.should_skip_table(table_id).await {
