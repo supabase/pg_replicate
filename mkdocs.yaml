@@ -22,23 +22,48 @@ theme:
   features:
     - content.code.annotate
     - content.code.copy
+    - content.action.edit
     - navigation.expand
     - navigation.tabs
     - navigation.tabs.sticky
-    - navigation.sections
     - navigation.indexes
     - navigation.footer
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.share
   palette:
-    scheme: slate
-    primary: green
-    accent: green
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+      primary: green
+      accent: green
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+      primary: green
+      accent: green
+  font:
+    text: "IBM Plex Sans"
+    code: Roboto Mono
+  icon:
+    repo: material/github
+    edit: material/pencil
+    view: material/eye
 
 extra_css:
   - stylesheets/extra.css
 
 extra:
   social:
-    - icon: fontawesome/brands/twitter
+    - icon: fontawesome/brands/x-twitter
       link: https://x.com/supabase
       name: Supabase on Twitter
     - icon: fontawesome/brands/reddit
@@ -47,3 +72,23 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/supabase/etl
       name: ETL on GitHub
+
+markdown_extensions:
+  - toc:
+      permalink: true
+      permalink_title: Anchor link to this section for reference
+  - pymdownx.highlight:
+      linenums: true
+      guess_lang: false
+      use_pygments: true
+      pygments_style: default
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.superfences
+  - pymdownx.keys
+  - admonition
+
+plugins:
+  - search

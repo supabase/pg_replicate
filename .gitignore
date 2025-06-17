@@ -23,5 +23,10 @@ Cargo.lock
 # macOS system files
 .DS_Store
 
-# Ignore mkdocs build directory
+# mkdocs build directory
 site/
+
+# venv files
+bin/
+lib/
+pyvenv.cfg
