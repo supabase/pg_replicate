@@ -11,7 +11,7 @@ use tokio_postgres::{Client, GenericClient};
 
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::destination_v2::TestDestination;
-use crate::common::event::group_events_by_type_and_table_id;
+use crate::common::event::{group_events_by_type, group_events_by_type_and_table_id};
 use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
 use crate::common::state_store::{
     FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
@@ -540,11 +540,10 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     );
 
     // Verify table schemas were correctly stored.
-    let mut first_table_schemas = destination.get_table_schemas().await;
-    first_table_schemas.sort();
-    assert_eq!(first_table_schemas.len(), 2);
-    assert_eq!(first_table_schemas[0], database_schema.orders_schema());
-    assert_eq!(first_table_schemas[1], database_schema.users_schema());
+    let table_schemas = destination.get_table_schemas().await;
+    assert_eq!(table_schemas.len(), 2);
+    assert_eq!(table_schemas[0], database_schema.orders_schema());
+    assert_eq!(table_schemas[1], database_schema.users_schema());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -613,11 +612,10 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     );
 
     // We check that the table schemas have been stored.
-    let mut first_table_schemas = destination.get_table_schemas().await;
-    first_table_schemas.sort();
-    assert_eq!(first_table_schemas.len(), 2);
-    assert_eq!(first_table_schemas[0], database_schema.orders_schema());
-    assert_eq!(first_table_schemas[1], database_schema.users_schema());
+    let table_schemas = destination.get_table_schemas().await;
+    assert_eq!(table_schemas.len(), 2);
+    assert_eq!(table_schemas[0], database_schema.orders_schema());
+    assert_eq!(table_schemas[1], database_schema.users_schema());
 
     // We assume now that the schema of a table changes before sync done is performed.
     database
@@ -662,11 +660,10 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     pipeline.shutdown_and_wait().await.unwrap();
 
     // We check that the table schemas haven't changed.
-    let mut first_table_schemas = destination.get_table_schemas().await;
-    first_table_schemas.sort();
-    assert_eq!(first_table_schemas.len(), 2);
-    assert_eq!(first_table_schemas[0], database_schema.orders_schema());
-    assert_eq!(first_table_schemas[1], database_schema.users_schema());
+    let table_schemas = destination.get_table_schemas().await;
+    assert_eq!(table_schemas.len(), 2);
+    assert_eq!(table_schemas[0], database_schema.orders_schema());
+    assert_eq!(table_schemas[1], database_schema.users_schema());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -902,7 +899,7 @@ async fn test_table_copy_and_sync() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_table_copy_and_sync_with_changed_schema() {
+async fn test_table_copy_and_sync_with_changed_schema_in_table_sync_worker() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::OrdersOnly).await;
 
@@ -941,9 +938,13 @@ async fn test_table_copy_and_sync_with_changed_schema() {
 
     orders_state_notify.notified().await;
 
-    // Register notification for destination events.
-    let events_notify = destination
-        .wait_for_events_count(vec![(EventType::Begin, 2)])
+    // Register notification for the skipped state.
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            identity.id(),
+            database_schema.orders_schema().id,
+            TableReplicationPhaseType::Skipped,
+        )
         .await;
 
     // Change the schema of orders by adding a new column.
@@ -968,7 +969,21 @@ async fn test_table_copy_and_sync_with_changed_schema() {
         .await
         .unwrap();
 
-    events_notify.notified().await;
+    orders_state_notify.notified().await;
 
     pipeline.shutdown_and_wait().await.unwrap();
+
+    // We assert that the schema is the initial one.
+    let table_schemas = destination.get_table_schemas().await;
+    assert_eq!(table_schemas.len(), 1);
+    assert_eq!(table_schemas[0], database_schema.orders_schema());
+
+    let events = destination.get_events().await;
+    let grouped_events = group_events_by_type(&events);
+
+    // We assert that only one `Commit` message was received, since the apply worker doesn't filter
+    // transaction control operations by table id, so those should always go out for each apply +
+    // table sync worker. And since we are skipping a table on the table schema change, we only expect
+    // the first `Commit` to be sent by the apply worker.
+    assert_eq!(grouped_events.get(&EventType::Commit).unwrap().len(), 1);
 }

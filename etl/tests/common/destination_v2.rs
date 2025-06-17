@@ -92,7 +92,10 @@ impl TestDestination {
     }
 
     pub async fn get_table_schemas(&self) -> Vec<TableSchema> {
-        self.inner.read().await.table_schemas.clone()
+        let mut table_schemas = self.inner.read().await.table_schemas.clone();
+        table_schemas.sort();
+
+        table_schemas
     }
 
     pub async fn get_table_rows(&self) -> HashMap<Oid, Vec<TableRow>> {
