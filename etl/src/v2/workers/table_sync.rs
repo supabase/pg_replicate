@@ -154,7 +154,7 @@ impl TableSyncWorkerState {
             // notification is missed and in that case we want to avoid blocking indefinitely.
             let _ =
                 tokio::time::timeout(PHASE_CHANGE_REFRESH_FREQUENCY, phase_change.notified()).await;
-
+            
             // We read the state and return the lock to the state.
             let inner = self.inner.read().await;
             if inner.table_replication_state.phase.as_type() == phase_type {

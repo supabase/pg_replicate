@@ -6,6 +6,8 @@ use etl::v2::workers::base::WorkerWaitError;
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
 use std::ops::RangeInclusive;
+use std::time::Duration;
+use tokio::time::timeout;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, GenericClient};
 
@@ -941,13 +943,9 @@ async fn test_table_copy_and_sync_with_changed_schema() {
 
     orders_state_notify.notified().await;
 
-    // Register notifications for sync completion.
-    let orders_state_notify = state_store
-        .notify_on_replication_phase(
-            identity.id(),
-            database_schema.orders_schema().id,
-            TableReplicationPhaseType::SyncDone,
-        )
+    // Register notification for destination events.
+    let events_notify = destination
+        .wait_for_events_count(vec![(EventType::Begin, 2)])
         .await;
 
     // Change the schema of orders by adding a new column.
@@ -972,8 +970,8 @@ async fn test_table_copy_and_sync_with_changed_schema() {
         .await
         .unwrap();
 
-    orders_state_notify.notified().await;
-
+    events_notify.notified().await;
+    
     // TODO: assert errors.
-    pipeline.shutdown_and_wait().await.unwrap();
+    timeout(Duration::from_secs(1), pipeline.shutdown_and_wait()).await.unwrap();
 }

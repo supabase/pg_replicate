@@ -332,7 +332,6 @@ where
         }
 
         if catchup_started {
-            info!("Waiting for sync completion for table {}", table_id);
             let _ = table_sync_worker_state
                 .wait_for_phase_type(TableReplicationPhaseType::SyncDone)
                 .await;

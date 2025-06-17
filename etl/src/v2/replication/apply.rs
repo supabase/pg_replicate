@@ -286,12 +286,12 @@ where
         tokio::select! {
             biased;
 
-            // Shutdown signal received, exit loop
+            // Shutdown signal received, exit loop.
             _ = shutdown_rx.changed() => {
                 break;
             }
 
-            // Process a batch of replication messages
+            // Process a batch of replication messages.
             Some(messages_batch) = logical_replication_stream.next() => {
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe {
@@ -318,7 +318,7 @@ where
                 }
             }
 
-            // Periodic status update when idle
+            // Periodic status update when idle.
             _ = tokio::time::sleep(SYNCING_FREQUENCY_SECONDS) => {
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe {
@@ -586,7 +586,7 @@ where
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
     let end_lsn = PgLsn::from(message.end_lsn());
     let continue_loop = hook.process_syncing_tables(end_lsn).await?;
-
+    
     // If we are told to stop the loop, we prepare for a graceful stop of the loop.
     if !continue_loop {
         state.should_break_early = Some(BatchEarlyBreak::Break);

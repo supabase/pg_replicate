@@ -73,9 +73,12 @@ where
     tokio::select! {
         biased;
 
+        // Shutdown signal received, exit loop.
         _ = shutdown_rx.changed() => {
             Ok(TableSyncResult::SyncStopped)
         }
+        
+        // Perform table sync.
         result = sync_table(
             identity,
             config,
