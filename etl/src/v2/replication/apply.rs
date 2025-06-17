@@ -161,9 +161,9 @@ struct ApplyLoopState {
     /// The highest LSN received from the `end_lsn` field of replication messages.
     ///
     /// This LSN is set with the `end_lsn` of each incoming message, and it's used for:
-    /// - Storing how far we have come when it comes to processing events (stored in the replication 
+    /// - Storing how far we have come when it comes to processing events (stored in the replication
     ///   origin state)
-    /// - Notifying Postgres about how far we have flushed events in our destination (so that Postgres 
+    /// - Notifying Postgres about how far we have flushed events in our destination (so that Postgres
     ///   can perform WAL pruning)
     last_end_lsn: Option<PgLsn>,
     /// The LSN of the commit WAL entry of the transaction that is currently being processed.
