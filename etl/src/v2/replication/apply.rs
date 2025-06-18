@@ -159,7 +159,7 @@ enum BatchEarlyBreak {
 #[derive(Debug, Clone)]
 struct ApplyLoopState {
     /// The highest LSN received from the `end_lsn` field of a `Commit` message.
-    /// 
+    ///
     /// This LSN is used to determine the next WAL entry that we should receive from Postgres in case
     /// of restarts and allows Postgres to determine whether some old entries could be pruned from the
     /// WAL.
@@ -363,7 +363,7 @@ where
                 events_batch.push(event);
             }
         }
-        
+
         // If we should break early after processing a message, we can do this in many ways:
         // - break -> this breaks out of the loop and assumes that the last processed message was
         //  successfully processed, so we apply all the messages up to this one.
@@ -379,7 +379,7 @@ where
         match state.early_break {
             Some(BatchEarlyBreak::Break) => {
                 stop_apply_loop = true;
-                
+
                 break;
             }
             Some(BatchEarlyBreak::BreakAndDiscard) => {
