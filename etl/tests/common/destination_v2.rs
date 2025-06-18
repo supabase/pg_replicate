@@ -160,7 +160,7 @@ impl Destination for TestDestination {
 
     async fn load_table_schemas(&self) -> Result<Vec<TableSchema>, DestinationError> {
         let inner = self.inner.read().await;
-        let table_schemas = inner.table_schemas.iter().cloned().collect();
+        let table_schemas = inner.table_schemas.to_vec();
 
         Ok(table_schemas)
     }

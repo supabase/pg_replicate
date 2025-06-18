@@ -48,7 +48,7 @@ impl Destination for MemoryDestination {
 
     async fn load_table_schemas(&self) -> Result<Vec<TableSchema>, DestinationError> {
         let inner = self.inner.read().await;
-        let schemas = inner.table_schemas.iter().cloned().collect();
+        let schemas = inner.table_schemas.to_vec();
 
         Ok(schemas)
     }
