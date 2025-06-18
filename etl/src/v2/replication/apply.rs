@@ -303,6 +303,22 @@ where
             // At regular intervals, if nothing happens, perform housekeeping.
             _ = tokio::time::sleep(REFRESH_FREQUENCY_SECONDS) => {
                 // TODO: implement housekeeping like slot deletion.
+                let logical_replication_stream = logical_replication_stream.as_mut();
+                let events_stream = unsafe {
+                    Pin::new_unchecked(
+                        logical_replication_stream
+                            .get_unchecked_mut()
+                            .get_inner_mut()
+                    )
+                };
+
+                events_stream
+                    .send_status_update(
+                        state.next_status_update.write_lsn,
+                        state.next_status_update.flush_lsn,
+                        state.next_status_update.apply_lsn,
+                    )
+                    .await?;
             }
         }
     }
