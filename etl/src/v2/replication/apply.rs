@@ -29,9 +29,9 @@ use tokio::pin;
 use tokio_postgres::types::PgLsn;
 use tracing::error;
 
-/// The amount of seconds that pass between one refresh and the other of the system, in case no
+/// The amount of milliseconds that pass between one refresh and the other of the system, in case no
 /// events or shutdown signal are received.
-const REFRESH_FREQUENCY_SECONDS: Duration = Duration::from_secs(1);
+const REFRESH_INTERVAL: Duration = Duration::from_millis(1000);
 
 // TODO: figure out how to break the cycle and remove `Box`.
 #[derive(Debug, Error)]
@@ -302,7 +302,7 @@ where
 
             // At regular intervals, if nothing happens, perform housekeeping and send status updates
             // to Postgres.
-            _ = tokio::time::sleep(REFRESH_FREQUENCY_SECONDS) => {
+            _ = tokio::time::sleep(REFRESH_INTERVAL) => {
                 // TODO: implement housekeeping like slot deletion.
                 let logical_replication_stream = logical_replication_stream.as_mut();
                 let events_stream = unsafe {
@@ -318,6 +318,7 @@ where
                         state.next_status_update.write_lsn,
                         state.next_status_update.flush_lsn,
                         state.next_status_update.apply_lsn,
+                        false
                     )
                     .await?;
             }
@@ -459,6 +460,7 @@ where
                     state.next_status_update.write_lsn,
                     state.next_status_update.flush_lsn,
                     state.next_status_update.apply_lsn,
+                    message.reply() == 1,
                 )
                 .await?;
 
