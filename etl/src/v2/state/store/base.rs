@@ -1,4 +1,4 @@
-use postgres::schema::{Oid, TableSchema};
+use postgres::schema::Oid;
 use std::future::Future;
 use thiserror::Error;
 
@@ -41,24 +41,6 @@ pub trait StateStore {
     fn store_table_replication_state(
         &self,
         state: TableReplicationState,
-        overwrite: bool,
-    ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;
-
-    fn load_table_schemas(
-        &self,
-        pipeline_id: PipelineId,
-    ) -> impl Future<Output = Result<Vec<TableSchema>, StateStoreError>> + Send;
-
-    fn load_table_schema(
-        &self,
-        pipeline_id: PipelineId,
-        table_id: Oid,
-    ) -> impl Future<Output = Result<Option<TableSchema>, StateStoreError>> + Send;
-
-    fn store_table_schema(
-        &self,
-        pipeline_id: PipelineId,
-        table_schema: TableSchema,
         overwrite: bool,
     ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;
 }

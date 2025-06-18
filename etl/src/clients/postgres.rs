@@ -63,11 +63,11 @@ pub enum ReplicationClientError {
 impl ReplicationClient {
     /// Connect to a postgres database in logical replication mode without TLS
     pub async fn connect_no_tls(
-        options: PgConnectionConfig,
+        config: PgConnectionConfig,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres without TLS");
 
-        let mut config: Config = options.into();
+        let mut config: Config = config.into();
         config.replication_mode(ReplicationMode::Logical);
 
         let (postgres_client, connection) = config.connect(NoTls).await?;
@@ -91,12 +91,12 @@ impl ReplicationClient {
 
     /// Connect to a postgres database in logical replication mode with TLS
     pub async fn connect_tls(
-        options: PgConnectionConfig,
+        config: PgConnectionConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> Result<ReplicationClient, ReplicationClientError> {
         info!("connecting to postgres with TLS");
 
-        let mut config: Config = options.into();
+        let mut config: Config = config.into();
         config.replication_mode(ReplicationMode::Logical);
 
         let mut root_store = rustls::RootCertStore::empty();

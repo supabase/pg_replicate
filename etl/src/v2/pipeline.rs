@@ -1,18 +1,18 @@
-use rustls::pki_types::CertificateDer;
-use std::sync::Arc;
-use thiserror::Error;
-use tokio::sync::watch;
-use tokio_postgres::config::SslMode;
-use tracing::{error, info};
-
+use crate::v2::concurrency::shutdown::{create_shutdown_channel, ShutdownTx};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::Destination;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
+use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
+use rustls::pki_types::CertificateDer;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio_postgres::config::SslMode;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
@@ -25,7 +25,7 @@ pub enum PipelineError {
     #[error("Apply worker failed to start in the pipeline: {0}")]
     ApplyWorker(#[from] ApplyWorkerError),
 
-    #[error("An error happened in the pipeline state store: {0}")]
+    #[error("An error happened in the state store: {0}")]
     StateStore(#[from] StateStoreError),
 }
 
@@ -73,7 +73,7 @@ pub struct Pipeline<S, D> {
     state_store: S,
     destination: D,
     workers: PipelineWorkers,
-    shutdown_tx: watch::Sender<()>,
+    shutdown_tx: ShutdownTx,
 }
 
 impl<S, D> Pipeline<S, D>
@@ -90,7 +90,10 @@ where
     ) -> Self {
         // We create a watch channel of unit types since this is just used to notify all subscribers
         // that shutdown is needed.
-        let (shutdown_tx, _) = watch::channel(());
+        //
+        // Here we are not taking the `shutdown_rx` since we will just extract it from the `shutdown_tx`
+        // via the `subscribe` method. This is done to make the code cleaner.
+        let (shutdown_tx, _) = create_shutdown_channel();
 
         Self {
             identity,
@@ -126,12 +129,18 @@ where
         // We create the table sync workers pool to manage all table sync workers in a central place.
         let pool = TableSyncWorkerPool::new();
 
+        // We initialize the schema cache, which is local to a pipeline, and we try to load existing
+        // schemas that were previously stored at the destination (if any).
+        let schema_cache = SchemaCache::default();
+        // TODO: load schemas from destination and populate cache.
+
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
             self.identity.clone(),
             self.config.clone(),
             replication_client,
             pool.clone(),
+            schema_cache,
             self.state_store.clone(),
             self.destination.clone(),
             self.shutdown_tx.subscribe(),
@@ -167,13 +176,14 @@ where
 
     async fn connect(&self) -> Result<PgReplicationClient, PipelineError> {
         // We create the main replication client that will be used by the apply worker.
-        let replication_client = match self.config.pg_database_config.ssl_mode {
+        let replication_client = match self.config.pg_connection_config.ssl_mode {
             SslMode::Disable => {
-                PgReplicationClient::connect_no_tls(self.config.pg_database_config.clone()).await?
+                PgReplicationClient::connect_no_tls(self.config.pg_connection_config.clone())
+                    .await?
             }
             _ => {
                 PgReplicationClient::connect_tls(
-                    self.config.pg_database_config.clone(),
+                    self.config.pg_connection_config.clone(),
                     self.trusted_root_certs.clone(),
                 )
                 .await?
@@ -195,13 +205,22 @@ where
         // the table sync workers to finish, otherwise if we wait for sync workers first, we might
         // be having the apply worker that spawns new sync workers after we waited for the current
         // ones to finish.
-        apply_worker.wait().await.map_err(|e| vec![e])?;
+        let apply_worker_result = apply_worker.wait().await;
         info!("Apply worker completed");
 
-        pool.wait_all().await?;
+        let table_sync_workers_result = pool.wait_all().await;
         info!("All table sync workers completed");
 
-        Ok(())
+        match (apply_worker_result, table_sync_workers_result) {
+            (Ok(_), Ok(_)) => Ok(()),
+            (Err(err), Ok(_)) => Err(vec![err]),
+            (Ok(_), Err(err)) => Err(err),
+            (Err(apply_err), Err(mut table_sync_err)) => {
+                // For efficiency, we add it to the end.
+                table_sync_err.push(apply_err);
+                Err(table_sync_err)
+            }
+        }
     }
 
     pub async fn shutdown(&self) {
