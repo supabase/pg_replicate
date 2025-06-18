@@ -158,7 +158,14 @@ impl Destination for TestDestination {
         Ok(())
     }
 
-    async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
+    async fn load_table_schemas(&self) -> Result<Vec<TableSchema>, DestinationError> {
+        let inner = self.inner.read().await;
+        let table_schemas = inner.table_schemas.to_vec();
+
+        Ok(table_schemas)
+    }
+
+    async fn write_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_rows.entry(id).or_default().extend(rows);
         inner.check_conditions().await;
@@ -166,7 +173,7 @@ impl Destination for TestDestination {
         Ok(())
     }
 
-    async fn apply_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
+    async fn write_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.events.extend(events);
         inner.check_conditions().await;

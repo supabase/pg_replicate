@@ -667,6 +667,122 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_table_schema_copy_survives_restarts() {
+    let mut database = spawn_database().await;
+    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+
+    let state_store = TestStateStore::new();
+    let destination = TestDestination::new();
+
+    // We start the pipeline from scratch.
+    let identity = create_pipeline_identity(&database_schema.publication_name);
+    let mut pipeline = spawn_pg_pipeline(
+        &identity,
+        &database.config,
+        state_store.clone(),
+        destination.clone(),
+    );
+    let pipeline_id = pipeline.identity().id();
+
+    // We wait for two table schemas to be received.
+    let schemas_notify = destination.wait_for_n_schemas(2).await;
+    // We wait for both table states to be in finished done (sync wait is only memory and not
+    // available on the store).
+    let users_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.users_schema().id,
+            TableReplicationPhaseType::FinishedCopy,
+        )
+        .await;
+    let orders_state_notify = state_store
+        .notify_on_replication_phase(
+            pipeline_id,
+            database_schema.orders_schema().id,
+            TableReplicationPhaseType::FinishedCopy,
+        )
+        .await;
+
+    pipeline.start().await.unwrap();
+
+    schemas_notify.notified().await;
+    users_state_notify.notified().await;
+    orders_state_notify.notified().await;
+
+    pipeline.shutdown_and_wait().await.unwrap();
+
+    // We check that the states are correctly set.
+    let table_replication_states = state_store.get_table_replication_states().await;
+    assert_eq!(table_replication_states.len(), 2);
+    assert_eq!(
+        table_replication_states
+            .get(&(pipeline_id, database_schema.users_schema().id))
+            .unwrap()
+            .phase
+            .as_type(),
+        TableReplicationPhaseType::FinishedCopy
+    );
+    assert_eq!(
+        table_replication_states
+            .get(&(pipeline_id, database_schema.orders_schema().id))
+            .unwrap()
+            .phase
+            .as_type(),
+        TableReplicationPhaseType::FinishedCopy
+    );
+
+    // We check that the table schemas have been stored.
+    let table_schemas = destination.get_table_schemas().await;
+    assert_eq!(table_schemas.len(), 2);
+    assert_eq!(table_schemas[0], database_schema.orders_schema());
+    assert_eq!(table_schemas[1], database_schema.users_schema());
+
+    // We recreate a pipeline, assuming the other one was stopped, using the same state and destination.
+    let mut pipeline = spawn_pg_pipeline(
+        &identity,
+        &database.config,
+        state_store.clone(),
+        destination.clone(),
+    );
+
+    pipeline.start().await.unwrap();
+
+    // We wait for two inserts to be processed, one for `users` and one for `orders`.
+    let insert_events_notify = destination
+        .wait_for_events_count(vec![(EventType::Insert, 2)])
+        .await;
+
+    // Insert a single row for each table.
+    insert_mock_data(
+        &mut database,
+        &database_schema.users_schema().name,
+        &database_schema.orders_schema().name,
+        // 1 element.
+        0..=0,
+        true,
+    )
+    .await;
+
+    insert_events_notify.notified().await;
+
+    pipeline.shutdown_and_wait().await.unwrap();
+
+    // We check that both inserts were received, and we know that we can receive them only when the table
+    // schemas are available.
+    let events = destination.get_events().await;
+    let grouped_events = group_events_by_type_and_table_id(&events);
+    let users_inserts = grouped_events
+        .get(&(EventType::Insert, database_schema.users_schema().id))
+        .unwrap();
+    let orders_inserts = grouped_events
+        .get(&(EventType::Insert, database_schema.orders_schema().id))
+        .unwrap();
+
+    assert_eq!(users_inserts.len(), 1);
+    assert_eq!(orders_inserts.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_table_copy() {
     let mut database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;

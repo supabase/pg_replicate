@@ -9,7 +9,7 @@ use crate::v2::destination::base::{Destination, DestinationError};
 #[derive(Debug)]
 struct Inner {
     events: Vec<Event>,
-    schemas: Vec<TableSchema>,
+    table_schemas: Vec<TableSchema>,
     table_rows: Vec<(Oid, Vec<TableRow>)>,
 }
 
@@ -22,7 +22,7 @@ impl MemoryDestination {
     pub fn new() -> Self {
         let inner = Inner {
             events: Vec::new(),
-            schemas: Vec::new(),
+            table_schemas: Vec::new(),
             table_rows: Vec::new(),
         };
 
@@ -41,19 +41,26 @@ impl Default for MemoryDestination {
 impl Destination for MemoryDestination {
     async fn write_table_schema(&self, schema: TableSchema) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
-        inner.schemas.push(schema);
+        inner.table_schemas.push(schema);
 
         Ok(())
     }
 
-    async fn copy_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
+    async fn load_table_schemas(&self) -> Result<Vec<TableSchema>, DestinationError> {
+        let inner = self.inner.read().await;
+        let schemas = inner.table_schemas.to_vec();
+
+        Ok(schemas)
+    }
+
+    async fn write_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.table_rows.push((id, rows));
 
         Ok(())
     }
 
-    async fn apply_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
+    async fn write_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
         inner.events.extend(events);
 

@@ -14,13 +14,17 @@ pub trait Destination {
         schema: TableSchema,
     ) -> impl Future<Output = Result<(), DestinationError>> + Send;
 
-    fn copy_table_rows(
+    fn load_table_schemas(
+        &self,
+    ) -> impl Future<Output = Result<Vec<TableSchema>, DestinationError>> + Send;
+
+    fn write_table_rows(
         &self,
         id: Oid,
         rows: Vec<TableRow>,
     ) -> impl Future<Output = Result<(), DestinationError>> + Send;
 
-    fn apply_events(
+    fn write_events(
         &self,
         events: Vec<Event>,
     ) -> impl Future<Output = Result<(), DestinationError>> + Send;

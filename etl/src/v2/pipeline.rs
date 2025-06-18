@@ -1,6 +1,6 @@
 use crate::v2::concurrency::shutdown::{create_shutdown_channel, ShutdownTx};
 use crate::v2::config::pipeline::PipelineConfig;
-use crate::v2::destination::base::Destination;
+use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
@@ -27,6 +27,9 @@ pub enum PipelineError {
 
     #[error("An error happened in the state store: {0}")]
     StateStore(#[from] StateStoreError),
+
+    #[error("An error occurred in the destination: {0}")]
+    Destination(#[from] DestinationError),
 }
 
 #[derive(Debug)]
@@ -129,10 +132,8 @@ where
         // We create the table sync workers pool to manage all table sync workers in a central place.
         let pool = TableSyncWorkerPool::new();
 
-        // We initialize the schema cache, which is local to a pipeline, and we try to load existing
-        // schemas that were previously stored at the destination (if any).
-        let schema_cache = SchemaCache::default();
-        // TODO: load schemas from destination and populate cache.
+        // We prepare the schema cache with table schemas loaded, in case there is the need.
+        let schema_cache = self.prepare_schema_cache().await?;
 
         // We create and start the apply worker.
         let apply_worker = ApplyWorker::new(
@@ -151,6 +152,16 @@ where
         self.workers = PipelineWorkers::Started { apply_worker, pool };
 
         Ok(())
+    }
+
+    async fn prepare_schema_cache(&self) -> Result<SchemaCache, PipelineError> {
+        // We initialize the schema cache, which is local to a pipeline, and we try to load existing
+        // schemas that were previously stored at the destination (if any).
+        let schema_cache = SchemaCache::default();
+        let table_schemas = self.destination.load_table_schemas().await?;
+        schema_cache.add_table_schemas(table_schemas).await;
+
+        Ok(schema_cache)
     }
 
     async fn sync_relation_subscription_states(

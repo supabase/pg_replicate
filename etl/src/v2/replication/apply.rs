@@ -398,7 +398,7 @@ where
     }
 
     // We apply the batch of events to the destination.
-    destination.apply_events(events_batch).await?;
+    destination.write_events(events_batch).await?;
 
     // At this point, the `last_commit_end_lsn` will contain the LSN of the next byte in the WAL after
     // the last `Commit` message that was processed in this batch or in the previous ones.
