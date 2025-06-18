@@ -158,13 +158,11 @@ enum BatchEarlyBreak {
 
 #[derive(Debug, Clone)]
 struct ApplyLoopState {
-    /// The highest LSN received from the `end_lsn` field of replication messages.
-    ///
-    /// This LSN is set with the `end_lsn` of each incoming message, and it's used for:
-    /// - Storing how far we have come when it comes to processing events (stored in the replication
-    ///   origin state)
-    /// - Notifying Postgres about how far we have flushed events in our destination (so that Postgres
-    ///   can perform WAL pruning)
+    /// The highest LSN received from the `end_lsn` field of a `Commit` message.
+    /// 
+    /// This LSN is used to determine the next WAL entry that we should receive from Postgres in case
+    /// of restarts and allows Postgres to determine whether some old entries could be pruned from the
+    /// WAL.
     last_commit_end_lsn: Option<PgLsn>,
     /// The LSN of the commit WAL entry of the transaction that is currently being processed.
     ///
@@ -302,9 +300,9 @@ where
                 }
             }
 
-            // At regular intervals, if nothing happens, perform house keeping.
+            // At regular intervals, if nothing happens, perform housekeeping.
             _ = tokio::time::sleep(REFRESH_FREQUENCY_SECONDS) => {
-                // TODO: implement house keeping.
+                // TODO: implement housekeeping like slot deletion.
             }
         }
     }
@@ -343,12 +341,12 @@ where
             handle_replication_message(state, stream.as_mut(), message?, schema_cache, hook)
                 .await?;
 
-        let mut event_inserted = false;
-        if let Some(event) = event {
-            events_batch.push(event);
-            event_inserted = true;
+        if !matches!(state.early_break, Some(BatchEarlyBreak::BreakAndDiscard)) {
+            if let Some(event) = event {
+                events_batch.push(event);
+            }
         }
-
+        
         // If we should break early after processing a message, we can do this in many ways:
         // - break -> this breaks out of the loop and assumes that the last processed message was
         //  successfully processed, so we apply all the messages up to this one.
@@ -364,12 +362,10 @@ where
         match state.early_break {
             Some(BatchEarlyBreak::Break) => {
                 stop_apply_loop = true;
+                
                 break;
             }
             Some(BatchEarlyBreak::BreakAndDiscard) => {
-                if event_inserted {
-                    events_batch.pop();
-                }
                 *state = previous_state;
                 stop_apply_loop = true;
 
