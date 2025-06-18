@@ -30,6 +30,13 @@ impl SchemaCache {
         inner.table_schemas.insert(table_schema.id, table_schema);
     }
 
+    pub async fn add_table_schemas(&self, table_schemas: Vec<TableSchema>) {
+        let mut inner = self.inner.write().await;
+        for table_schema in table_schemas {
+            inner.table_schemas.insert(table_schema.id, table_schema);
+        }
+    }
+
     pub async fn get_table_schema(&self, table_id: &Oid) -> Option<TableSchema> {
         let inner = self.inner.read().await;
         inner.table_schemas.get(table_id).cloned()

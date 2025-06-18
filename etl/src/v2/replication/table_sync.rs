@@ -177,7 +177,7 @@ where
                 match result {
                     ShutdownResult::Ok(table_rows) => {
                         let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
-                        destination.copy_table_rows(table_id, table_rows).await?;
+                        destination.write_table_rows(table_id, table_rows).await?;
                     }
                     ShutdownResult::Shutdown(_) => {
                         // If we received a shutdown in the middle of a table copy, we bail knowing
