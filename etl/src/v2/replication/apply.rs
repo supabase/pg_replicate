@@ -29,9 +29,9 @@ use tokio::pin;
 use tokio_postgres::types::PgLsn;
 use tracing::error;
 
-/// The amount of seconds that pass between syncing via the hook in case nothing else is going on
-/// in the system (e.g., no data from the stream and no shutdown signal).
-const SYNCING_FREQUENCY_SECONDS: Duration = Duration::from_secs(1);
+/// The amount of seconds that pass between one refresh and the other of the system, in case no
+/// events or shutdown signal are received.
+const REFRESH_FREQUENCY_SECONDS: Duration = Duration::from_secs(1);
 
 // TODO: figure out how to break the cycle and remove `Box`.
 #[derive(Debug, Error)]
@@ -165,7 +165,7 @@ struct ApplyLoopState {
     ///   origin state)
     /// - Notifying Postgres about how far we have flushed events in our destination (so that Postgres
     ///   can perform WAL pruning)
-    last_end_lsn: Option<PgLsn>,
+    last_commit_end_lsn: Option<PgLsn>,
     /// The LSN of the commit WAL entry of the transaction that is currently being processed.
     ///
     /// This LSN is set at every `BEGIN` of a new transaction, and it's used to know the `commit_lsn`
@@ -181,24 +181,24 @@ struct ApplyLoopState {
 impl ApplyLoopState {
     fn new(next_status_update: StatusUpdate) -> Self {
         Self {
-            last_end_lsn: None,
+            last_commit_end_lsn: None,
             remote_final_lsn: None,
             next_status_update,
             early_break: None,
         }
     }
 
-    fn update_last_end_lsn(&mut self, new_last_end_lsn: PgLsn) {
-        let Some(last_end_lsn) = &mut self.last_end_lsn else {
-            self.last_end_lsn = Some(new_last_end_lsn);
+    fn update_last_commit_end_lsn(&mut self, new_last_commit_end_lsn: PgLsn) {
+        let Some(last_commit_end_lsn) = &mut self.last_commit_end_lsn else {
+            self.last_commit_end_lsn = Some(new_last_commit_end_lsn);
             return;
         };
 
-        if new_last_end_lsn <= *last_end_lsn {
+        if new_last_commit_end_lsn <= *last_commit_end_lsn {
             return;
         }
 
-        *last_end_lsn = new_last_end_lsn;
+        *last_commit_end_lsn = new_last_commit_end_lsn;
     }
 }
 
@@ -302,24 +302,9 @@ where
                 }
             }
 
-            // Periodic status update when idle.
-            _ = tokio::time::sleep(SYNCING_FREQUENCY_SECONDS) => {
-                let logical_replication_stream = logical_replication_stream.as_mut();
-                let events_stream = unsafe {
-                    Pin::new_unchecked(
-                        logical_replication_stream
-                            .get_unchecked_mut()
-                            .get_inner_mut()
-                    )
-                };
-
-                events_stream
-                    .send_status_update(
-                        state.next_status_update.write_lsn,
-                        state.next_status_update.flush_lsn,
-                        state.next_status_update.apply_lsn,
-                    )
-                    .await?;
+            // At regular intervals, if nothing happens, perform house keeping.
+            _ = tokio::time::sleep(REFRESH_FREQUENCY_SECONDS) => {
+                // TODO: implement house keeping.
             }
         }
     }
@@ -401,12 +386,13 @@ where
     // We apply the batch of events to the destination.
     destination.apply_events(events_batch).await?;
 
-    // At this point, the `last_end_lsn` will contain the LSN of the next entry that we want to fetch.
-    if let Some(last_end_lsn) = state.last_end_lsn.take() {
+    // At this point, the `last_commit_end_lsn` will contain the LSN of the next byte in the WAL after
+    // the last `Commit` message that was processed in this batch or in the previous ones.
+    if let Some(last_commit_end_lsn) = state.last_commit_end_lsn.take() {
         // We store the LSN in the replication origin state in order to be able to restart from that
         // LSN.
         let replication_origin_state =
-            ReplicationOriginState::new(identity.id(), None, last_end_lsn);
+            ReplicationOriginState::new(identity.id(), None, last_commit_end_lsn);
         state_store
             .store_replication_origin_state(replication_origin_state, true)
             .await?;
@@ -419,8 +405,12 @@ where
         // the `write_lsn` which is used by Postgres to get an acknowledgement of how far we have processed
         // messages but not flushed them.
         // TODO: check if we want to send `apply_lsn` as a different value.
-        state.next_status_update.update_flush_lsn(last_end_lsn);
-        state.next_status_update.update_apply_lsn(last_end_lsn);
+        state
+            .next_status_update
+            .update_flush_lsn(last_commit_end_lsn);
+        state
+            .next_status_update
+            .update_apply_lsn(last_commit_end_lsn);
     }
 
     Ok(stop_apply_loop)
@@ -444,14 +434,12 @@ where
 
             let end_lsn = PgLsn::from(message.wal_end());
             state.next_status_update.update_write_lsn(end_lsn);
-            state.update_last_end_lsn(end_lsn);
 
             handle_logical_replication_message(state, message.into_data(), schema_cache, hook).await
         }
         ReplicationMessage::PrimaryKeepAlive(message) => {
             let end_lsn = PgLsn::from(message.wal_end());
             state.next_status_update.update_write_lsn(end_lsn);
-            state.update_last_end_lsn(end_lsn);
 
             events_stream
                 .send_status_update(
@@ -544,7 +532,7 @@ where
     };
 
     // We take the LSN that belongs to the current transaction, however, if there is no
-    // LSN, it means that a `BEGIN` message was not received before this `COMMIT` which means
+    // LSN, it means that a `Begin` message was not received before this `Commit` which means
     // we are in an inconsistent state.
     let Some(remote_final_lsn) = state.remote_final_lsn.take() else {
         return Err(ApplyLoopError::InvalidTransaction(
@@ -563,11 +551,22 @@ where
         ));
     }
 
+    let end_lsn = PgLsn::from(message.end_lsn());
+
+    // We mark this as the last commit end LSN since we want to be able to track from the outside
+    // what was the biggest transaction boundary LSN which was successfully applied.
+    //
+    // The rationale for using only the `end_lsn` of the `Commit` message is that once we found a
+    // commit and successfully processed it, we can say that the next byte we want is the next transaction
+    // since if we were to store an intermediate `end_lsn` (from a dml operation within a transaction)
+    // the replication will still start from a transaction boundary, that is, a `Begin` statement in
+    // our case.
+    state.update_last_commit_end_lsn(end_lsn);
+
     // We process syncing tables since we just arrived at the end of a transaction, and we want to
     // synchronize all the workers.
     //
     // The `end_lsn` here refers to the LSN of the record right after the commit record.
-    let end_lsn = PgLsn::from(message.end_lsn());
     let continue_loop = hook.process_syncing_tables(end_lsn).await?;
 
     // If we are told to stop the loop, it means we reached the end of processing for this specific

@@ -90,6 +90,9 @@ where
     ) -> Self {
         // We create a watch channel of unit types since this is just used to notify all subscribers
         // that shutdown is needed.
+        //
+        // Here we are not taking the `shutdown_rx` since we will just extract it from the `shutdown_tx`
+        // via the `subscribe` method. This is done to make the code cleaner.
         let (shutdown_tx, _) = create_shutdown_channel();
 
         Self {
