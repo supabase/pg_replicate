@@ -300,7 +300,8 @@ where
                 }
             }
 
-            // At regular intervals, if nothing happens, perform housekeeping.
+            // At regular intervals, if nothing happens, perform housekeeping and send status updates
+            // to Postgres.
             _ = tokio::time::sleep(REFRESH_FREQUENCY_SECONDS) => {
                 // TODO: implement housekeeping like slot deletion.
                 let logical_replication_stream = logical_replication_stream.as_mut();
