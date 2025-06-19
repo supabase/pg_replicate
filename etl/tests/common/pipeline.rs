@@ -45,7 +45,7 @@ pub async fn spawn_pg_pipeline<Snk: BatchDestination>(
     mode: PipelineMode,
     destination: Snk,
 ) -> BatchDataPipeline<PostgresSource, Snk> {
-    let batch_config = BatchConfig::new(1000, Duration::from_secs(10));
+    let batch_config = BatchConfig::new(1, Duration::from_secs(10));
 
     let pipeline = match mode {
         PipelineMode::CopyTable { table_names } => {
