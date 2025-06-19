@@ -404,7 +404,7 @@ where
             None => {
                 let Some(state) = self
                     .state_store
-                    .load_table_replication_state(self.identity.id(), table_id)
+                    .load_table_replication_state(table_id)
                     .await?
                 else {
                     // If we don't even find the state for this table, we skip the event entirely.

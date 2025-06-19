@@ -52,10 +52,11 @@ impl Inner {
 #[derive(Clone)]
 pub struct TestStateStore {
     inner: Arc<RwLock<Inner>>,
+    pipeline_id: PipelineId,
 }
 
 impl TestStateStore {
-    pub fn new() -> Self {
+    pub fn new(pipeline_id: PipelineId) -> Self {
         let inner = Inner {
             table_replication_states: HashMap::new(),
             table_state_conditions: Vec::new(),
@@ -64,6 +65,7 @@ impl TestStateStore {
 
         Self {
             inner: Arc::new(RwLock::new(inner)),
+            pipeline_id,
         }
     }
 
@@ -107,22 +109,15 @@ impl TestStateStore {
     }
 }
 
-impl Default for TestStateStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl StateStore for TestStateStore {
     async fn load_table_replication_state(
         &self,
-        pipeline_id: PipelineId,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
         let result = Ok(inner
             .table_replication_states
-            .get(&(pipeline_id, table_id))
+            .get(&(self.pipeline_id, table_id))
             .cloned());
 
         inner
@@ -229,13 +224,10 @@ where
 {
     async fn load_table_replication_state(
         &self,
-        pipeline_id: PipelineId,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
         self.trigger_fault(&self.config.load_table_replication_state)?;
-        self.inner
-            .load_table_replication_state(pipeline_id, table_id)
-            .await
+        self.inner.load_table_replication_state(table_id).await
     }
 
     async fn load_table_replication_states(

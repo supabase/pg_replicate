@@ -15,37 +15,32 @@ struct Inner {
 #[derive(Debug, Clone)]
 pub struct MemoryStateStore {
     inner: Arc<RwLock<Inner>>,
+    pipeline_id: PipelineId,
 }
 
 impl MemoryStateStore {
-    pub fn new() -> Self {
+    pub fn new(pipeline_id: PipelineId) -> Self {
         let inner = Inner {
             table_replication_states: HashMap::new(),
         };
 
         Self {
             inner: Arc::new(RwLock::new(inner)),
+            pipeline_id,
         }
-    }
-}
-
-impl Default for MemoryStateStore {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 impl StateStore for MemoryStateStore {
     async fn load_table_replication_state(
         &self,
-        pipeline_id: PipelineId,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
 
         Ok(inner
             .table_replication_states
-            .get(&(pipeline_id, table_id))
+            .get(&(self.pipeline_id, table_id))
             .cloned())
     }
 

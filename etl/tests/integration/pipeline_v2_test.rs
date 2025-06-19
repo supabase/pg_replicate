@@ -266,17 +266,19 @@ fn build_expected_orders_inserts(
 async fn test_pipeline_with_table_sync_worker_panic() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+    let pipeline_identity = create_pipeline_identity(&database_schema.publication_name);
 
     let fault_config = FaultConfig {
         store_table_replication_state: Some(FaultType::Panic),
         ..Default::default()
     };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
+    let state_store =
+        FaultInjectingStateStore::wrap(TestStateStore::new(pipeline_identity.id()), fault_config);
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
     let mut pipeline = spawn_pg_pipeline(
-        &create_pipeline_identity(&database_schema.publication_name),
+        &pipeline_identity,
         &database.config,
         state_store.clone(),
         destination.clone(),
@@ -319,16 +321,18 @@ async fn test_pipeline_with_table_sync_worker_panic() {
 async fn test_pipeline_with_table_sync_worker_error() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+    let pipeline_identity = create_pipeline_identity(&database_schema.publication_name);
 
     let fault_config = FaultConfig {
         ..Default::default()
     };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
+    let state_store =
+        FaultInjectingStateStore::wrap(TestStateStore::new(pipeline_identity.id()), fault_config);
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
     let mut pipeline = spawn_pg_pipeline(
-        &create_pipeline_identity(&database_schema.publication_name),
+        &pipeline_identity,
         &database.config,
         state_store.clone(),
         destination.clone(),
@@ -377,8 +381,9 @@ async fn test_pipeline_with_table_sync_worker_error() {
 async fn test_table_schema_copy_with_data_sync_retry() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+    let identity = create_pipeline_identity(&database_schema.publication_name);
 
-    let state_store = TestStateStore::new();
+    let state_store = TestStateStore::new(identity.id());
     let destination = TestDestination::new();
 
     // Configure state store to fail during data sync.
@@ -386,7 +391,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         ..Default::default()
     };
     let failing_state_store = FaultInjectingStateStore::wrap(state_store.clone(), fault_config);
-    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.config,
@@ -489,12 +493,12 @@ async fn test_table_schema_copy_with_data_sync_retry() {
 async fn test_table_schema_copy_with_finished_copy_retry() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+    let identity = create_pipeline_identity(&database_schema.publication_name);
 
-    let state_store = TestStateStore::new();
+    let state_store = TestStateStore::new(identity.id());
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
-    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.config,
@@ -600,12 +604,12 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
 async fn test_table_schema_copy_survives_restarts() {
     let mut database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+    let identity = create_pipeline_identity(&database_schema.publication_name);
 
-    let state_store = TestStateStore::new();
+    let state_store = TestStateStore::new(identity.id());
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
-    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.config,
@@ -716,6 +720,7 @@ async fn test_table_schema_copy_survives_restarts() {
 async fn test_table_copy() {
     let mut database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+    let identity = create_pipeline_identity(&database_schema.publication_name);
 
     // Insert initial test data.
     let rows_inserted = 10;
@@ -728,11 +733,10 @@ async fn test_table_copy() {
     )
     .await;
 
-    let state_store = TestStateStore::new();
+    let state_store = TestStateStore::new(identity.id());
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
-    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.config,
@@ -781,6 +785,7 @@ async fn test_table_copy() {
 async fn test_table_copy_and_sync() {
     let mut database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
+    let identity = create_pipeline_identity(&database_schema.publication_name);
 
     // Insert initial test data.
     let rows_inserted = 10;
@@ -793,11 +798,10 @@ async fn test_table_copy_and_sync() {
     )
     .await;
 
-    let state_store = TestStateStore::new();
+    let state_store = TestStateStore::new(identity.id());
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
-    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.config,
@@ -948,6 +952,7 @@ async fn test_table_copy_and_sync() {
 async fn test_table_copy_and_sync_with_changed_schema_in_table_sync_worker() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::OrdersOnly).await;
+    let identity = create_pipeline_identity(&database_schema.publication_name);
 
     // Insert data in the table.
     database
@@ -959,11 +964,10 @@ async fn test_table_copy_and_sync_with_changed_schema_in_table_sync_worker() {
         .await
         .unwrap();
 
-    let state_store = TestStateStore::new();
+    let state_store = TestStateStore::new(identity.id());
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
-    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.config,
@@ -1038,6 +1042,7 @@ async fn test_table_copy_and_sync_with_changed_schema_in_table_sync_worker() {
 async fn test_table_copy_and_sync_with_changed_schema_in_apply_worker() {
     let database = spawn_database().await;
     let database_schema = setup_test_database_schema(&database, TableSelection::OrdersOnly).await;
+    let identity = create_pipeline_identity(&database_schema.publication_name);
 
     // Insert data in the table.
     database
@@ -1049,11 +1054,10 @@ async fn test_table_copy_and_sync_with_changed_schema_in_apply_worker() {
         .await
         .unwrap();
 
-    let state_store = TestStateStore::new();
+    let state_store = TestStateStore::new(identity.id());
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
-    let identity = create_pipeline_identity(&database_schema.publication_name);
     let mut pipeline = spawn_pg_pipeline(
         &identity,
         &database.config,
