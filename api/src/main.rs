@@ -1,10 +1,8 @@
 use std::env;
 
 use anyhow::anyhow;
-use api::{
-    configuration::{get_settings, Settings},
-    startup::Application,
-};
+use api::{config::ApiConfig, startup::Application};
+use config::load_config;
 use postgres::sqlx::config::PgConnectionConfig;
 use telemetry::init_tracing;
 use tracing::{error, info};
@@ -12,20 +10,21 @@ use tracing::{error, info};
 #[actix_web::main]
 pub async fn main() -> anyhow::Result<()> {
     let app_name = env!("CARGO_BIN_NAME");
+
     // We pass emit_on_span_close = true to emit logs on span close
-    // for the api because it is a web server and we need to emit logs
+    // for the api because it is a web server, and we need to emit logs
     // for every closing request. This is a bit of a hack, but it works
     // for now. Ideally the tracing middleware should emit a log on
     // request end, but it doesn't do that yet.
     let _log_flusher = init_tracing(app_name, true)?;
-    let mut args = env::args();
 
+    let mut args = env::args();
     match args.len() {
         // Run the application server
         1 => {
-            let configuration = get_settings::<'_, Settings>()?;
-            log_pg_database_options(&configuration.database);
-            let application = Application::build(configuration.clone()).await?;
+            let config = load_config::<'_, ApiConfig>()?;
+            log_pg_connection_config(&config.database);
+            let application = Application::build(config.clone()).await?;
             application.run_until_stopped().await?;
         }
         // Handle single command commands
@@ -33,9 +32,9 @@ pub async fn main() -> anyhow::Result<()> {
             let command = args.nth(1).unwrap();
             match command.as_str() {
                 "migrate" => {
-                    let options = get_settings::<'_, PgConnectionConfig>()?;
-                    log_pg_database_options(&options);
-                    Application::migrate_database(options).await?;
+                    let config = load_config::<'_, PgConnectionConfig>()?;
+                    log_pg_connection_config(&config);
+                    Application::migrate_database(config).await?;
                     info!("database migrated successfully");
                 }
                 _ => {
@@ -55,7 +54,7 @@ pub async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn log_pg_database_options(config: &PgConnectionConfig) {
+fn log_pg_connection_config(config: &PgConnectionConfig) {
     info!(
         host = config.host,
         port = config.port,

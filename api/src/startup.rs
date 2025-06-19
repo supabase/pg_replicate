@@ -12,7 +12,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     authentication::auth_validator,
-    configuration::Settings,
+    config::ApiConfig,
     db::publications::Publication,
     encryption,
     k8s_client::HttpK8sClient,
@@ -63,7 +63,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
+    pub async fn build(configuration: ApiConfig) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
         let address = format!(

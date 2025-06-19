@@ -1,5 +1,5 @@
 pub mod authentication;
-pub mod configuration;
+pub mod config;
 pub mod db;
 pub mod encryption;
 pub mod k8s_client;

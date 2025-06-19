@@ -11,6 +11,7 @@ path = "src/main.rs"
 name = "api"
 
 [dependencies]
+config = { workspace = true }
 postgres = { workspace = true, features = ["sqlx"] }
 telemetry = { workspace = true }
 

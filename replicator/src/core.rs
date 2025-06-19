@@ -1,4 +1,3 @@
-use config::replicator::{DestinationConfig, ReplicatorConfig, StateStoreConfig};
 use etl::v2::config::batch::BatchConfig;
 use etl::v2::config::pipeline::PipelineConfig;
 use etl::v2::config::retry::RetryConfig;
@@ -15,7 +14,9 @@ use std::time::Duration;
 use thiserror::Error;
 use tracing::{error, info, warn};
 
-use crate::config::load_config;
+use crate::config::{
+    load_replicator_config, DestinationConfig, ReplicatorConfig, StateStoreConfig,
+};
 
 #[derive(Debug, Error)]
 pub enum ReplicatorError {
@@ -24,7 +25,7 @@ pub enum ReplicatorError {
 }
 
 pub async fn start_replicator() -> anyhow::Result<()> {
-    let replicator_config = load_config()?;
+    let replicator_config = load_replicator_config()?;
 
     // We set up the certificates and SSL mode.
     let mut trusted_root_certs = vec![];

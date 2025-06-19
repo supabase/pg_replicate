@@ -5,7 +5,7 @@ use actix_web_httpauth::extractors::{
 };
 use constant_time_eq::constant_time_eq_n;
 
-use crate::configuration::ApiKey;
+use crate::config::ApiKey;
 
 pub async fn auth_validator(
     req: ServiceRequest,

@@ -1,10 +1,11 @@
 use crate::common::database::create_etl_api_database;
 use api::{
-    configuration::{get_settings, Settings},
+    config::ApiConfig,
     db::{destinations::DestinationConfig, pipelines::PipelineConfig, sources::SourceConfig},
     encryption::{self, generate_random_key},
     startup::run,
 };
+use config::load_config;
 use postgres::sqlx::config::PgConnectionConfig;
 use postgres::sqlx::test_utils::drop_pg_database;
 use reqwest::{IntoUrl, RequestBuilder};
@@ -549,11 +550,11 @@ pub async fn spawn_test_app() -> TestApp {
         TcpListener::bind(format!("{base_address}:0")).expect("failed to bind random port");
     let port = listener.local_addr().unwrap().port();
 
-    let mut settings = get_settings::<'_, Settings>().expect("Failed to read configuration");
+    let mut config = load_config::<'_, ApiConfig>().expect("Failed to read configuration");
     // We use a random database name.
-    settings.database.name = Uuid::new_v4().to_string();
+    config.database.name = Uuid::new_v4().to_string();
 
-    let connection_pool = create_etl_api_database(&settings.database).await;
+    let connection_pool = create_etl_api_database(&config.database).await;
 
     let key = generate_random_key::<32>().expect("failed to generate random key");
     let encryption_key = encryption::EncryptionKey { id: 0, key };
@@ -575,7 +576,7 @@ pub async fn spawn_test_app() -> TestApp {
         address: format!("http://{base_address}:{port}"),
         api_client: reqwest::Client::new(),
         api_key,
-        config: settings.database,
+        config: config.database,
         server_handle,
     }
 }
