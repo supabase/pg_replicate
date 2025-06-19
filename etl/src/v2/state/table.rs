@@ -1,22 +1,23 @@
-use postgres::schema::Oid;
+use postgres::schema::TableId;
 use std::fmt;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Clone)]
 pub struct TableReplicationState {
     /// The table (relation) OID to which this state refers.
-    pub table_id: Oid,
+    pub table_id: TableId,
+
     /// The phase of replication of the table.
     pub phase: TableReplicationPhase,
 }
 
 impl TableReplicationState {
-    pub fn new(table_id: Oid, phase: TableReplicationPhase) -> Self {
+    pub fn new(table_id: TableId, phase: TableReplicationPhase) -> Self {
         Self { table_id, phase }
     }
 
-    pub fn init(table_id: Oid) -> Self {
-        Self::new(table_id, TableReplicationPhase::Init)
+    pub fn init(table_id: TableId) -> Self {
+        Self::new(table_id, TableReplicationPhase::DataSync)
     }
 
     pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {
@@ -34,7 +35,6 @@ impl Eq for TableReplicationState {}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TableReplicationPhase {
-    Init,
     DataSync,
     FinishedCopy,
     SyncWait,
@@ -48,7 +48,6 @@ pub enum TableReplicationPhase {
     },
     Ready,
     Skipped,
-    Unknown,
 }
 
 impl TableReplicationPhase {
@@ -61,7 +60,6 @@ impl TableReplicationPhase {
 // Evaluate this once the code is more mature.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TableReplicationPhaseType {
-    Init,
     DataSync,
     FinishedCopy,
     SyncWait,
@@ -69,14 +67,12 @@ pub enum TableReplicationPhaseType {
     SyncDone,
     Ready,
     Skipped,
-    Unknown,
 }
 
 impl TableReplicationPhaseType {
     /// Returns `true` if the phase should be saved into the state store, `false` otherwise.
     pub fn should_store(&self) -> bool {
         match self {
-            Self::Init => true,
             Self::DataSync => true,
             Self::FinishedCopy => true,
             Self::SyncWait => false,
@@ -84,7 +80,6 @@ impl TableReplicationPhaseType {
             Self::SyncDone => true,
             Self::Ready => true,
             Self::Skipped => true,
-            Self::Unknown => false,
         }
     }
 
@@ -94,7 +89,6 @@ impl TableReplicationPhaseType {
     /// of a table sync worker.
     pub fn is_done(&self) -> bool {
         match self {
-            Self::Init => false,
             Self::DataSync => false,
             Self::FinishedCopy => false,
             Self::SyncWait => false,
@@ -102,7 +96,6 @@ impl TableReplicationPhaseType {
             Self::SyncDone => false,
             Self::Ready => true,
             Self::Skipped => true,
-            Self::Unknown => true,
         }
     }
 }
@@ -110,7 +103,6 @@ impl TableReplicationPhaseType {
 impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
     fn from(phase: &'a TableReplicationPhase) -> Self {
         match phase {
-            TableReplicationPhase::Init => Self::Init,
             TableReplicationPhase::DataSync => Self::DataSync,
             TableReplicationPhase::FinishedCopy => Self::FinishedCopy,
             TableReplicationPhase::SyncWait => Self::SyncWait,
@@ -118,7 +110,6 @@ impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
             TableReplicationPhase::SyncDone { .. } => Self::SyncDone,
             TableReplicationPhase::Ready => Self::Ready,
             TableReplicationPhase::Skipped => Self::Skipped,
-            TableReplicationPhase::Unknown => Self::Unknown,
         }
     }
 }
@@ -126,7 +117,6 @@ impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
 impl fmt::Display for TableReplicationPhaseType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Init => write!(f, "init"),
             Self::DataSync => write!(f, "data_sync"),
             Self::FinishedCopy => write!(f, "finished_copy"),
             Self::SyncWait => write!(f, "sync_wait"),
@@ -134,7 +124,6 @@ impl fmt::Display for TableReplicationPhaseType {
             Self::SyncDone => write!(f, "sync_done"),
             Self::Ready => write!(f, "ready"),
             Self::Skipped => write!(f, "skipped"),
-            Self::Unknown => write!(f, "unknown"),
         }
     }
 }

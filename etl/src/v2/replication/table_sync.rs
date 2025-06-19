@@ -72,9 +72,7 @@ where
     // successfully return.
     if matches!(
         phase_type,
-        TableReplicationPhaseType::SyncDone
-            | TableReplicationPhaseType::Ready
-            | TableReplicationPhaseType::Unknown
+        TableReplicationPhaseType::SyncDone | TableReplicationPhaseType::Ready
     ) {
         return Ok(TableSyncResult::SyncNotRequired);
     }
@@ -83,9 +81,7 @@ where
     // table syncing, we want to return an error.
     if !matches!(
         phase_type,
-        TableReplicationPhaseType::Init
-            | TableReplicationPhaseType::DataSync
-            | TableReplicationPhaseType::FinishedCopy
+        TableReplicationPhaseType::DataSync | TableReplicationPhaseType::FinishedCopy
     ) {
         return Err(TableSyncError::InvalidPhase(phase_type));
     }
@@ -107,7 +103,7 @@ where
     //
     // In case the phase is any other phase, we will return an error.
     let start_lsn = match phase_type {
-        TableReplicationPhaseType::Init | TableReplicationPhaseType::DataSync => {
+        TableReplicationPhaseType::DataSync => {
             // If we are in `DataSync` it means we failed during table copying, so we want to delete the
             // existing slot before continuing.
             if phase_type == TableReplicationPhaseType::DataSync {
