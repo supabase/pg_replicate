@@ -1,7 +1,6 @@
-use etl::v2::pipeline::PipelineId;
 use etl::v2::state::store::base::{StateStore, StateStoreError};
 use etl::v2::state::table::{TableReplicationPhaseType, TableReplicationState};
-use postgres::schema::Oid;
+use postgres::schema::{Oid, TableId};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -18,8 +17,8 @@ pub enum StateStoreMethod {
 }
 
 struct Inner {
-    table_replication_states: HashMap<(PipelineId, Oid), TableReplicationState>,
-    table_state_conditions: Vec<((PipelineId, Oid), TableStateCondition, Arc<Notify>)>,
+    table_replication_states: HashMap<TableId, TableReplicationState>,
+    table_state_conditions: Vec<(TableId, TableStateCondition, Arc<Notify>)>,
     method_call_notifiers: HashMap<StateStoreMethod, Vec<Arc<Notify>>>,
 }
 
@@ -27,8 +26,8 @@ impl Inner {
     async fn check_conditions(&mut self) {
         let table_states = self.table_replication_states.clone();
         self.table_state_conditions
-            .retain(|((pid, tid), condition, notify)| {
-                if let Some(state) = table_states.get(&(*pid, *tid)) {
+            .retain(|(tid, condition, notify)| {
+                if let Some(state) = table_states.get(tid) {
                     let should_retain = !condition(state);
                     if !should_retain {
                         notify.notify_one();
@@ -52,11 +51,10 @@ impl Inner {
 #[derive(Clone)]
 pub struct TestStateStore {
     inner: Arc<RwLock<Inner>>,
-    pipeline_id: PipelineId,
 }
 
 impl TestStateStore {
-    pub fn new(pipeline_id: PipelineId) -> Self {
+    pub fn new() -> Self {
         let inner = Inner {
             table_replication_states: HashMap::new(),
             table_state_conditions: Vec::new(),
@@ -65,47 +63,34 @@ impl TestStateStore {
 
         Self {
             inner: Arc::new(RwLock::new(inner)),
-            pipeline_id,
         }
     }
 
-    pub async fn get_table_replication_states(
-        &self,
-    ) -> HashMap<(PipelineId, Oid), TableReplicationState> {
+    pub async fn get_table_replication_states(&self) -> HashMap<TableId, TableReplicationState> {
         let inner = self.inner.read().await;
         inner.table_replication_states.clone()
     }
 
-    pub async fn notify_on_replication_state<F>(
-        &self,
-        pipeline_id: PipelineId,
-        table_id: Oid,
-        condition: F,
-    ) -> Arc<Notify>
+    pub async fn notify_on_replication_state<F>(&self, table_id: Oid, condition: F) -> Arc<Notify>
     where
         F: Fn(&TableReplicationState) -> bool + Send + Sync + 'static,
     {
         let notify = Arc::new(Notify::new());
         let mut inner = self.inner.write().await;
-        inner.table_state_conditions.push((
-            (pipeline_id, table_id),
-            Box::new(condition),
-            notify.clone(),
-        ));
+        inner
+            .table_state_conditions
+            .push((table_id, Box::new(condition), notify.clone()));
 
         notify
     }
 
     pub async fn notify_on_replication_phase(
         &self,
-        pipeline_id: PipelineId,
         table_id: Oid,
         phase_type: TableReplicationPhaseType,
     ) -> Arc<Notify> {
-        self.notify_on_replication_state(pipeline_id, table_id, move |state| {
-            state.phase.as_type() == phase_type
-        })
-        .await
+        self.notify_on_replication_state(table_id, move |state| state.phase.as_type() == phase_type)
+            .await
     }
 }
 
@@ -115,10 +100,7 @@ impl StateStore for TestStateStore {
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
-        let result = Ok(inner
-            .table_replication_states
-            .get(&(self.pipeline_id, table_id))
-            .cloned());
+        let result = Ok(inner.table_replication_states.get(&table_id).cloned());
 
         inner
             .dispatch_method_notification(StateStoreMethod::LoadTableReplicationState)
@@ -142,11 +124,11 @@ impl StateStore for TestStateStore {
 
     async fn store_table_replication_state(
         &self,
+        table_id: TableId,
         state: TableReplicationState,
     ) -> Result<(), StateStoreError> {
         let mut inner = self.inner.write().await;
-        let key = (state.pipeline_id, state.table_id);
-        inner.table_replication_states.insert(key, state);
+        inner.table_replication_states.insert(table_id, state);
         inner.check_conditions().await;
         inner
             .dispatch_method_notification(StateStoreMethod::StoreTableReplicationState)
@@ -239,9 +221,12 @@ where
 
     async fn store_table_replication_state(
         &self,
+        table_id: TableId,
         state: TableReplicationState,
     ) -> Result<(), StateStoreError> {
         self.trigger_fault(&self.config.store_table_replication_state)?;
-        self.inner.store_table_replication_state(state).await
+        self.inner
+            .store_table_replication_state(table_id, state)
+            .await
     }
 }

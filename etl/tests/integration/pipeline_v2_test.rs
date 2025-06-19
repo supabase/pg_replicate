@@ -272,8 +272,7 @@ async fn test_pipeline_with_table_sync_worker_panic() {
         store_table_replication_state: Some(FaultType::Panic),
         ..Default::default()
     };
-    let state_store =
-        FaultInjectingStateStore::wrap(TestStateStore::new(pipeline_identity.id()), fault_config);
+    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -283,13 +282,11 @@ async fn test_pipeline_with_table_sync_worker_panic() {
         state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // We register the interest in waiting for both table syncs to have started.
     let users_state_notify = state_store
         .get_inner()
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.users_schema().id,
             TableReplicationPhaseType::DataSync,
         )
@@ -297,7 +294,6 @@ async fn test_pipeline_with_table_sync_worker_panic() {
     let orders_state_notify = state_store
         .get_inner()
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.orders_schema().id,
             TableReplicationPhaseType::DataSync,
         )
@@ -326,8 +322,7 @@ async fn test_pipeline_with_table_sync_worker_error() {
     let fault_config = FaultConfig {
         ..Default::default()
     };
-    let state_store =
-        FaultInjectingStateStore::wrap(TestStateStore::new(pipeline_identity.id()), fault_config);
+    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -337,13 +332,11 @@ async fn test_pipeline_with_table_sync_worker_error() {
         state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // Register notifications for when table sync is started.
     let users_state_notify = state_store
         .get_inner()
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.users_schema().id,
             TableReplicationPhaseType::DataSync,
         )
@@ -351,7 +344,6 @@ async fn test_pipeline_with_table_sync_worker_error() {
     let orders_state_notify = state_store
         .get_inner()
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.orders_schema().id,
             TableReplicationPhaseType::DataSync,
         )
@@ -383,7 +375,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
     let identity = create_pipeline_identity(&database_schema.publication_name);
 
-    let state_store = TestStateStore::new(identity.id());
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // Configure state store to fail during data sync.
@@ -402,7 +394,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let users_state_notify = failing_state_store
         .get_inner()
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.users_schema().id,
             TableReplicationPhaseType::DataSync,
         )
@@ -410,7 +401,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     let orders_state_notify = failing_state_store
         .get_inner()
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::DataSync,
         )
@@ -441,14 +431,12 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     // Register notifications for table sync phases.
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -467,7 +455,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
-            .get(&(identity.id(), database_schema.users_schema().id))
+            .get(&database_schema.users_schema().id)
             .unwrap()
             .phase
             .as_type(),
@@ -475,7 +463,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     );
     assert_eq!(
         table_replication_states
-            .get(&(identity.id(), database_schema.orders_schema().id))
+            .get(&database_schema.orders_schema().id)
             .unwrap()
             .phase
             .as_type(),
@@ -495,7 +483,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
     let identity = create_pipeline_identity(&database_schema.publication_name);
 
-    let state_store = TestStateStore::new(identity.id());
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -505,7 +493,6 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
         state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // We wait for two table schemas to be received.
     let schemas_notify = destination.wait_for_n_schemas(2).await;
@@ -513,14 +500,12 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     // available on the store).
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -539,7 +524,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.users_schema().id))
+            .get(&database_schema.users_schema().id)
             .unwrap()
             .phase
             .as_type(),
@@ -547,7 +532,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
     );
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.orders_schema().id))
+            .get(&database_schema.orders_schema().id)
             .unwrap()
             .phase
             .as_type(),
@@ -606,7 +591,7 @@ async fn test_table_schema_copy_survives_restarts() {
     let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
     let identity = create_pipeline_identity(&database_schema.publication_name);
 
-    let state_store = TestStateStore::new(identity.id());
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // We start the pipeline from scratch.
@@ -616,7 +601,6 @@ async fn test_table_schema_copy_survives_restarts() {
         state_store.clone(),
         destination.clone(),
     );
-    let pipeline_id = pipeline.identity().id();
 
     // We wait for two table schemas to be received.
     let schemas_notify = destination.wait_for_n_schemas(2).await;
@@ -624,14 +608,12 @@ async fn test_table_schema_copy_survives_restarts() {
     // available on the store).
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            pipeline_id,
             database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -650,7 +632,7 @@ async fn test_table_schema_copy_survives_restarts() {
     assert_eq!(table_replication_states.len(), 2);
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.users_schema().id))
+            .get(&database_schema.users_schema().id)
             .unwrap()
             .phase
             .as_type(),
@@ -658,7 +640,7 @@ async fn test_table_schema_copy_survives_restarts() {
     );
     assert_eq!(
         table_replication_states
-            .get(&(pipeline_id, database_schema.orders_schema().id))
+            .get(&database_schema.orders_schema().id)
             .unwrap()
             .phase
             .as_type(),
@@ -733,7 +715,7 @@ async fn test_table_copy() {
     )
     .await;
 
-    let state_store = TestStateStore::new(identity.id());
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
@@ -747,14 +729,12 @@ async fn test_table_copy() {
     // Register notifications for table copy completion.
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -798,7 +778,7 @@ async fn test_table_copy_and_sync() {
     )
     .await;
 
-    let state_store = TestStateStore::new(identity.id());
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
@@ -812,14 +792,12 @@ async fn test_table_copy_and_sync() {
     // Register notifications for initial table copy completion.
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.users_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -833,14 +811,12 @@ async fn test_table_copy_and_sync() {
     // Register notifications for sync completion.
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.users_schema().id,
             TableReplicationPhaseType::SyncDone,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::SyncDone,
         )
@@ -862,14 +838,12 @@ async fn test_table_copy_and_sync() {
     // Register notifications for ready state.
     let users_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.users_schema().id,
             TableReplicationPhaseType::Ready,
         )
         .await;
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::Ready,
         )
@@ -964,7 +938,7 @@ async fn test_table_copy_and_sync_with_changed_schema_in_table_sync_worker() {
         .await
         .unwrap();
 
-    let state_store = TestStateStore::new(identity.id());
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
@@ -978,7 +952,6 @@ async fn test_table_copy_and_sync_with_changed_schema_in_table_sync_worker() {
     // Register notifications for initial table copy completion.
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -991,7 +964,6 @@ async fn test_table_copy_and_sync_with_changed_schema_in_table_sync_worker() {
     // Register notification for the skipped state.
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::Skipped,
         )
@@ -1054,7 +1026,7 @@ async fn test_table_copy_and_sync_with_changed_schema_in_apply_worker() {
         .await
         .unwrap();
 
-    let state_store = TestStateStore::new(identity.id());
+    let state_store = TestStateStore::new();
     let destination = TestDestination::new();
 
     // Start pipeline from scratch.
@@ -1068,7 +1040,6 @@ async fn test_table_copy_and_sync_with_changed_schema_in_apply_worker() {
     // Register notifications for initial table copy completion.
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::FinishedCopy,
         )
@@ -1081,7 +1052,6 @@ async fn test_table_copy_and_sync_with_changed_schema_in_apply_worker() {
     // Register notification for the sync done state.
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::SyncDone,
         )
@@ -1102,7 +1072,6 @@ async fn test_table_copy_and_sync_with_changed_schema_in_apply_worker() {
     // Register notification for the ready state.
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::Ready,
         )
@@ -1123,7 +1092,6 @@ async fn test_table_copy_and_sync_with_changed_schema_in_apply_worker() {
     // Register notification for the skipped state.
     let orders_state_notify = state_store
         .notify_on_replication_phase(
-            identity.id(),
             database_schema.orders_schema().id,
             TableReplicationPhaseType::Skipped,
         )

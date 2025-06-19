@@ -1,12 +1,9 @@
-use crate::v2::pipeline::PipelineId;
 use postgres::schema::Oid;
 use std::fmt;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Clone)]
 pub struct TableReplicationState {
-    /// The pipeline id to which this state refers.
-    pub pipeline_id: PipelineId,
     /// The table (relation) OID to which this state refers.
     pub table_id: Oid,
     /// The phase of replication of the table.
@@ -14,16 +11,12 @@ pub struct TableReplicationState {
 }
 
 impl TableReplicationState {
-    pub fn new(pipeline_id: PipelineId, table_id: Oid, phase: TableReplicationPhase) -> Self {
-        Self {
-            pipeline_id,
-            table_id,
-            phase,
-        }
+    pub fn new(table_id: Oid, phase: TableReplicationPhase) -> Self {
+        Self { table_id, phase }
     }
 
-    pub fn init(pipeline_id: PipelineId, table_id: Oid) -> Self {
-        Self::new(pipeline_id, table_id, TableReplicationPhase::Init)
+    pub fn init(table_id: Oid) -> Self {
+        Self::new(table_id, TableReplicationPhase::Init)
     }
 
     pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {

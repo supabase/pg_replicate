@@ -347,7 +347,7 @@ where
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
                     self.state_store
-                        .store_table_replication_state(updated_state)
+                        .store_table_replication_state(table_id, updated_state)
                         .await?;
                 }
                 _ => {
@@ -375,13 +375,10 @@ where
 
         // We store the new skipped state in the state store, since we want to still skip a table in
         // case of pipeline restarts.
-        let table_replication_state = TableReplicationState::new(
-            self.identity.id(),
-            table_id,
-            TableReplicationPhase::Skipped,
-        );
+        let table_replication_state =
+            TableReplicationState::new(table_id, TableReplicationPhase::Skipped);
         self.state_store
-            .store_table_replication_state(table_replication_state)
+            .store_table_replication_state(table_id, table_replication_state)
             .await?;
 
         Ok(true)

@@ -1,4 +1,4 @@
-use postgres::schema::Oid;
+use postgres::schema::TableId;
 use std::future::Future;
 use thiserror::Error;
 
@@ -13,7 +13,7 @@ pub enum StateStoreError {
 pub trait StateStore {
     fn load_table_replication_state(
         &self,
-        table_id: Oid,
+        table_id: TableId,
     ) -> impl Future<Output = Result<Option<TableReplicationState>, StateStoreError>> + Send;
 
     fn load_table_replication_states(
@@ -22,6 +22,7 @@ pub trait StateStore {
 
     fn store_table_replication_state(
         &self,
+        table_id: TableId,
         state: TableReplicationState,
     ) -> impl Future<Output = Result<(), StateStoreError>> + Send;
 }

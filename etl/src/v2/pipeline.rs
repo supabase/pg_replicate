@@ -182,11 +182,11 @@ where
             .map(|state| (state.table_id, state))
             .collect();
         for table_id in table_ids {
-            let state = TableReplicationState::init(self.identity.id, table_id);
+            let state = TableReplicationState::init(table_id);
             // We store the init state only if it's not already present.
             if !states_hm.contains_key(&table_id) {
                 self.state_store
-                    .store_table_replication_state(state)
+                    .store_table_replication_state(table_id, state)
                     .await?;
             }
         }
