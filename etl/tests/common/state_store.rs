@@ -12,7 +12,6 @@ type TableStateCondition = Box<dyn Fn(&TableReplicationState) -> bool + Send + S
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StateStoreMethod {
-    LoadReplicationOriginState,
     LoadTableReplicationState,
     LoadTableReplicationStates,
     StoreTableReplicationState,
@@ -106,18 +105,6 @@ impl TestStateStore {
         })
         .await
     }
-
-    pub async fn notify_on_method_call(&self, method: StateStoreMethod) -> Arc<Notify> {
-        let notify = Arc::new(Notify::new());
-        let mut inner = self.inner.write().await;
-        inner
-            .method_call_notifiers
-            .entry(method)
-            .or_insert_with(Vec::new)
-            .push(notify.clone());
-
-        notify
-    }
 }
 
 impl Default for TestStateStore {
@@ -194,7 +181,8 @@ impl fmt::Debug for TestStateStore {
 #[derive(Debug, Clone)]
 pub enum FaultType {
     Panic,
-    Error,
+    // Commenting out to fix clippy error because this is unused, comment in when this starts being used
+    // Error,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -232,8 +220,9 @@ where
         if let Some(fault_type) = fault {
             match fault_type {
                 FaultType::Panic => panic!("Fault injection: panic triggered"),
-                // We trigger a random error.
-                FaultType::Error => return Err(StateStoreError::ReplicationOriginStateNotFound),
+                // Commenting out to fix clippy error because this is unused, comment in when this starts being used
+                // // We trigger a random error.
+                // FaultType::Error => return Err(StateStoreError::TableReplicationStateNotFound),
             }
         }
 

@@ -35,11 +35,6 @@ pub enum ApplyWorkerError {
 
     #[error("Could not generate slot name in the apply loop: {0}")]
     Slot(#[from] SlotError),
-
-    #[error(
-        "The replication origin for the apply worker was not found even though the slot was active"
-    )]
-    ReplicationOriginMissing,
 }
 
 #[derive(Debug, Error)]

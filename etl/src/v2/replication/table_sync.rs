@@ -40,9 +40,6 @@ pub enum TableSyncError {
 
     #[error("An error happened in the table copy stream")]
     TableCopyStream(#[from] TableCopyStreamError),
-
-    #[error("The replication origin state was not found but is required")]
-    ReplicationOriginStateNotFound,
 }
 
 #[derive(Debug)]
@@ -105,7 +102,7 @@ where
     // - `DataSync` -> this means that there was a failure during data sync, and we have to restart
     //  copying all the table data and delete the slot.
     // - `FinishedCopy` -> this means that the table was successfully copied, but we didn't manage to
-    //  complete the table sync function, so we just want to load the state from the origin to know
+    //  complete the table sync function, so we just want to load the start lsn from the slot to know
     //  where we want to start the cdc stream.
     //
     // In case the phase is any other phase, we will return an error.

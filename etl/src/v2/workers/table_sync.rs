@@ -388,7 +388,7 @@ where
             // We drop the lock since we don't need to hold it while cleaning resources.
             drop(inner);
 
-            // TODO: implement cleanup of slot and replication origin.
+            // TODO: implement cleanup of slot.
 
             return Ok(false);
         }

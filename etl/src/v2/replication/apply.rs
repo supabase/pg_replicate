@@ -215,7 +215,7 @@ where
     T: ApplyLoopHook,
     ApplyLoopError: From<<T as ApplyLoopHook>::Error>,
 {
-    // The first status update is defaulted from the origin start lsn since at this point we haven't
+    // The first status update is defaulted from the start lsn since at this point we haven't
     // processed anything.
     let first_status_update = StatusUpdate {
         write_lsn: start_lsn,

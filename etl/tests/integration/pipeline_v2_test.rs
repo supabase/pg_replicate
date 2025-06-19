@@ -14,7 +14,7 @@ use crate::common::destination_v2::TestDestination;
 use crate::common::event::{group_events_by_type, group_events_by_type_and_table_id};
 use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
 use crate::common::state_store::{
-    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
+    FaultConfig, FaultInjectingStateStore, FaultType, TestStateStore,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -485,7 +485,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     assert_eq!(table_schemas[1], database_schema.users_schema());
 }
 
-#[ignore = "This test gets stuck and never finishes"]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_finished_copy_retry() {
     let database = spawn_database().await;
@@ -587,16 +586,7 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
         destination.clone(),
     );
 
-    // We wait for the load replication origin state method to be called, since that is called in the
-    // branch where the copy was already finished.
-    let load_state_notify = state_store
-        .notify_on_method_call(StateStoreMethod::LoadReplicationOriginState)
-        .await;
-
     pipeline.start().await.unwrap();
-
-    load_state_notify.notified().await;
-
     pipeline.shutdown_and_wait().await.unwrap();
 
     // We check that the table schemas haven't changed.
