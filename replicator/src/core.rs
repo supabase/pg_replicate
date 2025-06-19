@@ -22,7 +22,6 @@ pub enum ReplicatorError {
     UnsupportedDestination(String),
 }
 
-#[instrument(name = "start_replicator")]
 pub async fn start_replicator() -> anyhow::Result<()> {
     let replicator_config = load_config()?;
 
@@ -100,7 +99,6 @@ async fn init_destination(
     }
 }
 
-#[instrument(name = "start_pipeline")]
 async fn start_pipeline<S, D>(mut pipeline: Pipeline<S, D>) -> anyhow::Result<()>
 where
     S: StateStore + Clone + Send + Sync + fmt::Debug + 'static,
@@ -116,7 +114,7 @@ where
             error!("Failed to listen for Ctrl+C: {:?}", e);
             return;
         }
-        
+
         info!("Ctrl+C received, shutting down pipeline...");
         if let Err(e) = shutdown_tx.shutdown() {
             warn!("Failed to send shutdown signal: {:?}", e);

@@ -1,8 +1,9 @@
 source:
   host: "localhost"
-  port: 5432
+  port: 5430
   name: "postgres"
   username: "postgres"
+  password: "postgres"
   publication: "replicator_publication"
 state_store:
   memory:
