@@ -27,12 +27,12 @@ where
 {
     // TODO: maybe return a handle for this task to keep track of it.
     tokio::spawn(async move {
-        info!("waiting for connection to terminate");
+        info!("Waiting for the Postgres connection");
         if let Err(e) = connection.await {
-            warn!("connection error: {}", e);
+            warn!("An error occurred during the Postgres connection: {}", e);
             return;
         }
-        info!("connection terminated successfully")
+        info!("Postgres connection terminated successfully")
     });
 }
 
@@ -198,7 +198,7 @@ impl PgReplicationClient {
     pub async fn connect_no_tls(
         pg_connection_config: PgConnectionConfig,
     ) -> PgReplicationResult<Self> {
-        info!("connecting to postgres without TLS");
+        info!("Connecting to Postgres without TLS");
 
         let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
@@ -206,7 +206,7 @@ impl PgReplicationClient {
         let (client, connection) = config.connect(NoTls).await?;
         spawn_postgres_connection::<NoTls>(connection);
 
-        info!("successfully connected to postgres without TLS");
+        info!("Successfully connected to Postgres without TLS");
 
         let inner = ClientInner {
             client,
@@ -227,7 +227,7 @@ impl PgReplicationClient {
         pg_connection_config: PgConnectionConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> PgReplicationResult<Self> {
-        info!("connecting to postgres with TLS");
+        info!("Connecting to Postgres with TLS");
 
         let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
@@ -243,7 +243,7 @@ impl PgReplicationClient {
         let (client, connection) = config.connect(MakeRustlsConnect::new(tls_config)).await?;
         spawn_postgres_connection::<MakeRustlsConnect>(connection);
 
-        info!("successfully connected to postgres with TLS");
+        info!("Successfully connected to Postgres with TLS");
 
         let inner = ClientInner {
             client,

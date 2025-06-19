@@ -92,8 +92,6 @@ impl TableSyncWorkerPoolInner {
     }
 
     pub async fn wait_all(&mut self) -> Result<Option<Arc<Notify>>, WorkerWaitErrors> {
-        info!("Waiting for workers to complete");
-
         // If there are active workers, we return the notify, signaling that not all of them are
         // ready.
         //
@@ -126,8 +124,6 @@ impl TableSyncWorkerPoolInner {
                 }
             }
         }
-
-        info!("All workers completed");
 
         if errors.is_empty() {
             Ok(None)

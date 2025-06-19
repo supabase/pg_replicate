@@ -221,10 +221,11 @@ where
     pub async fn wait(self) -> Result<(), PipelineError> {
         let PipelineWorkers::Started { apply_worker, pool } = self.workers else {
             info!("Pipeline was not started, nothing to wait for");
+            
             return Ok(());
         };
 
-        info!("Waiting for pipeline workers to complete");
+        info!("Waiting for apply worker to complete");
 
         // We first wait for the apply worker to finish, since that must be done before waiting for
         // the table sync workers to finish, otherwise if we wait for sync workers first, we might
@@ -245,11 +246,13 @@ where
             info!("Apply worker completed successfully");
         }
 
+        info!("Waiting for table sync workers to complete");
+        
         let table_sync_workers_result = pool.wait_all().await;
         if table_sync_workers_result.is_err() {
-            info!("Table sync worker failed with an error");
+            info!("Table sync workers failed with an error");
         } else {
-            info!("Table sync worker completed successfully");
+            info!("Table sync workers completed successfully");
         }
 
         match (apply_worker_result, table_sync_workers_result) {
