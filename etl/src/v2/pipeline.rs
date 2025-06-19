@@ -124,6 +124,10 @@ where
         &self.identity
     }
 
+    pub fn shutdown_tx(&self) -> ShutdownTx {
+        self.shutdown_tx.clone()
+    }
+
     pub async fn start(&mut self) -> Result<(), PipelineError> {
         info!(
             "Starting pipeline for publication {}",
@@ -232,7 +236,7 @@ where
             //  automatically sends a shutdown signal to table sync workers on apply worker failure.
             // If there was an error in the apply worker, we want to shut down all table sync
             // workers, since without an apply worker they are lost.
-            if let Err(err) = self.shutdown_tx.send(()) {
+            if let Err(err) = self.shutdown_tx.shutdown() {
                 info!("Shut down signal could not be delivered, likely because no workers are running: {:?}", err);
             }
 
@@ -258,7 +262,7 @@ where
 
     pub fn shutdown(&self) -> Result<(), PipelineError> {
         info!("Trying to shut down the pipeline");
-        self.shutdown_tx.send(())?;
+        self.shutdown_tx.shutdown()?;
         info!("Shut down signal successfully sent to all workers");
 
         Ok(())

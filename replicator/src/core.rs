@@ -1,3 +1,4 @@
+use crate::config::load_config;
 use anyhow::anyhow;
 use config::replicator::{DestinationConfig, ReplicatorConfig, StateStoreConfig};
 use etl::v2::config::batch::BatchConfig;
@@ -14,9 +15,7 @@ use std::fmt;
 use std::io::BufReader;
 use std::time::Duration;
 use thiserror::Error;
-use tracing::instrument;
-
-use crate::config::load_config;
+use tracing::{error, info, instrument, warn};
 
 #[derive(Debug, Error)]
 pub enum ReplicatorError {
@@ -25,7 +24,7 @@ pub enum ReplicatorError {
 }
 
 #[instrument(name = "start_replicator")]
-async fn start_replicator() -> anyhow::Result<()> {
+pub async fn start_replicator() -> anyhow::Result<()> {
     let replicator_config = load_config()?;
 
     // We set up the certificates and SSL mode.
@@ -108,21 +107,34 @@ where
     S: StateStore + Clone + Send + Sync + fmt::Debug + 'static,
     D: Destination + Clone + Send + Sync + fmt::Debug + 'static,
 {
-    // We start the pipeline.
+    // Start the pipeline.
     pipeline.start().await?;
 
-    // We wait for the pipeline to finish normally or for a `CTRL + C` signal.
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            // We send a shutdown signal to the pipeline and wait.
-            // pipeline.shutdown_and_wait().await?;
-            return Ok(());
+    // Spawn a task to listen for Ctrl+C and trigger shutdown.
+    let shutdown_tx = pipeline.shutdown_tx();
+    let shutdown_handle = tokio::spawn(async move {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            error!("Failed to listen for Ctrl+C: {:?}", e);
+            return;
         }
-
-        _ = pipeline.wait() => {
-
+        info!("Ctrl+C received, shutting down pipeline...");
+        if let Err(e) = shutdown_tx.shutdown() {
+            warn!("Failed to send shutdown signal: {:?}", e);
         }
-    }
+    });
+
+    // Wait for the pipeline to finish (either normally or via shutdown).
+    let result = pipeline.wait().await;
+
+    // Ensure the shutdown task is finished before returning.
+    // If the pipeline finished before Ctrl+C, we want to abort the shutdown task.
+    // If Ctrl+C was pressed, the shutdown task will have already triggered shutdown.
+    // We don't care about the result of the shutdown_handle, but we should abort it if it's still running.
+    shutdown_handle.abort();
+    let _ = shutdown_handle.await;
+
+    // Propagate any pipeline error as anyhow error.
+    result?;
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+use crate::core::start_replicator;
 use telemetry::init_tracing;
 
 mod config;
@@ -12,6 +13,9 @@ async fn main() -> anyhow::Result<()> {
     // for replicator because it is not a web server, and we don't need to emit logs
     // for every closing span.
     let _log_flusher = init_tracing(app_name, false)?;
+
+    // We start the replicator.
+    start_replicator().await?;
 
     Ok(())
 }
