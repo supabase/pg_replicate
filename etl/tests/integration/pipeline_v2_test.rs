@@ -1,10 +1,3 @@
-use crate::common::database::{spawn_database, test_table_name};
-use crate::common::destination_v2::TestDestination;
-use crate::common::event::{group_events_by_type, group_events_by_type_and_table_id};
-use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
-use crate::common::state_store::{
-    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
-};
 use etl::conversions::table_row::TableRow;
 use etl::conversions::Cell;
 use etl::v2::conversions::event::{Event, EventType, InsertEvent};
@@ -16,6 +9,14 @@ use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModificatio
 use std::ops::RangeInclusive;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, GenericClient};
+
+use crate::common::database::{spawn_database, test_table_name};
+use crate::common::destination_v2::TestDestination;
+use crate::common::event::{group_events_by_type, group_events_by_type_and_table_id};
+use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
+use crate::common::state_store::{
+    FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum TableSelection {

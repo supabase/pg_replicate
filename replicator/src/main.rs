@@ -1,5 +1,6 @@
-use crate::core::start_replicator;
 use telemetry::init_tracing;
+
+use crate::core::start_replicator;
 
 mod config;
 mod core;
