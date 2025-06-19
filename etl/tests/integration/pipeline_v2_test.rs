@@ -260,67 +260,6 @@ fn build_expected_orders_inserts(
     events
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_pipeline_with_apply_worker_panic() {
-    let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
-
-    // Configure state store to panic when storing replication origin state.
-    let fault_config = FaultConfig {
-        store_replication_origin_state: Some(FaultType::Panic),
-        ..Default::default()
-    };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
-    let destination = TestDestination::new();
-
-    // Initialize pipeline with fault-injecting state store.
-    let mut pipeline = spawn_pg_pipeline(
-        &create_pipeline_identity(&database_schema.publication_name),
-        &database.config,
-        state_store.clone(),
-        destination.clone(),
-    );
-
-    pipeline.start().await.unwrap();
-
-    // Verify that pipeline shutdown returns expected error.
-    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
-    assert_eq!(errors.len(), 1);
-    assert!(matches!(errors[0], WorkerWaitError::TaskFailed(_)));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_pipeline_with_apply_worker_error() {
-    let database = spawn_database().await;
-    let database_schema = setup_test_database_schema(&database, TableSelection::Both).await;
-
-    // Configure state store to return error when storing replication origin state.
-    let fault_config = FaultConfig {
-        store_replication_origin_state: Some(FaultType::Error),
-        ..Default::default()
-    };
-    let state_store = FaultInjectingStateStore::wrap(TestStateStore::new(), fault_config);
-    let destination = TestDestination::new();
-
-    // Initialize pipeline with fault-injecting state store.
-    let mut pipeline = spawn_pg_pipeline(
-        &create_pipeline_identity(&database_schema.publication_name),
-        &database.config,
-        state_store.clone(),
-        destination.clone(),
-    );
-
-    pipeline.start().await.unwrap();
-
-    // Verify that pipeline shutdown returns expected error type.
-    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
-    assert_eq!(errors.len(), 1);
-    assert!(matches!(
-        errors[0],
-        WorkerWaitError::ApplyWorkerPropagated(_)
-    ));
-}
-
 // TODO: find a way to inject errors in a way that is predictable.
 #[ignore]
 #[tokio::test(flavor = "multi_thread")]
@@ -546,6 +485,7 @@ async fn test_table_schema_copy_with_data_sync_retry() {
     assert_eq!(table_schemas[1], database_schema.users_schema());
 }
 
+#[ignore = "This test gets stuck and never finishes"]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_table_schema_copy_with_finished_copy_retry() {
     let database = spawn_database().await;

@@ -7,7 +7,6 @@ use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError};
 use crate::v2::replication::stream::{TableCopyStream, TableCopyStreamError};
 use crate::v2::schema::cache::SchemaCache;
-use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::WorkerType;
@@ -50,7 +49,7 @@ pub enum TableSyncError {
 pub enum TableSyncResult {
     SyncStopped,
     SyncNotRequired,
-    SyncCompleted { origin_start_lsn: PgLsn },
+    SyncCompleted { start_lsn: PgLsn },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -110,7 +109,7 @@ where
     //  where we want to start the cdc stream.
     //
     // In case the phase is any other phase, we will return an error.
-    let replication_origin_state = match phase_type {
+    let start_lsn = match phase_type {
         TableReplicationPhaseType::Init | TableReplicationPhaseType::DataSync => {
             // If we are in `DataSync` it means we failed during table copying, so we want to delete the
             // existing slot before continuing.
@@ -135,14 +134,6 @@ where
             // before copying the schema and tables.
             let (transaction, slot) = replication_client
                 .create_slot_with_transaction(&slot_name)
-                .await?;
-
-            // We create and overwrite (if already present) the replication origin state, to store important
-            // information about the replication.
-            let replication_origin_state =
-                ReplicationOriginState::new(identity.id(), Some(table_id), slot.consistent_point);
-            state_store
-                .store_replication_origin_state(replication_origin_state.clone(), true)
                 .await?;
 
             // We copy the table schema and write it both to the state store and destination.
@@ -199,13 +190,12 @@ where
                     .set_phase_with(TableReplicationPhase::FinishedCopy, state_store.clone())
                     .await?;
             }
-
-            replication_origin_state
+            slot.consistent_point
         }
-        TableReplicationPhaseType::FinishedCopy => state_store
-            .load_replication_origin_state(identity.id(), Some(table_id))
-            .await?
-            .ok_or(TableSyncError::ReplicationOriginStateNotFound)?,
+        TableReplicationPhaseType::FinishedCopy => {
+            let slot = replication_client.get_slot(&slot_name).await?;
+            slot.confirmed_flush_lsn
+        }
         _ => unreachable!("Phase type already validated above"),
     };
 
@@ -229,7 +219,5 @@ where
         return Ok(TableSyncResult::SyncStopped);
     }
 
-    Ok(TableSyncResult::SyncCompleted {
-        origin_start_lsn: replication_origin_state.remote_lsn,
-    })
+    Ok(TableSyncResult::SyncCompleted { start_lsn })
 }
