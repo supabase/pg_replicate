@@ -15,7 +15,7 @@ use tokio_postgres::{
     SimpleQueryMessage, SimpleQueryRow, Socket,
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 /// Spawns a background task to monitor a PostgreSQL connection until it terminates.
 ///
@@ -27,11 +27,11 @@ where
 {
     // TODO: maybe return a handle for this task to keep track of it.
     tokio::spawn(async move {
-        info!("Waiting for the Postgres connection");
         if let Err(e) = connection.await {
-            warn!("An error occurred during the Postgres connection: {}", e);
+            error!("An error occurred during the Postgres connection: {}", e);
             return;
         }
+        
         info!("Postgres connection terminated successfully")
     });
 }
@@ -198,8 +198,6 @@ impl PgReplicationClient {
     pub async fn connect_no_tls(
         pg_connection_config: PgConnectionConfig,
     ) -> PgReplicationResult<Self> {
-        info!("Connecting to Postgres without TLS");
-
         let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
 
@@ -227,8 +225,6 @@ impl PgReplicationClient {
         pg_connection_config: PgConnectionConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> PgReplicationResult<Self> {
-        info!("Connecting to Postgres with TLS");
-
         let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
 

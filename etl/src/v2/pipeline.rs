@@ -41,6 +41,9 @@ pub enum PipelineError {
 
     #[error("An error occurred while shutting down the pipeline, likely because no workers are running: {0}")]
     ShutdownFailed(#[from] watch::error::SendError<()>),
+
+    #[error("The publication '{0}' does not exist in the database")]
+    MissingPublication(String)
 }
 
 #[derive(Debug)]
@@ -130,7 +133,8 @@ where
 
     pub async fn start(&mut self) -> Result<(), PipelineError> {
         info!(
-            "Starting pipeline for publication {}",
+            "Starting pipeline for publication '{}' with id {}",
+            self.identity.id(),
             self.identity.publication_name()
         );
 
@@ -185,6 +189,12 @@ where
     ) -> Result<(), PipelineError> {
         info!("Synchronizing relation subscription states");
 
+        // We need to make sure that the publication exists.
+        if !replication_client.publication_exists(self.identity.publication_name()).await? {
+            error!("The publication '{}' does not exist in the database", self.identity.publication_name());
+            return Err(PipelineError::MissingPublication(self.identity.publication_name().to_owned()));
+        }
+
         // We fetch all the table ids for the publication to which the pipeline subscribes.
         let table_ids = replication_client
             .get_publication_table_ids(self.identity.publication_name())
@@ -221,7 +231,7 @@ where
     pub async fn wait(self) -> Result<(), PipelineError> {
         let PipelineWorkers::Started { apply_worker, pool } = self.workers else {
             info!("Pipeline was not started, nothing to wait for");
-            
+
             return Ok(());
         };
 
@@ -247,7 +257,7 @@ where
         }
 
         info!("Waiting for table sync workers to complete");
-        
+
         let table_sync_workers_result = pool.wait_all().await;
         if table_sync_workers_result.is_err() {
             info!("Table sync workers failed with an error");

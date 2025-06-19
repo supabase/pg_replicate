@@ -1,4 +1,3 @@
-use crate::config::load_config;
 use config::replicator::{DestinationConfig, ReplicatorConfig, StateStoreConfig};
 use etl::v2::config::batch::BatchConfig;
 use etl::v2::config::pipeline::PipelineConfig;
@@ -14,7 +13,9 @@ use std::fmt;
 use std::io::BufReader;
 use std::time::Duration;
 use thiserror::Error;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, warn};
+
+use crate::config::load_config;
 
 #[derive(Debug, Error)]
 pub enum ReplicatorError {
