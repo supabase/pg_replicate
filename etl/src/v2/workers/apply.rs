@@ -410,6 +410,8 @@ where
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
+                    info!("Table {} is ready, its events are now processed by the main apply worker", table_id);
+                    
                     self.state_store
                         .store_table_replication_state(updated_state, true)
                         .await?;

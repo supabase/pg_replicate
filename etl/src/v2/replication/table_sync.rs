@@ -18,6 +18,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
+use tracing::info;
 
 #[derive(Debug, Error)]
 pub enum TableSyncError {
@@ -183,6 +184,7 @@ where
                         // If we received a shutdown in the middle of a table copy, we bail knowing
                         // that the system can automatically recover if a table copy has failed in
                         // the middle of processing.
+                        info!("Shutting down table sync worker for table {} during table copy with origin state {:?}", table_id, replication_origin_state);
                         return Ok(TableSyncResult::SyncStopped);
                     }
                 }
@@ -226,6 +228,7 @@ where
     // If we are told to shut down while waiting for a phase change, we will signal this to
     // the caller.
     if result.should_shutdown() {
+        info!("Shutting down table sync worker for table {} while waiting for catchup with origin state {:?}", table_id, replication_origin_state);
         return Ok(TableSyncResult::SyncStopped);
     }
 

@@ -83,7 +83,7 @@ impl TableSyncWorkerPoolInner {
 
         if let Some(removed_worker) = removed_worker {
             info!(
-                "Marked worker for table {} as inactive with reason: {:?}",
+                "Marked table sync worker for table {} as inactive with reason: {:?}",
                 table_id, reason
             );
 
