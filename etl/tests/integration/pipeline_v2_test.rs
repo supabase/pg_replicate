@@ -1,14 +1,3 @@
-use etl::conversions::table_row::TableRow;
-use etl::conversions::Cell;
-use etl::v2::conversions::event::{Event, EventType, InsertEvent};
-use etl::v2::state::table::TableReplicationPhaseType;
-use etl::v2::workers::base::WorkerWaitError;
-use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
-use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
-use std::ops::RangeInclusive;
-use tokio_postgres::types::Type;
-use tokio_postgres::{Client, GenericClient};
-
 use crate::common::database::{spawn_database, test_table_name};
 use crate::common::destination_v2::TestDestination;
 use crate::common::event::{group_events_by_type, group_events_by_type_and_table_id};
@@ -16,6 +5,17 @@ use crate::common::pipeline_v2::{create_pipeline_identity, spawn_pg_pipeline};
 use crate::common::state_store::{
     FaultConfig, FaultInjectingStateStore, FaultType, StateStoreMethod, TestStateStore,
 };
+use etl::conversions::table_row::TableRow;
+use etl::conversions::Cell;
+use etl::v2::conversions::event::{Event, EventType, InsertEvent};
+use etl::v2::pipeline::PipelineError;
+use etl::v2::state::table::TableReplicationPhaseType;
+use etl::v2::workers::base::WorkerWaitError;
+use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
+use postgres::tokio::test_utils::{id_column_schema, PgDatabase, TableModification};
+use std::ops::RangeInclusive;
+use tokio_postgres::types::Type;
+use tokio_postgres::{Client, GenericClient};
 
 #[derive(Debug, Clone, Copy)]
 enum TableSelection {
@@ -284,9 +284,12 @@ async fn test_pipeline_with_apply_worker_panic() {
     pipeline.start().await.unwrap();
 
     // Verify that pipeline shutdown returns expected error.
-    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
-    assert_eq!(errors.len(), 1);
-    assert!(matches!(errors[0], WorkerWaitError::TaskFailed(_)));
+    assert!(matches!(
+        pipeline.shutdown_and_wait().await,
+        Err(PipelineError::ApplyWorkerFailed(
+            WorkerWaitError::WorkerPanicked(_)
+        ))
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -313,11 +316,11 @@ async fn test_pipeline_with_apply_worker_error() {
     pipeline.start().await.unwrap();
 
     // Verify that pipeline shutdown returns expected error type.
-    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
-    assert_eq!(errors.len(), 1);
     assert!(matches!(
-        errors[0],
-        WorkerWaitError::ApplyWorkerPropagated(_)
+        pipeline.shutdown_and_wait().await,
+        Err(PipelineError::ApplyWorkerFailed(
+            WorkerWaitError::ApplyWorkerFailed(_)
+        ))
     ));
 }
 
@@ -368,10 +371,18 @@ async fn test_pipeline_with_table_sync_worker_panic() {
     orders_state_notify.notified().await;
 
     // We stop and inspect errors.
-    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
-    assert_eq!(errors.len(), 2);
-    assert!(matches!(errors[0], WorkerWaitError::TaskFailed(_)));
-    assert!(matches!(errors[1], WorkerWaitError::TaskFailed(_)));
+    match pipeline.shutdown_and_wait().await.err().unwrap() {
+        PipelineError::TableSyncWorkersFailed(err) => {
+            assert!(matches!(
+                err.0.as_slice(),
+                [
+                    WorkerWaitError::WorkerPanicked(_),
+                    WorkerWaitError::WorkerPanicked(_)
+                ]
+            ));
+        }
+        other => panic!("Expected TableSyncWorkersFailed error, but got: {other:?}"),
+    }
 }
 
 // TODO: find a way to inject errors in a way that is predictable.
@@ -420,16 +431,18 @@ async fn test_pipeline_with_table_sync_worker_error() {
     orders_state_notify.notified().await;
 
     // We stop and inspect errors.
-    let errors = pipeline.shutdown_and_wait().await.err().unwrap();
-    assert_eq!(errors.len(), 2);
-    assert!(matches!(
-        errors[0],
-        WorkerWaitError::TableSyncWorkerPropagated(_)
-    ));
-    assert!(matches!(
-        errors[1],
-        WorkerWaitError::TableSyncWorkerPropagated(_)
-    ));
+    match pipeline.shutdown_and_wait().await.err().unwrap() {
+        PipelineError::TableSyncWorkersFailed(err) => {
+            assert!(matches!(
+                err.0.as_slice(),
+                [
+                    WorkerWaitError::WorkerPanicked(_),
+                    WorkerWaitError::WorkerPanicked(_)
+                ]
+            ));
+        }
+        other => panic!("Expected TableSyncWorkersFailed error, but got: {other:?}"),
+    }
 }
 
 // TODO: find a way to inject errors in a way that is predictable.

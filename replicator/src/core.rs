@@ -103,10 +103,26 @@ async fn init_destination(
 }
 
 #[instrument(name = "start_pipeline")]
-async fn start_pipeline<S, D>(pipeline: Pipeline<S, D>) -> anyhow::Result<()>
+async fn start_pipeline<S, D>(mut pipeline: Pipeline<S, D>) -> anyhow::Result<()>
 where
     S: StateStore + Clone + Send + Sync + fmt::Debug + 'static,
     D: Destination + Clone + Send + Sync + fmt::Debug + 'static,
 {
+    // We start the pipeline.
+    pipeline.start().await?;
+
+    // We wait for the pipeline to finish normally or for a `CTRL + C` signal.
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            // We send a shutdown signal to the pipeline and wait.
+            // pipeline.shutdown_and_wait().await?;
+            return Ok(());
+        }
+
+        _ = pipeline.wait() => {
+
+        }
+    }
+
     Ok(())
 }

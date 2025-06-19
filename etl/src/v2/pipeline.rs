@@ -1,3 +1,10 @@
+use rustls::pki_types::CertificateDer;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::watch;
+use tokio_postgres::config::SslMode;
+use tracing::{error, info};
+
 use crate::v2::concurrency::shutdown::{create_shutdown_channel, ShutdownTx};
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::{Destination, DestinationError};
@@ -6,30 +13,34 @@ use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
-use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError, WorkerWaitErrors};
 use crate::v2::workers::pool::TableSyncWorkerPool;
-use rustls::pki_types::CertificateDer;
-use std::sync::Arc;
-use thiserror::Error;
-use tokio_postgres::config::SslMode;
-use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
-    #[error("Worker operation failed: {0}")]
-    WorkerError(#[from] WorkerWaitError),
+    #[error("Both the apply worker and table sync workers failed. Apply worker error: {0}, Table sync workers errors: {1}")]
+    BothWorkerTypesFailed(WorkerWaitError, WorkerWaitErrors),
+
+    #[error("The apply worker failed: {0}")]
+    ApplyWorkerFailed(#[from] WorkerWaitError),
+
+    #[error("Table sync workers failed: {0}")]
+    TableSyncWorkersFailed(WorkerWaitErrors),
 
     #[error("PostgreSQL replication operation failed: {0}")]
     PgReplicationClient(#[from] PgReplicationError),
 
     #[error("Apply worker failed to start in the pipeline: {0}")]
-    ApplyWorker(#[from] ApplyWorkerError),
+    ApplyWorkerFailedOnStart(#[from] ApplyWorkerError),
 
     #[error("An error happened in the state store: {0}")]
     StateStore(#[from] StateStoreError),
 
     #[error("An error occurred in the destination: {0}")]
     Destination(#[from] DestinationError),
+
+    #[error("An error occurred while shutting down the pipeline, likely because no workers are running: {0}")]
+    ShutdownFailed(#[from] watch::error::SendError<()>),
 }
 
 #[derive(Debug)]
@@ -203,7 +214,7 @@ where
         Ok(replication_client)
     }
 
-    pub async fn wait(self) -> Result<(), Vec<WorkerWaitError>> {
+    pub async fn wait(self) -> Result<(), PipelineError> {
         let PipelineWorkers::Started { apply_worker, pool } = self.workers else {
             info!("Pipeline was not started, nothing to wait for");
             return Ok(());
@@ -216,30 +227,45 @@ where
         // be having the apply worker that spawns new sync workers after we waited for the current
         // ones to finish.
         let apply_worker_result = apply_worker.wait().await;
-        info!("Apply worker completed");
+        if apply_worker_result.is_err() {
+            // TODO: in the future we might build a system based on the `ReactiveFuture` that
+            //  automatically sends a shutdown signal to table sync workers on apply worker failure.
+            // If there was an error in the apply worker, we want to shut down all table sync
+            // workers, since without an apply worker they are lost.
+            if let Err(err) = self.shutdown_tx.send(()) {
+                info!("Shut down signal could not be delivered, likely because no workers are running: {:?}", err);
+            }
+
+            info!("Apply worker completed with an error, shutting down table sync workers");
+        } else {
+            info!("Apply worker completed successfully");
+        }
 
         let table_sync_workers_result = pool.wait_all().await;
-        info!("All table sync workers completed");
+        if table_sync_workers_result.is_err() {
+            info!("Table sync worker failed with an error");
+        } else {
+            info!("Table sync worker completed successfully");
+        }
 
         match (apply_worker_result, table_sync_workers_result) {
             (Ok(_), Ok(_)) => Ok(()),
-            (Err(err), Ok(_)) => Err(vec![err]),
-            (Ok(_), Err(err)) => Err(err),
-            (Err(apply_err), Err(mut table_sync_err)) => {
-                // For efficiency, we add it to the end.
-                table_sync_err.push(apply_err);
-                Err(table_sync_err)
-            }
+            (Err(err), Ok(_)) => Err(PipelineError::ApplyWorkerFailed(err)),
+            (Ok(_), Err(err)) => Err(PipelineError::TableSyncWorkersFailed(err)),
+            (Err(err), Err(errs)) => Err(PipelineError::BothWorkerTypesFailed(err, errs)),
         }
     }
 
-    pub async fn shutdown(&self) {
-        info!("Shutting down pipeline");
-        let _ = self.shutdown_tx.send(());
+    pub fn shutdown(&self) -> Result<(), PipelineError> {
+        info!("Trying to shut down the pipeline");
+        self.shutdown_tx.send(())?;
+        info!("Shut down signal successfully sent to all workers");
+
+        Ok(())
     }
 
-    pub async fn shutdown_and_wait(self) -> Result<(), Vec<WorkerWaitError>> {
-        self.shutdown().await;
+    pub async fn shutdown_and_wait(self) -> Result<(), PipelineError> {
+        self.shutdown()?;
         self.wait().await
     }
 }
