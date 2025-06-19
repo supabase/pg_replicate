@@ -121,7 +121,7 @@ impl Display for ApplicationSettings {
     }
 }
 
-pub fn get_settings<'a, T: serde::Deserialize<'a>>() -> Result<T, config::ConfigError> {
+pub fn get_settings<'a, T: serde::Deserialize<'a>>() -> Result<T, rust_cli_config::ConfigError> {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory");
     let configuration_directory = base_path.join("configuration");
 
@@ -133,17 +133,17 @@ pub fn get_settings<'a, T: serde::Deserialize<'a>>() -> Result<T, config::Config
         .expect("Failed to parse APP_ENVIRONMENT.");
 
     let environment_filename = format!("{}.yaml", environment.as_str());
-    let settings = config::Config::builder()
-        .add_source(config::File::from(
+    let settings = rust_cli_config::Config::builder()
+        .add_source(rust_cli_config::File::from(
             configuration_directory.join("base.yaml"),
         ))
-        .add_source(config::File::from(
+        .add_source(rust_cli_config::File::from(
             configuration_directory.join(environment_filename),
         ))
         // Add in settings from environment variables (with a prefix of APP and '__' as separator)
         // E.g. `APP_DESTINATION__BIG_QUERY__PROJECT_ID=my-project-id would set `Settings { destination: BigQuery { project_id }}` to my-project-id
         .add_source(
-            config::Environment::with_prefix("APP")
+            rust_cli_config::Environment::with_prefix("APP")
                 .prefix_separator("_")
                 .separator("__"),
         )

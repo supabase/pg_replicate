@@ -1,5 +1,4 @@
 use crate::config::load_config;
-use anyhow::anyhow;
 use config::replicator::{DestinationConfig, ReplicatorConfig, StateStoreConfig};
 use etl::v2::config::batch::BatchConfig;
 use etl::v2::config::pipeline::PipelineConfig;
@@ -117,6 +116,7 @@ where
             error!("Failed to listen for Ctrl+C: {:?}", e);
             return;
         }
+        
         info!("Ctrl+C received, shutting down pipeline...");
         if let Err(e) = shutdown_tx.shutdown() {
             warn!("Failed to send shutdown signal: {:?}", e);
