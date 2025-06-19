@@ -1,4 +1,3 @@
-use crate::common::database::create_etl_api_database;
 use api::{
     config::ApiConfig,
     db::{destinations::DestinationConfig, pipelines::PipelineConfig, sources::SourceConfig},
@@ -14,6 +13,8 @@ use std::io;
 use std::net::TcpListener;
 use tokio::runtime::Handle;
 use uuid::Uuid;
+
+use crate::common::database::create_etl_api_database;
 
 #[derive(Serialize)]
 pub struct CreateTenantRequest {

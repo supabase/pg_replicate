@@ -5,53 +5,79 @@ use serde::{de, Deserialize, Deserializer};
 use std::fmt;
 use thiserror::Error;
 
+/// The length in bytes required for a valid API key.
 const API_KEY_LENGTH_IN_BYTES: usize = 32;
 
-#[derive(Deserialize, Clone)]
+/// Top-level configuration for the API service.
+///
+/// Contains database, application, encryption, and API key settings.
+#[derive(Debug, Clone, Deserialize)]
 pub struct ApiConfig {
+    /// Database connection configuration.
     pub database: PgConnectionConfig,
+    /// Application server settings.
     pub application: ApplicationSettings,
+    /// Encryption key configuration.
     pub encryption_key: EncryptionKey,
+    /// Base64-encoded API key string.
     pub api_key: String,
 }
 
-#[derive(Deserialize, Clone)]
+/// Network and server settings for the API.
+#[derive(Debug, Clone, Deserialize)]
 pub struct ApplicationSettings {
-    /// Host the api listens on.
+    /// Host address the API listens on.
     pub host: String,
-    /// Port the api listens on.
+    /// Port number the API listens on.
     pub port: u16,
 }
 
 impl fmt::Display for ApplicationSettings {
+    /// Formats the [`ApplicationSettings`] for display, showing host and port.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "    host: {}", self.host)?;
         writeln!(f, "    port: {}", self.port)
     }
 }
 
-#[derive(Deserialize, Clone)]
+/// Configuration for an encryption key.
+#[derive(Debug, Clone, Deserialize)]
 pub struct EncryptionKey {
+    /// Unique identifier for the key.
     pub id: u32,
+    /// Base64-encoded key material.
     pub key: String,
 }
 
+/// Errors that can occur when converting a string to an [`ApiKey`].
 #[derive(Debug, Error)]
 pub enum ApiKeyConversionError {
+    /// The API key is not valid base64.
     #[error("api key is not base64 encoded")]
     NotBase64Encoded,
 
+    /// The API key does not have the expected length of 32 bytes.
     #[error("expected length of api key is 32, but actual length is {0}")]
     LengthNot32IBytes(usize),
 }
 
+/// A validated API key, represented as a fixed-size byte array.
+#[derive(Debug)]
 pub struct ApiKey {
+    /// The 32-byte decoded API key.
     pub key: [u8; API_KEY_LENGTH_IN_BYTES],
 }
 
 impl TryFrom<&str> for ApiKey {
     type Error = ApiKeyConversionError;
 
+    /// Attempts to decode a base64-encoded string into an [`ApiKey`].
+    ///
+    /// Returns an error if the string is not valid base64 or does not decode to 32 bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the decoded key cannot be converted to a 32-byte array, which should never occur if the length check passes.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let key = BASE64_STANDARD
             .decode(value)
@@ -70,6 +96,9 @@ impl TryFrom<&str> for ApiKey {
 }
 
 impl<'de> Deserialize<'de> for ApiKey {
+    /// Deserializes an [`ApiKey`] from a struct with a base64-encoded `key` field.
+    ///
+    /// Returns an error if the field is missing, duplicated, not base64, or not 32 bytes.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,

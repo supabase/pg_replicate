@@ -1,17 +1,5 @@
 use std::sync::Arc;
 
-use actix_web::{
-    delete, get,
-    http::{header::ContentType, StatusCode},
-    post,
-    web::{Data, Json, Path},
-    HttpRequest, HttpResponse, Responder, ResponseError,
-};
-use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
-use thiserror::Error;
-use utoipa::ToSchema;
-
 use crate::{
     db::{
         self,
@@ -26,6 +14,18 @@ use crate::{
     replicator_config,
     routes::extract_tenant_id,
 };
+use actix_web::{
+    delete, get,
+    http::{header::ContentType, StatusCode},
+    post,
+    web::{Data, Json, Path},
+    HttpRequest, HttpResponse, Responder, ResponseError,
+};
+use config::shared::{BatchConfig, ReplicatorConfig, SupabaseConfig, TlsConfig};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use thiserror::Error;
+use utoipa::ToSchema;
 
 use super::{ErrorMessage, TenantIdError};
 
@@ -528,7 +528,7 @@ async fn create_configs(
     destination_config: DestinationConfig,
     pipeline: Pipeline,
     project: String,
-) -> Result<(Secrets, replicator_config::Config), PipelineError> {
+) -> Result<(Secrets, ReplicatorConfig), PipelineError> {
     let SourceConfig::Postgres {
         host,
         port,
@@ -551,7 +551,7 @@ async fn create_configs(
     };
 
     let publication = pipeline.publication_name;
-    let source_config = replicator_config::SourceConfig::Postgres {
+    let source_config = SourceConfig::Postgres {
         host,
         port,
         name,
@@ -560,7 +560,7 @@ async fn create_configs(
         publication,
     };
 
-    let destination_config = replicator_config::DestinationConfig::BigQuery {
+    let destination_config = DestinationConfig::BigQuery {
         project_id,
         dataset_id,
         max_staleness_mins,
@@ -568,7 +568,7 @@ async fn create_configs(
 
     let pipeline_config: PipelineConfig = serde_json::from_value(pipeline.config)?;
     let batch_config = pipeline_config.config;
-    let batch_config = replicator_config::BatchConfig {
+    let batch_config = BatchConfig {
         max_size: batch_config.max_size,
         max_fill_secs: batch_config.max_fill_secs,
     };
@@ -583,17 +583,19 @@ async fn create_configs(
         .get("trusted_root_certs")
         .ok_or(PipelineError::TrustedRootCertsConfigMissing)?;
 
-    let tls_config = replicator_config::TlsConfig {
+    let tls_config = TlsConfig {
         trusted_root_certs: trusted_root_certs.clone(),
         enabled: true,
     };
 
-    let config = replicator_config::Config {
+    let supabase_config = SupabaseConfig { project };
+
+    let config = ReplicatorConfig {
         source: source_config,
         destination: destination_config,
         batch: batch_config,
         tls: tls_config,
-        project,
+        supabase: supabase_config,
     };
 
     Ok((secrets, config))
@@ -620,7 +622,7 @@ async fn create_or_update_secrets(
 async fn create_or_update_config(
     k8s_client: &Arc<HttpK8sClient>,
     prefix: &str,
-    config: replicator_config::Config,
+    config: ReplicatorConfig,
 ) -> Result<(), PipelineError> {
     let base_config = "";
     let prod_config = serde_json::to_string(&config)?;
