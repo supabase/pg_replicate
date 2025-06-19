@@ -20,6 +20,10 @@ pub struct TableName {
 }
 
 impl TableName {
+    pub fn new(schema: String, name: String) -> TableName {
+        Self { schema, name }
+    }
+
     /// Returns the table name as a properly quoted PostgreSQL identifier.
     ///
     /// This method ensures the schema and table names are properly escaped according to
@@ -61,6 +65,39 @@ pub struct ColumnSchema {
     pub primary: bool,
 }
 
+impl ColumnSchema {
+    pub fn new(
+        name: String,
+        typ: Type,
+        modifier: TypeModifier,
+        nullable: bool,
+        primary: bool,
+    ) -> ColumnSchema {
+        Self {
+            name,
+            typ,
+            modifier,
+            nullable,
+            primary,
+        }
+    }
+
+    /// Compares two [`ColumnSchema`] instances, excluding the `nullable` field.
+    ///
+    /// Return `true` if all fields except `nullable` are equal, `false` otherwise.
+    ///
+    /// This method is used for comparing table schemas loaded via the initial table sync and the
+    /// relation messages received via CDC. The reason for skipping the `nullable` field is that
+    /// unfortunately Postgres doesn't seem to propagate nullable information of a column via
+    /// relation messages.
+    fn partial_eq(&self, other: &ColumnSchema) -> bool {
+        self.name == other.name
+            && self.typ == other.typ
+            && self.modifier == other.modifier
+            && self.primary == other.primary
+    }
+}
+
 /// A type alias for PostgreSQL table OIDs.
 ///
 /// Table OIDs are unique identifiers assigned to tables in PostgreSQL.
@@ -95,6 +132,20 @@ impl TableSchema {
     /// This method checks if any column in the table is marked as part of the primary key.
     pub fn has_primary_keys(&self) -> bool {
         self.column_schemas.iter().any(|cs| cs.primary)
+    }
+
+    /// Compares two [`TableSchema`] instances, excluding the [`ColumnSchema`]'s `nullable` field.
+    ///
+    /// Return `true` if all fields except `nullable` are equal, `false` otherwise.
+    pub fn partial_eq(&self, other: &TableSchema) -> bool {
+        self.id == other.id
+            && self.name == other.name
+            && self.column_schemas.len() == other.column_schemas.len()
+            && self
+                .column_schemas
+                .iter()
+                .zip(other.column_schemas.iter())
+                .all(|(c1, c2)| c1.partial_eq(c2))
     }
 }
 

@@ -1,6 +1,7 @@
 use pg_escape::{quote_identifier, quote_literal};
 use postgres::schema::{ColumnSchema, Oid, TableName, TableSchema};
 use postgres::tokio::config::PgConnectionConfig;
+use postgres::types::convert_type_oid_to_type;
 use postgres_replication::LogicalReplicationStream;
 use rustls::{pki_types::CertificateDer, ClientConfig};
 use std::collections::HashMap;
@@ -9,7 +10,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::tls::MakeTlsConnect;
-use tokio_postgres::types::{Kind, Type};
 use tokio_postgres::{
     config::ReplicationMode, types::PgLsn, Client, Config, Connection, CopyOutStream, NoTls,
     SimpleQueryMessage, SimpleQueryRow, Socket,
@@ -91,6 +91,12 @@ pub struct GetSlotResult {
     pub confirmed_flush_lsn: PgLsn,
 }
 
+#[derive(Debug, Clone)]
+pub enum GetOrCreateSlotResult {
+    CreateSlot(CreateSlotResult),
+    GetSlot(GetSlotResult),
+}
+
 /// A transaction that operates within the context of a replication slot.
 ///
 /// This type ensures that the parent connection remains active for the duration of any
@@ -168,7 +174,7 @@ impl PgReplicationSlotTransaction {
 #[derive(Debug)]
 struct ClientInner {
     client: Client,
-    pg_database_config: PgConnectionConfig,
+    pg_connection_config: PgConnectionConfig,
     trusted_root_certs: Vec<CertificateDer<'static>>,
     with_tls: bool,
 }
@@ -190,11 +196,11 @@ impl PgReplicationClient {
     ///
     /// The connection is configured for logical replication mode.
     pub async fn connect_no_tls(
-        pg_database_config: PgConnectionConfig,
+        pg_connection_config: PgConnectionConfig,
     ) -> PgReplicationResult<Self> {
         info!("connecting to postgres without TLS");
 
-        let mut config: Config = pg_database_config.clone().into();
+        let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
 
         let (client, connection) = config.connect(NoTls).await?;
@@ -204,7 +210,7 @@ impl PgReplicationClient {
 
         let inner = ClientInner {
             client,
-            pg_database_config,
+            pg_connection_config,
             trusted_root_certs: vec![],
             with_tls: false,
         };
@@ -218,12 +224,12 @@ impl PgReplicationClient {
     /// The connection is configured for logical replication mode and uses the provided
     /// trusted root certificates for TLS verification.
     pub async fn connect_tls(
-        pg_database_config: PgConnectionConfig,
+        pg_connection_config: PgConnectionConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
     ) -> PgReplicationResult<Self> {
         info!("connecting to postgres with TLS");
 
-        let mut config: Config = pg_database_config.clone().into();
+        let mut config: Config = pg_connection_config.clone().into();
         config.replication_mode(ReplicationMode::Logical);
 
         let mut root_store = rustls::RootCertStore::empty();
@@ -241,7 +247,7 @@ impl PgReplicationClient {
 
         let inner = ClientInner {
             client,
-            pg_database_config,
+            pg_connection_config,
             trusted_root_certs,
             with_tls: true,
         };
@@ -298,15 +304,38 @@ impl PgReplicationClient {
         Err(PgReplicationError::SlotNotFound(slot_name.to_string()))
     }
 
+    /// Gets an existing replication slot or creates a new one if it doesn't exist.
+    ///
+    /// This method first attempts to get the slot by name. If the slot doesn't exist,
+    /// it creates a new one.
+    ///
+    /// Returns a tuple containing:
+    /// - A boolean indicating whether the slot was created (true) or already existed (false)
+    /// - The slot result containing either the confirmed_flush_lsn (for existing slots)
+    ///   or the consistent_point (for newly created slots)
+    pub async fn get_or_create_slot(
+        &self,
+        slot_name: &str,
+    ) -> PgReplicationResult<GetOrCreateSlotResult> {
+        match self.get_slot(slot_name).await {
+            Ok(slot) => Ok(GetOrCreateSlotResult::GetSlot(slot)),
+            Err(PgReplicationError::SlotNotFound(_)) => {
+                let create_result = self.create_slot_internal(slot_name, false).await?;
+                Ok(GetOrCreateSlotResult::CreateSlot(create_result))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Deletes a replication slot with the specified name.
     ///
     /// Returns an error if the slot doesn't exist or if there are any issues with the deletion.
     pub async fn delete_slot(&self, slot_name: &str) -> PgReplicationResult<()> {
         // Do not convert the query or the options to lowercase, see comment in `create_slot_internal`.
-        // TODO: drop the slot with WAIT option to ensure that the server waits for the slot to be
-        // become inactive before dropping it instead of returning an error if the slot is still active.
-        // This is what Postgres does in its replication implementation.
-        let query = format!(r#"DROP_REPLICATION_SLOT {};"#, quote_identifier(slot_name));
+        let query = format!(
+            r#"DROP_REPLICATION_SLOT {} WAIT;"#,
+            quote_identifier(slot_name)
+        );
 
         match self.inner.client.simple_query(&query).await {
             Ok(_) => Ok(()),
@@ -431,12 +460,12 @@ impl PgReplicationClient {
     pub async fn duplicate(&self) -> PgReplicationResult<PgReplicationClient> {
         let duplicated_client = if self.inner.with_tls {
             PgReplicationClient::connect_tls(
-                self.inner.pg_database_config.clone(),
+                self.inner.pg_connection_config.clone(),
                 self.inner.trusted_root_certs.clone(),
             )
             .await?
         } else {
-            PgReplicationClient::connect_no_tls(self.inner.pg_database_config.clone()).await?
+            PgReplicationClient::connect_no_tls(self.inner.pg_connection_config.clone()).await?
         };
 
         Ok(duplicated_client)
@@ -666,12 +695,7 @@ impl PgReplicationClient {
                 let primary =
                     Self::get_row_value::<String>(&row, "primary", "pg_index").await? == "t";
 
-                let typ = Type::from_oid(type_oid).unwrap_or(Type::new(
-                    format!("unnamed(oid: {type_oid})"),
-                    type_oid,
-                    Kind::Simple,
-                    "pg_catalog".to_string(),
-                ));
+                let typ = convert_type_oid_to_type(type_oid);
 
                 column_schemas.push(ColumnSchema {
                     name,

@@ -92,8 +92,8 @@ impl Application {
         Ok(Self { port, server })
     }
 
-    pub async fn migrate_database(options: PgConnectionConfig) -> Result<(), anyhow::Error> {
-        let connection_pool = get_connection_pool(&options);
+    pub async fn migrate_database(config: PgConnectionConfig) -> Result<(), anyhow::Error> {
+        let connection_pool = get_connection_pool(&config);
 
         sqlx::migrate!("./migrations").run(&connection_pool).await?;
 

@@ -1,19 +1,22 @@
-use crate::v2::concurrency::stream::BoundedBatchStream;
+use crate::v2::concurrency::shutdown::{ShutdownResult, ShutdownRx};
+use crate::v2::concurrency::stream::BatchStream;
 use crate::v2::config::pipeline::PipelineConfig;
 use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::pipeline::PipelineIdentity;
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
-use crate::v2::replication::slot::{get_slot_name, SlotError, SlotUsage};
+use crate::v2::replication::slot::{get_slot_name, SlotError};
 use crate::v2::replication::stream::{TableCopyStream, TableCopyStreamError};
+use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::origin::ReplicationOriginState;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
 use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
+use crate::v2::workers::base::WorkerType;
 use crate::v2::workers::table_sync::{TableSyncWorkerState, TableSyncWorkerStateError};
 use futures::StreamExt;
+use postgres::schema::Oid;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::pin;
-use tokio::sync::watch;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Error)]
@@ -33,7 +36,7 @@ pub enum TableSyncError {
     #[error("An error occurred while writing to the destination: {0}")]
     Destination(#[from] DestinationError),
 
-    #[error("An error happened in the pipeline state store: {0}")]
+    #[error("An error happened in the state store: {0}")]
     StateStore(#[from] StateStoreError),
 
     #[error("An error happened in the table copy stream")]
@@ -45,26 +48,28 @@ pub enum TableSyncError {
 
 #[derive(Debug)]
 pub enum TableSyncResult {
+    SyncStopped,
     SyncNotRequired,
     SyncCompleted { origin_start_lsn: PgLsn },
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_table_sync<S, D>(
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
+    table_id: Oid,
     table_sync_worker_state: TableSyncWorkerState,
+    schema_cache: SchemaCache,
     state_store: S,
     destination: D,
-    shutdown_rx: watch::Receiver<()>,
+    shutdown_rx: ShutdownRx,
 ) -> Result<TableSyncResult, TableSyncError>
 where
     S: StateStore + Clone + Send + 'static,
     D: Destination + Clone + Send + 'static,
 {
     let inner = table_sync_worker_state.get_inner().read().await;
-
-    let table_id = inner.table_id();
     let phase_type = inner.replication_phase().as_type();
 
     // In case the work for this table has been already done, we don't want to continue and we
@@ -94,7 +99,7 @@ where
     // good to reduce the length of the critical section.
     drop(inner);
 
-    let slot_name = get_slot_name(&identity, SlotUsage::TableSyncWorker { table_id })?;
+    let slot_name = get_slot_name(&identity, WorkerType::TableSync { table_id })?;
 
     // There are three phases in which the table can be in:
     // - `Init` -> this means that the table sync was never done, so we just perform it.
@@ -150,9 +155,7 @@ where
             let table_schema = transaction
                 .get_table_schema(table_id, Some(identity.publication_name()))
                 .await?;
-            state_store
-                .store_table_schema(identity.id(), table_schema.clone(), true)
-                .await?;
+            schema_cache.add_table_schema(table_schema.clone()).await;
             destination.write_table_schema(table_schema.clone()).await?;
 
             // We create the copy table stream.
@@ -161,19 +164,33 @@ where
                 .await?;
             let table_copy_stream =
                 TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-            let table_copy_stream = BoundedBatchStream::wrap(
+            let table_copy_stream = BatchStream::wrap(
                 table_copy_stream,
                 config.batch_config.clone(),
-                shutdown_rx,
+                shutdown_rx.clone(),
             );
             pin!(table_copy_stream);
 
             // We start consuming the table stream. If any error occurs, we will bail the entire copy since
             // we want to be fully consistent.
-            while let Some(table_rows) = table_copy_stream.next().await {
-                let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
-                destination.copy_table_rows(table_id, table_rows).await?;
+            while let Some(result) = table_copy_stream.next().await {
+                match result {
+                    ShutdownResult::Ok(table_rows) => {
+                        let table_rows = table_rows.into_iter().collect::<Result<Vec<_>, _>>()?;
+                        destination.write_table_rows(table_id, table_rows).await?;
+                    }
+                    ShutdownResult::Shutdown(_) => {
+                        // If we received a shutdown in the middle of a table copy, we bail knowing
+                        // that the system can automatically recover if a table copy has failed in
+                        // the middle of processing.
+                        return Ok(TableSyncResult::SyncStopped);
+                    }
+                }
             }
+
+            // We commit the transaction before starting the apply loop, otherwise it will fail
+            // since no transactions can be running while replication is started.
+            transaction.commit().await?;
 
             // We mark that we finished the copy of the table schema and data.
             {
@@ -199,6 +216,17 @@ where
         inner
             .set_phase_with(TableReplicationPhase::SyncWait, state_store)
             .await?;
+    }
+
+    // We also wait to be signaled to catchup with the main apply worker up to a specific lsn.
+    let result = table_sync_worker_state
+        .wait_for_phase_type(TableReplicationPhaseType::Catchup, shutdown_rx.clone())
+        .await;
+
+    // If we are told to shut down while waiting for a phase change, we will signal this to
+    // the caller.
+    if result.should_shutdown() {
+        return Ok(TableSyncResult::SyncStopped);
     }
 
     Ok(TableSyncResult::SyncCompleted {

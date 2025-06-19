@@ -1,5 +1,6 @@
 use crate::v2::workers::apply::ApplyWorkerError;
 use crate::v2::workers::table_sync::TableSyncWorkerError;
+use postgres::schema::Oid;
 use std::future::Future;
 use thiserror::Error;
 use tokio::task;
@@ -25,6 +26,15 @@ pub enum WorkerWaitError {
     /// The table sync worker had a propagated error which was caught by the join handle.
     #[error("Table sync worker experienced an uncaught error: {0}")]
     TableSyncWorkerPropagated(#[from] TableSyncWorkerError),
+}
+
+/// The type of worker that is currently running.
+///
+/// A worker type can also have properties that uniquely identify it.
+#[derive(Debug)]
+pub enum WorkerType {
+    Apply,
+    TableSync { table_id: Oid },
 }
 
 /// A trait for types that can be started as workers.

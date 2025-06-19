@@ -54,14 +54,14 @@ pub struct PostgresSource {
 
 impl PostgresSource {
     pub async fn new(
-        options: PgConnectionConfig,
+        config: PgConnectionConfig,
         trusted_root_certs: Vec<CertificateDer<'static>>,
         slot_name: Option<String>,
         table_names_from: TableNamesFrom,
     ) -> Result<PostgresSource, PostgresSourceError> {
-        let mut replication_client = match options.ssl_mode {
-            SslMode::Disable => ReplicationClient::connect_no_tls(options).await?,
-            _ => ReplicationClient::connect_tls(options, trusted_root_certs).await?,
+        let mut replication_client = match config.ssl_mode {
+            SslMode::Disable => ReplicationClient::connect_no_tls(config).await?,
+            _ => ReplicationClient::connect_tls(config, trusted_root_certs).await?,
         };
 
         // TODO: we have to fix this whole block which starts the transaction and loads the data.
