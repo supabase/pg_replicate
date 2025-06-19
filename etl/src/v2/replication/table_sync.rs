@@ -164,11 +164,8 @@ where
                 .await?;
             let table_copy_stream =
                 TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-            let table_copy_stream = BatchStream::wrap(
-                table_copy_stream,
-                config.batch_config.clone(),
-                shutdown_rx.clone(),
-            );
+            let table_copy_stream =
+                BatchStream::wrap(table_copy_stream, config.batch.clone(), shutdown_rx.clone());
             pin!(table_copy_stream);
 
             // We start consuming the table stream. If any error occurs, we will bail the entire copy since

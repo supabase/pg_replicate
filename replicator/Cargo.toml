@@ -4,12 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+config = { workspace = true }
 etl = { workspace = true, features = ["bigquery"] }
 postgres = { workspace = true, features = ["tokio"] }
 telemetry = { workspace = true }
 
 anyhow = { workspace = true, features = ["std"] }
-config = { workspace = true, features = ["yaml"] }
+rust-cli-config = { workspace = true, features = ["yaml"] }
 rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }

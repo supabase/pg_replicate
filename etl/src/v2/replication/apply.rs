@@ -244,7 +244,7 @@ where
     let logical_replication_stream = EventsStream::wrap(logical_replication_stream);
     let logical_replication_stream = BatchStream::wrap(
         logical_replication_stream,
-        config.batch_config.clone(),
+        config.batch.clone(),
         shutdown_rx.clone(),
     );
     pin!(logical_replication_stream);

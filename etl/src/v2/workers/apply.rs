@@ -207,11 +207,13 @@ where
                 replication_client.delete_slot(&slot_name).await?;
                 attempt += 1;
 
-                if attempt >= config.retry_config.max_attempts {
+                if attempt >= config.apply_worker_initialization_retry.max_attempts {
                     return Err(ApplyWorkerError::ReplicationOriginMissing);
                 }
 
-                let delay = config.retry_config.calculate_delay(attempt);
+                let delay = config
+                    .apply_worker_initialization_retry
+                    .calculate_delay(attempt);
                 tokio::time::sleep(delay).await;
 
                 continue;

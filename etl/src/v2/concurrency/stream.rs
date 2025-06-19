@@ -40,7 +40,7 @@ impl<B, S: Stream<Item = B>> BatchStream<B, S> {
             stream,
             deadline: None,
             shutdown_rx,
-            items: Vec::with_capacity(batch_config.max_batch_size),
+            items: Vec::with_capacity(batch_config.max_size),
             batch_config,
             reset_timer: true,
             inner_stream_ended: false,
@@ -94,14 +94,13 @@ impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
             }
 
             if *this.reset_timer {
-                this.deadline.set(Some(tokio::time::sleep(
-                    this.batch_config.max_batch_fill_time,
-                )));
+                this.deadline
+                    .set(Some(tokio::time::sleep(this.batch_config.max_fill)));
                 *this.reset_timer = false;
             }
 
             if this.items.is_empty() {
-                this.items.reserve_exact(this.batch_config.max_batch_size);
+                this.items.reserve_exact(this.batch_config.max_size);
             }
 
             match this.stream.as_mut().poll_next(cx) {
@@ -111,7 +110,7 @@ impl<B, S: Stream<Item = B>> Stream for BatchStream<B, S> {
 
                     // If we reached the `max_batch_size` we want to return the batch and reset the
                     // timer.
-                    if this.items.len() >= this.batch_config.max_batch_size {
+                    if this.items.len() >= this.batch_config.max_size {
                         *this.reset_timer = true;
                         return Poll::Ready(Some(ShutdownResult::Ok(std::mem::take(this.items))));
                     }

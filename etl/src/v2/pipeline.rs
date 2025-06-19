@@ -187,14 +187,13 @@ where
 
     async fn connect(&self) -> Result<PgReplicationClient, PipelineError> {
         // We create the main replication client that will be used by the apply worker.
-        let replication_client = match self.config.pg_connection_config.ssl_mode {
+        let replication_client = match self.config.pg_connection.ssl_mode {
             SslMode::Disable => {
-                PgReplicationClient::connect_no_tls(self.config.pg_connection_config.clone())
-                    .await?
+                PgReplicationClient::connect_no_tls(self.config.pg_connection.clone()).await?
             }
             _ => {
                 PgReplicationClient::connect_tls(
-                    self.config.pg_connection_config.clone(),
+                    self.config.pg_connection.clone(),
                     self.trusted_root_certs.clone(),
                 )
                 .await?
