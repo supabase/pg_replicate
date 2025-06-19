@@ -43,7 +43,7 @@ pub enum PipelineError {
     ShutdownFailed(#[from] watch::error::SendError<()>),
 
     #[error("The publication '{0}' does not exist in the database")]
-    MissingPublication(String)
+    MissingPublication(String),
 }
 
 #[derive(Debug)]
@@ -190,9 +190,17 @@ where
         info!("Synchronizing relation subscription states");
 
         // We need to make sure that the publication exists.
-        if !replication_client.publication_exists(self.identity.publication_name()).await? {
-            error!("The publication '{}' does not exist in the database", self.identity.publication_name());
-            return Err(PipelineError::MissingPublication(self.identity.publication_name().to_owned()));
+        if !replication_client
+            .publication_exists(self.identity.publication_name())
+            .await?
+        {
+            error!(
+                "The publication '{}' does not exist in the database",
+                self.identity.publication_name()
+            );
+            return Err(PipelineError::MissingPublication(
+                self.identity.publication_name().to_owned(),
+            ));
         }
 
         // We fetch all the table ids for the publication to which the pipeline subscribes.
@@ -260,9 +268,9 @@ where
 
         let table_sync_workers_result = pool.wait_all().await;
         if table_sync_workers_result.is_err() {
-            info!("Table sync workers failed with an error");
+            info!("One or more table sync workers failed with an error");
         } else {
-            info!("Table sync workers completed successfully");
+            info!("All table sync workers completed successfully");
         }
 
         match (apply_worker_result, table_sync_workers_result) {

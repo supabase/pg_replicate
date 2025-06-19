@@ -31,7 +31,7 @@ where
             error!("An error occurred during the Postgres connection: {}", e);
             return;
         }
-        
+
         info!("Postgres connection terminated successfully")
     });
 }

@@ -133,6 +133,9 @@ where
 
             // We create the slot with a transaction, since we need to have a consistent snapshot of the database
             // before copying the schema and tables.
+            //
+            // If a slot already exists at this point, we could delete it and try to recover, but it means
+            // that the state was somehow reset without the slot being deleted, and we want to surface this.
             let (transaction, slot) = replication_client
                 .create_slot_with_transaction(&slot_name)
                 .await?;

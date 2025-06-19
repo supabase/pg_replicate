@@ -124,13 +124,13 @@ pub struct InsertEvent {
 pub struct UpdateEvent {
     pub table_id: Oid,
     pub row: TableRow,
-    pub identity_row: TableRow,
+    pub identity_row: Option<TableRow>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeleteEvent {
     pub table_id: Oid,
-    pub identity_row: TableRow,
+    pub identity_row: Option<TableRow>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -269,16 +269,20 @@ async fn convert_update_to_event(
 ) -> Result<Event, EventConversionError> {
     let table_id = update_body.rel_id();
     let table_schema = get_table_schema(schema_cache, table_id).await?;
-    let identity = update_body
-        .key_tuple()
-        .or(update_body.old_tuple())
-        .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
 
-    let identity_row = convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
     let row = convert_tuple_to_row(
         &table_schema.column_schemas,
         update_body.new_tuple().tuple_data(),
     )?;
+
+    let identity = update_body.key_tuple().or(update_body.old_tuple());
+    let identity_row = match identity {
+        Some(identity) => Some(convert_tuple_to_row(
+            &table_schema.column_schemas,
+            identity.tuple_data(),
+        )?),
+        None => None,
+    };
 
     Ok(Event::Update(UpdateEvent {
         table_id,
@@ -293,12 +297,15 @@ async fn convert_delete_to_event(
 ) -> Result<Event, EventConversionError> {
     let table_id = delete_body.rel_id();
     let table_schema = get_table_schema(schema_cache, table_id).await?;
-    let identity = delete_body
-        .key_tuple()
-        .or(delete_body.old_tuple())
-        .ok_or(EventConversionError::MissingTupleInDeleteBody)?;
 
-    let identity_row = convert_tuple_to_row(&table_schema.column_schemas, identity.tuple_data())?;
+    let identity = delete_body.key_tuple().or(delete_body.old_tuple());
+    let identity_row = match identity {
+        Some(identity) => Some(convert_tuple_to_row(
+            &table_schema.column_schemas,
+            identity.tuple_data(),
+        )?),
+        None => None,
+    };
 
     Ok(Event::Delete(DeleteEvent {
         table_id,

@@ -53,13 +53,16 @@ impl TableSyncWorkerPoolInner {
     {
         let table_id = worker.table_id();
         if self.active.contains_key(&table_id) {
-            warn!("Worker for table {} already exists in pool", table_id);
+            warn!("Worker for table {} already exists in the pool", table_id);
             return Ok(false);
         }
 
         let handle = worker.start().await?;
         self.active.insert(table_id, handle);
-        info!("Successfully added worker for table {} to pool", table_id);
+        info!(
+            "Successfully added worker for table {} to the pool",
+            table_id
+        );
 
         Ok(true)
     }
@@ -80,7 +83,7 @@ impl TableSyncWorkerPoolInner {
 
         if let Some(removed_worker) = removed_worker {
             info!(
-                "Marked worker for table {} as inactive with reason {:?}",
+                "Marked worker for table {} as inactive with reason: {:?}",
                 table_id, reason
             );
 
