@@ -92,7 +92,7 @@ impl TableSyncWorkerStateInner {
             let new_table_replication_state =
                 self.table_replication_state.clone().with_phase(phase);
             state_store
-                .store_table_replication_state(new_table_replication_state, true)
+                .store_table_replication_state(new_table_replication_state)
                 .await?;
         }
 

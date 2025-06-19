@@ -40,6 +40,13 @@ rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
 rand = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
+sqlx = { workspace = true, features = [
+    "runtime-tokio-rustls",
+    # "macros",
+    "postgres",
+    # "json",
+    "migrate",
+] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 tokio-postgres = { workspace = true, features = [

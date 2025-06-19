@@ -347,7 +347,7 @@ where
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
                     self.state_store
-                        .store_table_replication_state(updated_state, true)
+                        .store_table_replication_state(updated_state)
                         .await?;
                 }
                 _ => {
@@ -381,7 +381,7 @@ where
             TableReplicationPhase::Skipped,
         );
         self.state_store
-            .store_table_replication_state(table_replication_state, true)
+            .store_table_replication_state(table_replication_state)
             .await?;
 
         Ok(true)

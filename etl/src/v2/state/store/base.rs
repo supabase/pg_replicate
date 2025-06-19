@@ -7,8 +7,8 @@ use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug, Error)]
 pub enum StateStoreError {
-    #[error("Table replication state not found in store")]
-    TableReplicationStateNotFound,
+    #[error("Sqlx error: {0}")]
+    Sqlx(#[from] sqlx::Error),
 }
 
 pub trait StateStore {
@@ -25,6 +25,5 @@ pub trait StateStore {
     fn store_table_replication_state(
         &self,
         state: TableReplicationState,
-        overwrite: bool,
-    ) -> impl Future<Output = Result<bool, StateStoreError>> + Send;
+    ) -> impl Future<Output = Result<(), StateStoreError>> + Send;
 }

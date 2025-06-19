@@ -60,17 +60,10 @@ impl StateStore for MemoryStateStore {
     async fn store_table_replication_state(
         &self,
         state: TableReplicationState,
-        overwrite: bool,
-    ) -> Result<bool, StateStoreError> {
+    ) -> Result<(), StateStoreError> {
         let mut inner = self.inner.write().await;
         let key = (state.pipeline_id, state.table_id);
-
-        if !overwrite && inner.table_replication_states.contains_key(&key) {
-            return Ok(false);
-        }
-
         inner.table_replication_states.insert(key, state);
-
-        Ok(true)
+        Ok(())
     }
 }

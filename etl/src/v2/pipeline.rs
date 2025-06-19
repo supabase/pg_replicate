@@ -8,7 +8,9 @@ use crate::v2::state::table::TableReplicationState;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
+use postgres::schema::TableId;
 use rustls::pki_types::CertificateDer;
+use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio_postgres::config::SslMode;
@@ -174,12 +176,19 @@ where
         let table_ids = replication_client
             .get_publication_table_ids(self.identity.publication_name())
             .await?;
+        let mut states = self.state_store.load_table_replication_states().await?;
+        let states_hm: HashMap<TableId, TableReplicationState> = states
+            .drain(..)
+            .map(|state| (state.table_id, state))
+            .collect();
         for table_id in table_ids {
             let state = TableReplicationState::init(self.identity.id, table_id);
             // We store the init state only if it's not already present.
-            self.state_store
-                .store_table_replication_state(state, false)
-                .await?;
+            if !states_hm.contains_key(&table_id) {
+                self.state_store
+                    .store_table_replication_state(state)
+                    .await?;
+            }
         }
 
         Ok(())
