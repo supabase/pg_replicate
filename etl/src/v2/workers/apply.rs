@@ -344,8 +344,8 @@ where
             let table_id = table_replication_state.table_id;
             match table_replication_state.phase {
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
-                    let updated_state = table_replication_state
-                        .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
+                    let updated_state =
+                        table_replication_state.with_phase(TableReplicationPhase::Ready);
                     self.state_store
                         .store_table_replication_state(table_id, updated_state)
                         .await?;
@@ -413,7 +413,7 @@ where
         };
 
         let should_apply_changes = match replication_phase {
-            TableReplicationPhase::Ready { .. } => true,
+            TableReplicationPhase::Ready => true,
             TableReplicationPhase::SyncDone { lsn } => lsn <= remote_final_lsn,
             _ => false,
         };

@@ -46,10 +46,7 @@ pub enum TableReplicationPhase {
         /// The LSN up to which the table sync arrived.
         lsn: PgLsn,
     },
-    Ready {
-        /// The LSN of the apply worker which set this state to ready.
-        lsn: PgLsn,
-    },
+    Ready,
     Skipped,
     Unknown,
 }
@@ -119,7 +116,7 @@ impl<'a> From<&'a TableReplicationPhase> for TableReplicationPhaseType {
             TableReplicationPhase::SyncWait => Self::SyncWait,
             TableReplicationPhase::Catchup { .. } => Self::Catchup,
             TableReplicationPhase::SyncDone { .. } => Self::SyncDone,
-            TableReplicationPhase::Ready { .. } => Self::Ready,
+            TableReplicationPhase::Ready => Self::Ready,
             TableReplicationPhase::Skipped => Self::Skipped,
             TableReplicationPhase::Unknown => Self::Unknown,
         }
