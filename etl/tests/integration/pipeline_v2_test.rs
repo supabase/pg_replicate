@@ -457,7 +457,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         table_replication_states
             .get(&database_schema.users_schema().id)
             .unwrap()
-            .phase
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );
@@ -465,7 +464,6 @@ async fn test_table_schema_copy_with_data_sync_retry() {
         table_replication_states
             .get(&database_schema.orders_schema().id)
             .unwrap()
-            .phase
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );
@@ -526,7 +524,6 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
         table_replication_states
             .get(&database_schema.users_schema().id)
             .unwrap()
-            .phase
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );
@@ -534,7 +531,6 @@ async fn test_table_schema_copy_with_finished_copy_retry() {
         table_replication_states
             .get(&database_schema.orders_schema().id)
             .unwrap()
-            .phase
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );
@@ -634,7 +630,6 @@ async fn test_table_schema_copy_survives_restarts() {
         table_replication_states
             .get(&database_schema.users_schema().id)
             .unwrap()
-            .phase
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );
@@ -642,7 +637,6 @@ async fn test_table_schema_copy_survives_restarts() {
         table_replication_states
             .get(&database_schema.orders_schema().id)
             .unwrap()
-            .phase
             .as_type(),
         TableReplicationPhaseType::FinishedCopy
     );

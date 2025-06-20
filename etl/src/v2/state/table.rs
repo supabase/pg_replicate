@@ -1,26 +1,6 @@
 use std::fmt;
 use tokio_postgres::types::PgLsn;
 
-#[derive(Debug, Clone)]
-pub struct TableReplicationState {
-    /// The phase of replication of the table.
-    pub phase: TableReplicationPhase,
-}
-
-impl TableReplicationState {
-    pub fn new(phase: TableReplicationPhase) -> Self {
-        Self { phase }
-    }
-
-    pub fn init() -> Self {
-        Self::new(TableReplicationPhase::Init)
-    }
-
-    pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {
-        TableReplicationState { phase }
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TableReplicationPhase {
     /// Set when the pipeline first starts and encounters a table for the first time

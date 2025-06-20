@@ -7,9 +7,7 @@ use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::replication::slot::{get_slot_name, SlotError};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::state::table::{
-    TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
-};
+use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerType, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::{
@@ -300,9 +298,9 @@ where
 
     async fn active_table_replication_states(
         &self,
-    ) -> Result<HashMap<TableId, TableReplicationState>, ApplyWorkerHookError> {
+    ) -> Result<HashMap<TableId, TableReplicationPhase>, ApplyWorkerHookError> {
         let mut table_replication_states = self.state_store.load_table_replication_states().await?;
-        table_replication_states.retain(|_table_id, state| !state.phase.as_type().is_done());
+        table_replication_states.retain(|_table_id, state| !state.as_type().is_done());
 
         Ok(table_replication_states)
     }
@@ -344,10 +342,9 @@ where
         for (table_id, table_replication_state) in table_replication_states {
             // We read the state store state first, if we don't find `SyncDone` we will attempt to
             // read the shared state which can contain also non-persisted states.
-            match table_replication_state.phase {
+            match table_replication_state {
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
-                    let updated_state =
-                        table_replication_state.with_phase(TableReplicationPhase::Ready);
+                    let updated_state = TableReplicationPhase::Ready;
                     self.state_store
                         .store_table_replication_state(table_id, updated_state)
                         .await?;
@@ -377,7 +374,7 @@ where
 
         // We store the new skipped state in the state store, since we want to still skip a table in
         // case of pipeline restarts.
-        let table_replication_state = TableReplicationState::new(TableReplicationPhase::Skipped);
+        let table_replication_state = TableReplicationPhase::Skipped;
         self.state_store
             .store_table_replication_state(table_id, table_replication_state)
             .await?;
@@ -409,7 +406,7 @@ where
                     return Ok(false);
                 };
 
-                state.phase
+                state
             }
         };
 

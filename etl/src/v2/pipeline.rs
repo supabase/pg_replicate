@@ -4,7 +4,7 @@ use crate::v2::destination::base::{Destination, DestinationError};
 use crate::v2::replication::client::{PgReplicationClient, PgReplicationError};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::state::table::TableReplicationState;
+use crate::v2::state::table::TableReplicationPhase;
 use crate::v2::workers::apply::{ApplyWorker, ApplyWorkerError, ApplyWorkerHandle};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
@@ -176,7 +176,7 @@ where
             .await?;
         let states = self.state_store.load_table_replication_states().await?;
         for table_id in table_ids {
-            let state = TableReplicationState::init();
+            let state = TableReplicationPhase::Init;
             // We store the init state only if it's not already present.
             if !states.contains_key(&table_id) {
                 self.state_store

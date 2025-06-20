@@ -3,12 +3,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::state::table::TableReplicationState;
+use crate::v2::state::{
+    store::base::{StateStore, StateStoreError},
+    table::TableReplicationPhase,
+};
 
 #[derive(Debug)]
 struct Inner {
-    table_replication_states: HashMap<TableId, TableReplicationState>,
+    table_replication_states: HashMap<TableId, TableReplicationPhase>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +40,7 @@ impl StateStore for MemoryStateStore {
     async fn get_table_replication_state(
         &self,
         table_id: TableId,
-    ) -> Result<Option<TableReplicationState>, StateStoreError> {
+    ) -> Result<Option<TableReplicationPhase>, StateStoreError> {
         let inner = self.inner.read().await;
 
         Ok(inner.table_replication_states.get(&table_id).cloned())
@@ -46,7 +48,7 @@ impl StateStore for MemoryStateStore {
 
     async fn load_table_replication_states(
         &self,
-    ) -> Result<HashMap<TableId, TableReplicationState>, StateStoreError> {
+    ) -> Result<HashMap<TableId, TableReplicationPhase>, StateStoreError> {
         let inner = self.inner.read().await;
 
         Ok(inner.table_replication_states.clone())
@@ -55,7 +57,7 @@ impl StateStore for MemoryStateStore {
     async fn store_table_replication_state(
         &self,
         table_id: TableId,
-        state: TableReplicationState,
+        state: TableReplicationPhase,
     ) -> Result<(), StateStoreError> {
         let mut inner = self.inner.write().await;
         inner.table_replication_states.insert(table_id, state);

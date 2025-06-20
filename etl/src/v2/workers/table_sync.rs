@@ -17,9 +17,7 @@ use crate::v2::replication::client::PgReplicationClient;
 use crate::v2::replication::table_sync::{start_table_sync, TableSyncError, TableSyncResult};
 use crate::v2::schema::cache::SchemaCache;
 use crate::v2::state::store::base::{StateStore, StateStoreError};
-use crate::v2::state::table::{
-    TableReplicationPhase, TableReplicationPhaseType, TableReplicationState,
-};
+use crate::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use crate::v2::workers::base::{Worker, WorkerHandle, WorkerType, WorkerWaitError};
 use crate::v2::workers::pool::TableSyncWorkerPool;
 
@@ -55,7 +53,7 @@ pub enum TableSyncWorkerStateError {
 #[derive(Debug)]
 pub struct TableSyncWorkerStateInner {
     table_id: TableId,
-    table_replication_state: TableReplicationState,
+    table_replication_state: TableReplicationPhase,
     phase_change: Arc<Notify>,
 }
 
@@ -63,10 +61,10 @@ impl TableSyncWorkerStateInner {
     pub fn set_phase(&mut self, phase: TableReplicationPhase) {
         info!(
             "Table {} phase changing from {:?} to {:?}",
-            self.table_id, self.table_replication_state.phase, phase
+            self.table_id, self.table_replication_state, phase
         );
 
-        self.table_replication_state.phase = phase;
+        self.table_replication_state = phase;
         // We want to notify all waiters that there was a phase change.
         //
         // Note that this notify will not wake up waiters that will be coming in the future since
@@ -90,8 +88,7 @@ impl TableSyncWorkerStateInner {
                 self.table_id, phase
             );
 
-            let new_table_replication_state =
-                self.table_replication_state.clone().with_phase(phase);
+            let new_table_replication_state = phase;
             state_store
                 .store_table_replication_state(self.table_id(), new_table_replication_state)
                 .await?;
@@ -105,7 +102,7 @@ impl TableSyncWorkerStateInner {
     }
 
     pub fn replication_phase(&self) -> TableReplicationPhase {
-        self.table_replication_state.phase
+        self.table_replication_state
     }
 }
 
@@ -117,7 +114,7 @@ pub struct TableSyncWorkerState {
 }
 
 impl TableSyncWorkerState {
-    fn new(table_id: TableId, table_replication_state: TableReplicationState) -> Self {
+    fn new(table_id: TableId, table_replication_state: TableReplicationPhase) -> Self {
         let inner = TableSyncWorkerStateInner {
             table_id,
             table_replication_state,
@@ -141,7 +138,7 @@ impl TableSyncWorkerState {
         // that we want.
         let phase_change = {
             let inner = self.inner.read().await;
-            if inner.table_replication_state.phase.as_type() == phase_type {
+            if inner.table_replication_state.as_type() == phase_type {
                 info!(
                     "Phase type '{:?}' was already set, no need to wait",
                     phase_type
@@ -158,7 +155,7 @@ impl TableSyncWorkerState {
 
         // We read the state and return the lock to the state.
         let inner = self.inner.read().await;
-        if inner.table_replication_state.phase.as_type() == phase_type {
+        if inner.table_replication_state.as_type() == phase_type {
             info!("Phase type '{:?}' was noticed", phase_type);
             return Some(inner);
         }
@@ -418,7 +415,7 @@ where
     ) -> Result<bool, Self::Error> {
         let inner = self.table_sync_worker_state.get_inner().write().await;
         let is_skipped = matches!(
-            inner.table_replication_state.phase.as_type(),
+            inner.table_replication_state.as_type(),
             TableReplicationPhaseType::Skipped
         );
 

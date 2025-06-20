@@ -1,5 +1,5 @@
 use etl::v2::state::store::base::{StateStore, StateStoreError};
-use etl::v2::state::table::{TableReplicationPhaseType, TableReplicationState};
+use etl::v2::state::table::{TableReplicationPhase, TableReplicationPhaseType};
 use postgres::schema::{Oid, TableId};
 use std::collections::HashMap;
 use std::fmt;
@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, RwLock};
 
-type TableStateCondition = Box<dyn Fn(&TableReplicationState) -> bool + Send + Sync>;
+type TableStateCondition = Box<dyn Fn(&TableReplicationPhase) -> bool + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StateStoreMethod {
@@ -17,7 +17,7 @@ pub enum StateStoreMethod {
 }
 
 struct Inner {
-    table_replication_states: HashMap<TableId, TableReplicationState>,
+    table_replication_states: HashMap<TableId, TableReplicationPhase>,
     table_state_conditions: Vec<(TableId, TableStateCondition, Arc<Notify>)>,
     method_call_notifiers: HashMap<StateStoreMethod, Vec<Arc<Notify>>>,
 }
@@ -66,14 +66,14 @@ impl TestStateStore {
         }
     }
 
-    pub async fn get_table_replication_states(&self) -> HashMap<TableId, TableReplicationState> {
+    pub async fn get_table_replication_states(&self) -> HashMap<TableId, TableReplicationPhase> {
         let inner = self.inner.read().await;
         inner.table_replication_states.clone()
     }
 
     pub async fn notify_on_replication_state<F>(&self, table_id: Oid, condition: F) -> Arc<Notify>
     where
-        F: Fn(&TableReplicationState) -> bool + Send + Sync + 'static,
+        F: Fn(&TableReplicationPhase) -> bool + Send + Sync + 'static,
     {
         let notify = Arc::new(Notify::new());
         let mut inner = self.inner.write().await;
@@ -89,7 +89,7 @@ impl TestStateStore {
         table_id: Oid,
         phase_type: TableReplicationPhaseType,
     ) -> Arc<Notify> {
-        self.notify_on_replication_state(table_id, move |state| state.phase.as_type() == phase_type)
+        self.notify_on_replication_state(table_id, move |state| state.as_type() == phase_type)
             .await
     }
 }
@@ -98,7 +98,7 @@ impl StateStore for TestStateStore {
     async fn get_table_replication_state(
         &self,
         table_id: Oid,
-    ) -> Result<Option<TableReplicationState>, StateStoreError> {
+    ) -> Result<Option<TableReplicationPhase>, StateStoreError> {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_replication_states.get(&table_id).cloned());
 
@@ -111,7 +111,7 @@ impl StateStore for TestStateStore {
 
     async fn load_table_replication_states(
         &self,
-    ) -> Result<HashMap<TableId, TableReplicationState>, StateStoreError> {
+    ) -> Result<HashMap<TableId, TableReplicationPhase>, StateStoreError> {
         let inner = self.inner.read().await;
         let result = Ok(inner.table_replication_states.clone());
 
@@ -125,7 +125,7 @@ impl StateStore for TestStateStore {
     async fn store_table_replication_state(
         &self,
         table_id: TableId,
-        state: TableReplicationState,
+        state: TableReplicationPhase,
     ) -> Result<(), StateStoreError> {
         let mut inner = self.inner.write().await;
         inner.table_replication_states.insert(table_id, state);
@@ -207,14 +207,14 @@ where
     async fn get_table_replication_state(
         &self,
         table_id: Oid,
-    ) -> Result<Option<TableReplicationState>, StateStoreError> {
+    ) -> Result<Option<TableReplicationPhase>, StateStoreError> {
         self.trigger_fault(&self.config.load_table_replication_state)?;
         self.inner.get_table_replication_state(table_id).await
     }
 
     async fn load_table_replication_states(
         &self,
-    ) -> Result<HashMap<TableId, TableReplicationState>, StateStoreError> {
+    ) -> Result<HashMap<TableId, TableReplicationPhase>, StateStoreError> {
         self.trigger_fault(&self.config.load_table_replication_states)?;
         self.inner.load_table_replication_states().await
     }
@@ -222,7 +222,7 @@ where
     async fn store_table_replication_state(
         &self,
         table_id: TableId,
-        state: TableReplicationState,
+        state: TableReplicationPhase,
     ) -> Result<(), StateStoreError> {
         self.trigger_fault(&self.config.store_table_replication_state)?;
         self.inner
