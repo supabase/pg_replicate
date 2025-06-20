@@ -21,7 +21,7 @@ use actix_web::{
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
-use config::shared::{BatchConfig, ReplicatorConfig, SupabaseConfig, TlsConfig};
+use config::shared::{BatchConfig, ReplicatorConfig, StateStoreConfig, SupabaseConfig, TlsConfig};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
@@ -379,12 +379,15 @@ pub async fn start_pipeline(
     let (pipeline, replicator, image, source, destination) =
         read_data(&pool, tenant_id, pipeline_id, &encryption_key).await?;
 
+    let supabase_config = SupabaseConfig {
+        project: tenant_id.to_owned(),
+    };
+
     let (secrets, config) = create_configs(
         &k8s_client,
         source.config,
         destination.config,
-        pipeline,
-        tenant_id.to_string(),
+        supabase_config,
     )
     .await?;
     let prefix = create_prefix(tenant_id, replicator.id);
@@ -525,9 +528,10 @@ async fn read_data(
 async fn create_configs(
     k8s_client: &Arc<HttpK8sClient>,
     source_config: SourceConfig,
+    state_store_config: StateStoreConfig,
     destination_config: DestinationConfig,
-    pipeline: Pipeline,
-    project: String,
+    pipeline_config: PipelineConfig,
+    supabase_config: SupabaseConfig,
 ) -> Result<(Secrets, ReplicatorConfig), PipelineError> {
     let SourceConfig::Postgres {
         host,
@@ -551,14 +555,6 @@ async fn create_configs(
     };
 
     let publication = pipeline.publication_name;
-    let source_config = SourceConfig::Postgres {
-        host,
-        port,
-        name,
-        username,
-        slot_name,
-        publication,
-    };
 
     let destination_config = DestinationConfig::BigQuery {
         project_id,
@@ -575,11 +571,10 @@ async fn create_configs(
 
     let trusted_root_certs_cm = k8s_client
         .get_config_map(TRUSTED_ROOT_CERT_CONFIG_MAP_NAME)
-        .await?;
-    let data = trusted_root_certs_cm
+        .await?
         .data
         .ok_or(PipelineError::TrustedRootCertsConfigMissing)?;
-    let trusted_root_certs = data
+    let trusted_root_certs = trusted_root_certs_cm
         .get("trusted_root_certs")
         .ok_or(PipelineError::TrustedRootCertsConfigMissing)?;
 

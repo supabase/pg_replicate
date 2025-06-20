@@ -8,7 +8,7 @@ use super::{
     destinations::{
         create_destination_txn, update_destination_txn, DestinationConfig, DestinationsDbError,
     },
-    pipelines::{create_pipeline_txn, update_pipeline_txn, PipelineConfig},
+    pipelines::{create_pipeline_txn, update_pipeline_txn},
 };
 
 #[derive(Debug, Error)]

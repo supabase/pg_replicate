@@ -4,6 +4,7 @@ use actix_web::{
     web::{Data, Json},
     HttpResponse, Responder, ResponseError,
 };
+use config::shared::SourceConfig;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
@@ -11,7 +12,7 @@ use tracing_actix_web::RootSpan;
 use utoipa::ToSchema;
 
 use crate::{
-    db::{self, sources::SourceConfig, tenants_sources::TenantSourceDbError},
+    db::{self, tenants_sources::TenantSourceDbError},
     encryption::EncryptionKey,
 };
 
@@ -52,7 +53,7 @@ impl ResponseError for TenantSourceError {
             TenantSourceError::TenantSourceDb(e) => match e {
                 TenantSourceDbError::Sqlx(_)
                 | TenantSourceDbError::Sources(_)
-                | TenantSourceDbError::Encryption(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                | TenantSourceDbError::DbSerializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             },
         }
     }

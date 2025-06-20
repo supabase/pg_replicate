@@ -4,6 +4,7 @@ use aws_lc_rs::{
 };
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use std::string;
 use thiserror::Error;
 
@@ -33,7 +34,7 @@ pub struct EncryptionKey {
     pub key: RandomizedNonceKey,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EncryptedValue {
     pub id: u32,
     pub nonce: String,

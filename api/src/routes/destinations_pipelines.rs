@@ -14,7 +14,6 @@ use crate::{
         self,
         destinations::{destination_exists, DestinationConfig},
         destinations_pipelines::DestinationPipelineDbError,
-        pipelines::PipelineConfig,
         sources::source_exists,
     },
     encryption::EncryptionKey,

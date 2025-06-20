@@ -32,6 +32,7 @@ kube = { workspace = true, features = [
 pg_escape = { workspace = true }
 rand = { workspace = true, features = ["std"] }
 reqwest = { workspace = true, features = ["json"] }
+secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
 sqlx = { workspace = true, features = [

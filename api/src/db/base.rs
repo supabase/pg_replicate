@@ -15,16 +15,24 @@ pub enum ToMemoryError {
     Decryption(#[from] DecryptionError),
 }
 
-pub trait ToDb {
-    type Type;
-
-    fn to_db_type(self, encryption_key: &EncryptionKey) -> Result<Self::Type, ToDbError>;
+pub trait ToDb<T> {
+    fn to_db_type(self, encryption_key: &EncryptionKey) -> Result<T, ToDbError>;
 }
 
-pub trait ToMemory {
-    type Type;
+impl<T> ToDb<T> for T {
+    fn to_db_type(self, _: &EncryptionKey) -> Result<T, ToDbError> {
+        Ok(self)
+    }
+}
 
-    fn to_memory_type(self, encryption_key: &EncryptionKey) -> Result<Self::Type, ToMemoryError>;
+pub trait ToMemory<T> {
+    fn to_memory_type(self, encryption_key: &EncryptionKey) -> Result<T, ToMemoryError>;
+}
+
+impl<T> ToMemory<T> for T {
+    fn to_memory_type(self, _: &EncryptionKey) -> Result<T, ToMemoryError> {
+        Ok(self)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -50,7 +58,7 @@ pub fn serialize_to_db_as_json<T, S>(
     encryption_key: &EncryptionKey,
 ) -> Result<serde_json::Value, DbSerializationError>
 where
-    T: ToDb<Type = S>,
+    T: ToDb<S>,
     S: Serialize,
 {
     let value = value.to_db_type(encryption_key)?;
@@ -64,7 +72,7 @@ pub fn deserialize_from_db_json_str<T, S>(
     encryption_key: &EncryptionKey,
 ) -> Result<S, DbDeserializationError>
 where
-    T: ToMemory<Type = S>,
+    T: ToMemory<S>,
     T: DeserializeOwned,
 {
     let deserialized_value: T = serde_json::from_str(value)?;
@@ -78,7 +86,7 @@ pub fn deserialize_from_db_json_value<T, S>(
     encryption_key: &EncryptionKey,
 ) -> Result<S, DbDeserializationError>
 where
-    T: ToMemory<Type = S>,
+    T: ToMemory<S>,
     T: DeserializeOwned,
 {
     let deserialized_value: T = serde_json::from_value(value)?;

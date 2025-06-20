@@ -1,4 +1,5 @@
-use config::shared::SourceConfig;
+use postgres::sqlx::config::PgConnectionConfig;
+use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -9,9 +10,50 @@ use crate::db::base::{
     deserialize_from_db_json_value, serialize_to_db_as_json, DbDeserializationError,
     DbSerializationError, ToDb, ToDbError, ToMemory, ToMemoryError,
 };
-use crate::encryption::{EncryptedValue, EncryptionKey};
+use crate::encryption::{decrypt_text, encrypt_text, EncryptedValue, EncryptionKey};
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct SourceConfig {
+    host: String,
+    port: u16,
+    name: String,
+    username: String,
+    password: Option<String>,
+}
+
+impl SourceConfig {
+    pub fn into_connection_config(self) -> PgConnectionConfig {
+        PgConnectionConfig {
+            host: self.host,
+            port: self.port,
+            name: self.name,
+            username: self.username,
+            password: self.password.map(Secret::new),
+            // By default, we enable ssl.
+            require_ssl: true,
+        }
+    }
+}
+
+impl ToDb<SourceConfigInDb> for SourceConfig {
+    fn to_db_type(self, encryption_key: &EncryptionKey) -> Result<SourceConfigInDb, ToDbError> {
+        let mut encrypted_password = None;
+        if let Some(password) = self.password {
+            encrypted_password = Some(encrypt_text(password, encryption_key)?);
+        }
+
+        Ok(SourceConfigInDb {
+            host: self.host,
+            port: self.port,
+            name: self.name,
+            username: self.username,
+            password: encrypted_password,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct SourceConfigInDb {
     host: String,
@@ -21,19 +63,20 @@ pub struct SourceConfigInDb {
     password: Option<EncryptedValue>,
 }
 
-impl ToDb for SourceConfig {
-    type Type = SourceConfigInDb;
+impl ToMemory<SourceConfig> for SourceConfigInDb {
+    fn to_memory_type(self, encryption_key: &EncryptionKey) -> Result<SourceConfig, ToMemoryError> {
+        let mut decrypted_password = None;
+        if let Some(password) = self.password {
+            decrypted_password = Some(decrypt_text(password, encryption_key)?);
+        }
 
-    fn to_db_type(self, encryption_key: &EncryptionKey) -> Result<Self::Type, ToDbError> {
-        todo!()
-    }
-}
-
-impl ToMemory for SourceConfigInDb {
-    type Type = SourceConfig;
-
-    fn to_memory_type(self, encryption_key: &EncryptionKey) -> Result<Self::Type, ToMemoryError> {
-        todo!()
+        Ok(SourceConfig {
+            host: self.host,
+            port: self.port,
+            name: self.name,
+            username: self.username,
+            password: decrypted_password,
+        })
     }
 }
 
@@ -64,7 +107,7 @@ pub async fn create_source(
     config: SourceConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<i64, SourcesDbError> {
-    let config = serialize_to_db_as_json(config, encryption_key)?;
+    let config = serialize_to_db_as_json::<SourceConfig, SourceConfigInDb>(config, encryption_key)?;
 
     let mut txn = pool.begin().await?;
     let res = create_source_txn(&mut txn, tenant_id, name, config).await;
@@ -77,7 +120,7 @@ pub async fn create_source_txn(
     txn: &mut Transaction<'_, Postgres>,
     tenant_id: &str,
     name: &str,
-    db_config: Value,
+    config: Value,
 ) -> Result<i64, SourcesDbError> {
     let record = sqlx::query!(
         r#"
@@ -87,7 +130,7 @@ pub async fn create_source_txn(
         "#,
         tenant_id,
         name,
-        db_config
+        config
     )
     .fetch_one(&mut **txn)
     .await?;
@@ -139,7 +182,7 @@ pub async fn update_source(
     config: SourceConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<Option<i64>, SourcesDbError> {
-    let config = serialize_to_db_as_json(config, encryption_key)?;
+    let config = serialize_to_db_as_json::<SourceConfig, SourceConfigInDb>(config, encryption_key)?;
 
     let record = sqlx::query!(
         r#"
@@ -235,9 +278,9 @@ pub async fn source_exists(
 
 #[cfg(test)]
 mod tests {
+    use crate::db::sources::{SourceConfig, SourceConfigInDb};
     use crate::encryption::EncryptionKey;
     use aws_lc_rs::aead::RandomizedNonceKey;
-    use config::shared::{SourceConfig, TlsConfig};
     use serde_json;
 
     #[test]
@@ -248,10 +291,6 @@ mod tests {
             "name": "postgres",
             "username": "postgres",
             "password": "postgres",
-            "tls": {
-                "trusted_root_certs": "dummy-cert",
-                "enabled": true
-            }
         }"#;
         let expected = SourceConfig {
             host: "localhost".to_string(),
@@ -259,10 +298,6 @@ mod tests {
             name: "postgres".to_string(),
             username: "postgres".to_string(),
             password: Some("postgres".to_string()),
-            tls: TlsConfig {
-                trusted_root_certs: "dummy-cert".to_string(),
-                enabled: true,
-            },
         };
 
         let deserialized = serde_json::from_str::<SourceConfig>(json);
@@ -287,19 +322,19 @@ mod tests {
             name: "postgres".to_string(),
             username: "postgres".to_string(),
             password: Some("supersecret".to_string()),
-            tls: TlsConfig {
-                trusted_root_certs: "dummy-cert".to_string(),
-                enabled: true,
-            },
         };
 
         // Serialize to db (should encrypt password)
-        let config_in_db = serialize_to_db_as_json(config.clone(), &encryption_key).unwrap();
+        let config_in_db = serialize_to_db_as_json::<SourceConfig, SourceConfigInDb>(
+            config.clone(),
+            &encryption_key,
+        )
+        .unwrap();
         // Deserialize from db (should decrypt password)
-        let deserialized_config = deserialize_from_db_json_value::<
-            super::SourceConfigInDb,
-            SourceConfig,
-        >(config_in_db, &encryption_key)
+        let deserialized_config = deserialize_from_db_json_value::<SourceConfigInDb, SourceConfig>(
+            config_in_db,
+            &encryption_key,
+        )
         .unwrap();
         assert_eq!(config, deserialized_config);
 
@@ -308,11 +343,15 @@ mod tests {
             password: None,
             ..config.clone()
         };
-        let config_in_db = serialize_to_db_as_json(config.clone(), &encryption_key).unwrap();
-        let deserialized_config = deserialize_from_db_json_value::<
-            super::SourceConfigInDb,
-            SourceConfig,
-        >(config_in_db, &encryption_key)
+        let config_in_db = serialize_to_db_as_json::<SourceConfig, SourceConfigInDb>(
+            config.clone(),
+            &encryption_key,
+        )
+        .unwrap();
+        let deserialized_config = deserialize_from_db_json_value::<SourceConfigInDb, SourceConfig>(
+            config_in_db,
+            &encryption_key,
+        )
         .unwrap();
         assert_eq!(config, deserialized_config);
     }

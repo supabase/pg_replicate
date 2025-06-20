@@ -5,20 +5,19 @@ use actix_web::{
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
+use config::shared::SourceConfig;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use super::{ErrorMessage, TenantIdError};
 use crate::{
-    db::{
-        self,
-        sources::{SourceConfig, SourcesDbError},
-    },
+    db::{self, sources::SourcesDbError},
     encryption::EncryptionKey,
     routes::extract_tenant_id,
 };
+
+use super::{ErrorMessage, TenantIdError};
 
 pub mod publications;
 pub mod tables;

@@ -1,19 +1,14 @@
+use config::shared::{BatchConfig, RetryConfig};
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use super::replicators::create_replicator_txn;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineConfig {
+    pub publication_name: String,
     pub config: BatchConfig,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct BatchConfig {
-    /// maximum batch size in number of events
-    pub max_size: usize,
-
-    /// maximum duration, in seconds, to wait for a batch to fill
-    pub max_fill_secs: u64,
+    pub apply_worker_init_retry: RetryConfig,
 }
 
 pub struct Pipeline {
@@ -25,7 +20,7 @@ pub struct Pipeline {
     pub destination_name: String,
     pub replicator_id: i64,
     pub publication_name: String,
-    pub config: serde_json::Value,
+    pub config: PipelineConfig,
 }
 
 pub async fn create_pipeline(
@@ -38,6 +33,7 @@ pub async fn create_pipeline(
     config: &PipelineConfig,
 ) -> Result<i64, sqlx::Error> {
     let config = serde_json::to_value(config).expect("failed to serialize config");
+
     let mut txn = pool.begin().await?;
     let res = create_pipeline_txn(
         &mut txn,
@@ -50,6 +46,7 @@ pub async fn create_pipeline(
     )
     .await;
     txn.commit().await?;
+
     res
 }
 

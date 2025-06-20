@@ -32,6 +32,7 @@ impl PgConnectionConfig {
     /// that must be performed before connecting to a specific database, like database
     /// creation.
     pub fn without_db(&self) -> PgConnectOptions {
+        // TODO: explore the possibility to support for certificates.
         let ssl_mode = if self.require_ssl {
             PgSslMode::Require
         } else {

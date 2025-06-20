@@ -7,7 +7,7 @@ use std::fmt;
 /// Configuration for connecting to a Postgres source database.
 ///
 /// This struct holds all necessary connection parameters and settings.
-#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SourceConfig {
     /// Hostname or IP address of the Postgres server.
@@ -24,22 +24,6 @@ pub struct SourceConfig {
     pub tls: TlsConfig,
 }
 
-impl SourceConfig {
-    /// Converts the [`SourceConfig`] into a [`PgConnectionConfig`] to be used with `sqlx`.
-    pub fn into_connection_config(self) -> PgConnectionConfig {
-        PgConnectionConfig {
-            host: self.host,
-            port: self.port,
-            name: self.name,
-            username: self.username,
-            password: self.password.map(Secret::new),
-            // TODO: explore in the future, how we can embed certificates
-            //  in the connection config.
-            require_ssl: self.tls.enabled,
-        }
-    }
-}
-
 impl fmt::Debug for SourceConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SourceConfig")
@@ -54,7 +38,7 @@ impl fmt::Debug for SourceConfig {
 }
 
 /// TLS settings for secure Postgres connections.
-#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct TlsConfig {
     /// PEM-encoded trusted root certificates. Sensitive and redacted in debug output.

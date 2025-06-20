@@ -8,6 +8,7 @@ mod supabase;
 
 pub use base::*;
 pub use destination::*;
+pub use pipeline::*;
 pub use replicator::*;
 pub use source::*;
 pub use state_store::*;
