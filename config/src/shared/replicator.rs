@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// The [`ReplicatorConfig`] is typically deserialized from a configuration file and passed to the
 /// replicator at startup.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ReplicatorConfig {
     /// Configuration for the source Postgres instance.

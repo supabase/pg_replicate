@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::encryption::EncryptionKey;
 
 use super::{
-    sources::{create_source_txn, SourceConfig, SourcesDbError},
+    sources::{create_source_txn, SourcesDbError},
     tenants::create_tenant_txn,
 };
 

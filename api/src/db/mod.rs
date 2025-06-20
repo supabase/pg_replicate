@@ -1,3 +1,4 @@
+mod base;
 pub mod destinations;
 pub mod destinations_pipelines;
 pub mod images;

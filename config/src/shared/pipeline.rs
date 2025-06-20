@@ -3,7 +3,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Configuration for a pipeline's batching and worker retry behavior.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PipelineConfig {
     /// The unique identifier for this pipeline.
@@ -20,7 +20,7 @@ pub struct PipelineConfig {
 }
 
 /// Batch processing configuration for pipelines.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct BatchConfig {
     /// Maximum number of items in a batch for table copy and event streaming.
@@ -30,7 +30,7 @@ pub struct BatchConfig {
 }
 
 /// Retry policy configuration for operations such as worker initialization.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RetryConfig {
     /// Maximum number of retry attempts before giving up.
     pub max_attempts: u32,
