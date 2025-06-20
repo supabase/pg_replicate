@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::time::Duration;
 
 /// Configuration for a pipeline's batching and worker retry behavior.
 #[derive(Clone, Debug, Serialize, Deserialize)]

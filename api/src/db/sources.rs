@@ -328,13 +328,11 @@ mod tests {
             password: Some("supersecret".to_string()),
         };
 
-        // Serialize to db (should encrypt password)
         let config_in_db = encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(
             config.clone(),
             &encryption_key,
         )
         .unwrap();
-        // Deserialize from db (should decrypt password)
         let deserialized_config = decrypt_and_deserialize_from_value::<
             EncryptedSourceConfig,
             SourceConfig,
@@ -342,7 +340,6 @@ mod tests {
         .unwrap();
         assert_eq!(config, deserialized_config);
 
-        // None password case
         let config = SourceConfig {
             password: None,
             ..config.clone()

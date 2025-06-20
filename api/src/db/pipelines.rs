@@ -4,8 +4,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use thiserror::Error;
 
 use crate::db::base::{
-    deserialize_from_value, serialize, DbDeserializationError,
-    DbSerializationError,
+    deserialize_from_value, serialize, DbDeserializationError, DbSerializationError,
 };
 use crate::db::replicators::create_replicator_txn;
 
@@ -285,4 +284,90 @@ pub fn is_duplicate_pipeline_error(err: &sqlx::Error) -> bool {
     }
 }
 
-// TODO: write serde tests.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn batch_config_json_roundtrip() {
+        let json = r#"{
+            "max_size": 1000,
+            "max_fill_ms": 5000
+        }"#;
+        let expected = BatchConfig {
+            max_size: 1000,
+            max_fill_ms: 5000,
+        };
+
+        let deserialized = serde_json::from_str::<BatchConfig>(json);
+        assert!(deserialized.is_ok());
+        assert_eq!(expected, deserialized.as_ref().unwrap().to_owned());
+
+        let serialized = serde_json::to_string_pretty(&expected);
+        assert!(serialized.is_ok());
+        assert_eq!(json, serialized.unwrap());
+    }
+
+    #[test]
+    fn retry_config_json_roundtrip() {
+        let json = r#"{
+            "max_attempts": 3,
+            "initial_delay_ms": 100,
+            "max_delay_ms": 1000,
+            "backoff_factor": 2.0
+        }"#;
+        let expected = RetryConfig {
+            max_attempts: 3,
+            initial_delay_ms: 100,
+            max_delay_ms: 1000,
+            backoff_factor: 2.0,
+        };
+
+        let deserialized = serde_json::from_str::<RetryConfig>(json);
+        assert!(deserialized.is_ok());
+        assert_eq!(expected, deserialized.as_ref().unwrap().to_owned());
+
+        let serialized = serde_json::to_string_pretty(&expected);
+        assert!(serialized.is_ok());
+        assert_eq!(json, serialized.unwrap());
+    }
+
+    #[test]
+    fn pipeline_config_json_roundtrip() {
+        let json = r#"{
+            "publication_name": "pub1",
+            "config": {
+                "max_size": 1000,
+                "max_fill_ms": 5000
+            },
+            "apply_worker_init_retry": {
+                "max_attempts": 3,
+                "initial_delay_ms": 100,
+                "max_delay_ms": 1000,
+                "backoff_factor": 2.0
+            }
+        }"#;
+        let expected = PipelineConfig {
+            publication_name: "pub1".to_string(),
+            config: BatchConfig {
+                max_size: 1000,
+                max_fill_ms: 5000,
+            },
+            apply_worker_init_retry: RetryConfig {
+                max_attempts: 3,
+                initial_delay_ms: 100,
+                max_delay_ms: 1000,
+                backoff_factor: 2.0,
+            },
+        };
+
+        let deserialized = serde_json::from_str::<PipelineConfig>(json);
+        assert!(deserialized.is_ok());
+        assert_eq!(expected, deserialized.as_ref().unwrap().to_owned());
+
+        let serialized = serde_json::to_string_pretty(&expected);
+        assert!(serialized.is_ok());
+        assert_eq!(json, serialized.unwrap());
+    }
+}

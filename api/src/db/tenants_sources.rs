@@ -2,13 +2,9 @@ use sqlx::PgPool;
 use thiserror::Error;
 
 use crate::db::base::{encrypt_and_serialize, DbSerializationError};
-use crate::db::sources::SourceConfig;
+use crate::db::sources::{create_source_txn, SourceConfig, SourcesDbError};
+use crate::db::tenants::create_tenant_txn;
 use crate::encryption::EncryptionKey;
-
-use super::{
-    sources::{create_source_txn, SourcesDbError},
-    tenants::create_tenant_txn,
-};
 
 #[derive(Debug, Error)]
 pub enum TenantSourceDbError {

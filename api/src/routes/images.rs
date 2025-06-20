@@ -11,8 +11,7 @@ use thiserror::Error;
 use utoipa::ToSchema;
 
 use crate::db;
-
-use super::ErrorMessage;
+use crate::routes::ErrorMessage;
 
 #[derive(Debug, Error)]
 enum ImageError {

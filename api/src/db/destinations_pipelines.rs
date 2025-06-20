@@ -1,10 +1,16 @@
+use config::shared::DestinationConfig;
 use sqlx::PgPool;
 use thiserror::Error;
-use config::shared::DestinationConfig;
 
-use crate::db::base::{encrypt_and_serialize, serialize, DbDeserializationError, DbSerializationError};
-use crate::db::destinations::{create_destination_txn, update_destination_txn, DestinationsDbError};
-use crate::db::pipelines::{create_pipeline_txn, update_pipeline_txn, PipelineConfig, PipelinesDbError};
+use crate::db::base::{
+    encrypt_and_serialize, serialize, DbDeserializationError, DbSerializationError,
+};
+use crate::db::destinations::{
+    create_destination_txn, update_destination_txn, DestinationsDbError,
+};
+use crate::db::pipelines::{
+    create_pipeline_txn, update_pipeline_txn, PipelineConfig, PipelinesDbError,
+};
 use crate::encryption::EncryptionKey;
 
 #[derive(Debug, Error)]
@@ -17,7 +23,7 @@ pub enum DestinationPipelineDbError {
 
     #[error("The pipeline with id {0} was not found")]
     PipelineNotFound(i64),
-    
+
     #[error("Error while interacting with a pipeline: {0}")]
     PipelinesDb(#[from] PipelinesDbError),
 
@@ -45,7 +51,7 @@ pub async fn create_destination_and_pipeline(
 ) -> Result<(i64, i64), DestinationPipelineDbError> {
     let destination_config = encrypt_and_serialize(destination_config, encryption_key)?;
     let pipeline_config = serialize(pipeline_config)?;
-    
+
     let mut txn = pool.begin().await?;
     let destination_id =
         create_destination_txn(&mut txn, tenant_id, destination_name, destination_config).await?;
@@ -60,7 +66,7 @@ pub async fn create_destination_and_pipeline(
     )
     .await?;
     txn.commit().await?;
-    
+
     Ok((destination_id, pipeline_id))
 }
 
@@ -79,7 +85,7 @@ pub async fn update_destination_and_pipeline(
 ) -> Result<(), DestinationPipelineDbError> {
     let destination_config = encrypt_and_serialize(destination_config, encryption_key)?;
     let pipeline_config = serialize(pipeline_config)?;
-    
+
     let mut txn = pool.begin().await?;
     let destination_id_res = update_destination_txn(
         &mut txn,

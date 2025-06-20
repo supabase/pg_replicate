@@ -1,4 +1,5 @@
 use config::shared::DestinationConfig;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::fmt::Debug;
 use thiserror::Error;
@@ -36,7 +37,7 @@ impl Encryptable<EncryptedDestinationConfig> for DestinationConfig {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EncryptedDestinationConfig {
     Memory,
@@ -354,13 +355,11 @@ mod tests {
             max_staleness_mins: Some(99),
         };
 
-        // Serialize to db (should encrypt service_account_key)
         let config_in_db = encrypt_and_serialize::<DestinationConfig, EncryptedDestinationConfig>(
             config.clone(),
             &encryption_key,
         )
         .unwrap();
-        // Deserialize from db (should decrypt service_account_key)
         let deserialized_config = decrypt_and_deserialize_from_value::<
             EncryptedDestinationConfig,
             DestinationConfig,
@@ -368,7 +367,6 @@ mod tests {
         .unwrap();
         assert_eq!(config, deserialized_config);
 
-        // Memory variant (no encryption)
         let config = DestinationConfig::Memory;
         let config_in_db = encrypt_and_serialize::<DestinationConfig, EncryptedDestinationConfig>(
             config.clone(),

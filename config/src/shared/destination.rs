@@ -5,7 +5,7 @@ use std::fmt;
 ///
 /// This enum is used to specify the destination type and its configuration
 /// for the replicator. Variants correspond to different supported destinations.
-#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DestinationConfig {
     /// In-memory destination for ephemeral or test data.

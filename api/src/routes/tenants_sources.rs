@@ -4,19 +4,17 @@ use actix_web::{
     web::{Data, Json},
     HttpResponse, Responder, ResponseError,
 };
-use config::shared::SourceConfig;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 use tracing_actix_web::RootSpan;
 use utoipa::ToSchema;
 
-use crate::{
-    db::{self, tenants_sources::TenantSourceDbError},
-    encryption::EncryptionKey,
-};
-
-use super::ErrorMessage;
+use crate::db;
+use crate::db::sources::SourceConfig;
+use crate::db::tenants_sources::TenantSourceDbError;
+use crate::encryption::EncryptionKey;
+use crate::routes::ErrorMessage;
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateTenantSourceRequest {
