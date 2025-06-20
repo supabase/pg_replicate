@@ -28,9 +28,9 @@ pub async fn start_replicator() -> anyhow::Result<()> {
 
     // We set up the certificates and SSL mode.
     let mut trusted_root_certs = vec![];
-    let ssl_mode = if replicator_config.tls.enabled {
+    let ssl_mode = if replicator_config.source.tls.enabled {
         let mut root_certs_reader =
-            BufReader::new(replicator_config.tls.trusted_root_certs.as_bytes());
+            BufReader::new(replicator_config.source.tls.trusted_root_certs.as_bytes());
         for cert in rustls_pemfile::certs(&mut root_certs_reader) {
             let cert = cert?;
             trusted_root_certs.push(cert);
@@ -47,11 +47,12 @@ pub async fn start_replicator() -> anyhow::Result<()> {
 
     // We create the identity of this pipeline.
     let identity = PipelineIdentity::new(
-        replicator_config.pipeline_id,
-        &replicator_config.source.publication,
+        replicator_config.pipeline.id,
+        &replicator_config.pipeline.publication_name,
     );
 
     // We prepare the configuration of the pipeline.
+    // TODO: improve v2 pipeline config to make conversions nicer.
     let pipeline_config = PipelineConfig {
         pg_connection: PgConnectionConfig {
             host: replicator_config.source.host,
@@ -62,11 +63,31 @@ pub async fn start_replicator() -> anyhow::Result<()> {
             ssl_mode,
         },
         batch: BatchConfig {
-            max_size: replicator_config.batch.max_size,
-            max_fill: Duration::from_secs(replicator_config.batch.max_fill_secs),
+            max_size: replicator_config.pipeline.batch.max_size,
+            max_fill: Duration::from_millis(replicator_config.pipeline.batch.max_fill_ms),
         },
-        // TODO: add support for retry config.
-        apply_worker_initialization_retry: RetryConfig::default(),
+        apply_worker_initialization_retry: RetryConfig {
+            max_attempts: replicator_config
+                .pipeline
+                .apply_worker_init_retry
+                .max_attempts,
+            initial_delay: Duration::from_millis(
+                replicator_config
+                    .pipeline
+                    .apply_worker_init_retry
+                    .initial_delay_ms,
+            ),
+            max_delay: Duration::from_millis(
+                replicator_config
+                    .pipeline
+                    .apply_worker_init_retry
+                    .max_delay_ms,
+            ),
+            backoff_factor: replicator_config
+                .pipeline
+                .apply_worker_init_retry
+                .backoff_factor,
+        },
     };
 
     let pipeline = Pipeline::new(
