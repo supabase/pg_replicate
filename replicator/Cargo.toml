@@ -4,17 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+config = { workspace = true }
 etl = { workspace = true, features = ["bigquery"] }
 postgres = { workspace = true, features = ["tokio"] }
 telemetry = { workspace = true }
 
 anyhow = { workspace = true, features = ["std"] }
-config = { workspace = true, features = ["yaml"] }
-rustls = { workspace = true, features = ["aws-lc-rs", "logging"] }
-secrecy = { workspace = true, features = ["serde"] }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }
 rustls-pemfile = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }
 tracing = { workspace = true, default-features = true }

@@ -11,6 +11,7 @@ path = "src/main.rs"
 name = "api"
 
 [dependencies]
+config = { workspace = true }
 postgres = { workspace = true, features = ["sqlx"] }
 telemetry = { workspace = true }
 
@@ -20,7 +21,6 @@ anyhow = { workspace = true, features = ["std"] }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true, features = ["alloc", "aws-lc-sys"] }
 base64 = { workspace = true, features = ["std"] }
-config = { workspace = true, features = ["yaml"] }
 constant_time_eq = { workspace = true }
 k8s-openapi = { workspace = true, features = ["latest"] }
 kube = { workspace = true, features = [
@@ -32,6 +32,7 @@ kube = { workspace = true, features = [
 pg_escape = { workspace = true }
 rand = { workspace = true, features = ["std"] }
 reqwest = { workspace = true, features = ["json"] }
+secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["std"] }
 sqlx = { workspace = true, features = [

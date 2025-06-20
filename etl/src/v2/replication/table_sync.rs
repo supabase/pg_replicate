@@ -18,6 +18,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
+use tracing::info;
 
 #[derive(Debug, Error)]
 pub enum TableSyncError {
@@ -133,6 +134,9 @@ where
 
             // We create the slot with a transaction, since we need to have a consistent snapshot of the database
             // before copying the schema and tables.
+            //
+            // If a slot already exists at this point, we could delete it and try to recover, but it means
+            // that the state was somehow reset without the slot being deleted, and we want to surface this.
             let (transaction, slot) = replication_client
                 .create_slot_with_transaction(&slot_name)
                 .await?;
@@ -164,11 +168,8 @@ where
                 .await?;
             let table_copy_stream =
                 TableCopyStream::wrap(table_copy_stream, &table_schema.column_schemas);
-            let table_copy_stream = BatchStream::wrap(
-                table_copy_stream,
-                config.batch_config.clone(),
-                shutdown_rx.clone(),
-            );
+            let table_copy_stream =
+                BatchStream::wrap(table_copy_stream, config.batch.clone(), shutdown_rx.clone());
             pin!(table_copy_stream);
 
             // We start consuming the table stream. If any error occurs, we will bail the entire copy since
@@ -183,6 +184,7 @@ where
                         // If we received a shutdown in the middle of a table copy, we bail knowing
                         // that the system can automatically recover if a table copy has failed in
                         // the middle of processing.
+                        info!("Shutting down table sync worker for table {} during table copy with origin state {:?}", table_id, replication_origin_state);
                         return Ok(TableSyncResult::SyncStopped);
                     }
                 }
@@ -226,6 +228,7 @@ where
     // If we are told to shut down while waiting for a phase change, we will signal this to
     // the caller.
     if result.should_shutdown() {
+        info!("Shutting down table sync worker for table {} while waiting for catchup with origin state {:?}", table_id, replication_origin_state);
         return Ok(TableSyncResult::SyncStopped);
     }
 

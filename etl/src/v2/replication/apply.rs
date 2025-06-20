@@ -27,7 +27,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::pin;
 use tokio_postgres::types::PgLsn;
-use tracing::error;
+use tracing::{error, info};
 
 /// The amount of milliseconds that pass between one refresh and the other of the system, in case no
 /// events or shutdown signal are received.
@@ -244,7 +244,7 @@ where
     let logical_replication_stream = EventsStream::wrap(logical_replication_stream);
     let logical_replication_stream = BatchStream::wrap(
         logical_replication_stream,
-        config.batch_config.clone(),
+        config.batch.clone(),
         shutdown_rx.clone(),
     );
     pin!(logical_replication_stream);
@@ -255,6 +255,7 @@ where
 
             // Shutdown signal received, exit loop.
             _ = shutdown_rx.changed() => {
+                info!("Shutting down apply worker while waiting for incoming events");
                 return Ok(ApplyLoopResult::ApplyStopped);
             }
 
@@ -295,6 +296,7 @@ where
                         // handler also in the `select!`, however this code path could react faster
                         // in case we have a shutdown signal sent while we are running the blocking
                         // loop in the stream.
+                        info!("Shutting down apply worker before processing batch");
                         return Ok(ApplyLoopResult::ApplyStopped);
                     }
                 }

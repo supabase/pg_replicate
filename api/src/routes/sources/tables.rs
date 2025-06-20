@@ -94,7 +94,7 @@ pub async fn read_table_names(
         .map(|s| s.config)
         .ok_or(TableError::SourceNotFound(source_id))?;
 
-    let options = config.connect_options();
+    let options = config.into_connection_config().with_db();
     let tables = db::tables::get_tables(&options).await?;
     let response = GetTablesReponse { tables };
     Ok(Json(response))

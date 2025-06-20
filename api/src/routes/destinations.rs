@@ -5,21 +5,16 @@ use actix_web::{
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
+use config::shared::DestinationConfig;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use crate::{
-    db::{
-        self,
-        destinations::{DestinationConfig, DestinationsDbError},
-    },
-    encryption::EncryptionKey,
-    routes::extract_tenant_id,
-};
-
-use super::{ErrorMessage, TenantIdError};
+use crate::db;
+use crate::db::destinations::DestinationsDbError;
+use crate::encryption::EncryptionKey;
+use crate::routes::{extract_tenant_id, ErrorMessage, TenantIdError};
 
 #[derive(Debug, Error)]
 pub enum DestinationError {

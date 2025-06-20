@@ -1,6 +1,7 @@
 use postgres::schema::{Oid, TableSchema};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::info;
 
 use crate::conversions::table_row::TableRow;
 use crate::v2::conversions::event::Event;
@@ -41,29 +42,41 @@ impl Default for MemoryDestination {
 impl Destination for MemoryDestination {
     async fn write_table_schema(&self, schema: TableSchema) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
+        info!("Writing table schema:");
+        info!("{:?}", schema);
         inner.table_schemas.push(schema);
-
         Ok(())
     }
 
     async fn load_table_schemas(&self) -> Result<Vec<TableSchema>, DestinationError> {
         let inner = self.inner.read().await;
         let schemas = inner.table_schemas.to_vec();
-
+        info!("Loaded {} table schemas:", schemas.len());
+        info!("{:?}", schemas);
         Ok(schemas)
     }
 
     async fn write_table_rows(&self, id: Oid, rows: Vec<TableRow>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
+        info!(
+            "Writing batch of {} table rows for table id {:?}:",
+            rows.len(),
+            id
+        );
+        for row in &rows {
+            info!("  {:?}", row);
+        }
         inner.table_rows.push((id, rows));
-
         Ok(())
     }
 
     async fn write_events(&self, events: Vec<Event>) -> Result<(), DestinationError> {
         let mut inner = self.inner.write().await;
+        info!("Writing batch of {} events:", events.len());
+        for event in &events {
+            info!("  {:?}", event);
+        }
         inner.events.extend(events);
-
         Ok(())
     }
 }

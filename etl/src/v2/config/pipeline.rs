@@ -4,7 +4,12 @@ use postgres::tokio::config::PgConnectionConfig;
 
 #[derive(Debug, Clone)]
 pub struct PipelineConfig {
-    pub pg_connection_config: PgConnectionConfig,
-    pub batch_config: BatchConfig,
-    pub retry_config: RetryConfig,
+    /// The connection configuration for the Postgres instance to which the pipeline connects for
+    /// replication.
+    pub pg_connection: PgConnectionConfig,
+    /// The batching configuration for the streams used by the workers for table copies and events
+    /// streaming.
+    pub batch: BatchConfig,
+    /// The retry configuration for apply worker initialization.
+    pub apply_worker_initialization_retry: RetryConfig,
 }

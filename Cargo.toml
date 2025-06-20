@@ -1,9 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["api", "etl", "postgres", "replicator", "telemetry"]
+members = ["api", "config", "etl", "postgres", "replicator", "telemetry"]
 
 [workspace.dependencies]
 api = { path = "api" }
+config = { path = "config" }
 etl = { path = "etl" }
 postgres = { path = "postgres" }
 replicator = { path = "replicator" }
@@ -20,7 +21,7 @@ bytes = { version = "1.0" }
 byteorder = { version = "1.5.0", default-features = false }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4.5", default-features = false }
-config = { version = "0.14", default-features = false }
+rust-cli-config = { package = "config", version = "0.14", default-features = false }
 constant_time_eq = { version = "0.3.1" }
 duckdb = { version = "1.0", default-features = false, features = ["bundled"] }
 futures = { version = "0.3.31", default-features = false }

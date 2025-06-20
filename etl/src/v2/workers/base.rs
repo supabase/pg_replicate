@@ -1,31 +1,59 @@
 use crate::v2::workers::apply::ApplyWorkerError;
 use crate::v2::workers::table_sync::TableSyncWorkerError;
 use postgres::schema::Oid;
+use std::fmt;
 use std::future::Future;
 use thiserror::Error;
 use tokio::task;
 
-/// Errors that can occur during worker execution.
+/// Represents all possible errors that can occur while waiting for a worker to complete.
+///
+/// This enum is used to distinguish between different failure modes that may arise during
+/// the execution of asynchronous worker tasks, including panics, explicit errors, and
+/// silent failures that are internally handled but still indicate abnormal termination.
 #[derive(Debug, Error)]
 pub enum WorkerWaitError {
-    /// The task of the worker had a panic which causes its join handle to fail.
-    #[error("Worker task experienced an uncaught error: {0}")]
-    TaskFailed(#[from] task::JoinError),
-
-    /// The task of the worker failed silently because the error was caught.
+    /// The worker's task panicked, causing its join handle to return an error.
     ///
-    /// This can happen when using the `ReactiveFuture` which catches panics and `Result::Err`s and
-    /// notifies the pool about the panic/error.
-    #[error("Worker task experienced an error that was silently swallowed: {0}")]
-    TaskSilentlyFailed(String),
+    /// This typically indicates a bug or unrecoverable condition in the worker's logic.
+    #[error("Worker task panicked or was forcefully aborted: {0}")]
+    WorkerPanicked(#[from] task::JoinError),
 
-    /// The apply worker had a propagated error which was caught by the join handle.
-    #[error("Apply worker experienced an uncaught error: {0}")]
-    ApplyWorkerPropagated(#[from] ApplyWorkerError),
+    /// The worker's task failed internally, but the error was caught and not propagated as a panic.
+    ///
+    /// This can occur when using abstractions like `ReactiveFuture`, which catch both panics and
+    /// `Result::Err` values, and then notify the pool about the failure without letting it bubble up.
+    #[error("Worker task failed internally and the error was silently handled: {0}")]
+    WorkerSilentlyFailed(String),
 
-    /// The table sync worker had a propagated error which was caught by the join handle.
-    #[error("Table sync worker experienced an uncaught error: {0}")]
-    TableSyncWorkerPropagated(#[from] TableSyncWorkerError),
+    /// The apply worker encountered an error that was propagated via the handle's return value.
+    ///
+    /// This variant wraps the specific error returned by the apply worker.
+    #[error("Apply worker terminated with an unrecoverable error: {0}")]
+    ApplyWorkerFailed(#[from] ApplyWorkerError),
+
+    /// The table sync worker encountered an error that was propagated via the handle's return value.
+    ///
+    /// This variant wraps the specific error returned by the table sync worker.
+    #[error("Table sync worker terminated with an unrecoverable error: {0}")]
+    TableSyncWorkerFailed(#[from] TableSyncWorkerError),
+}
+
+#[derive(Debug)]
+pub struct WorkerWaitErrors(pub Vec<WorkerWaitError>);
+
+impl fmt::Display for WorkerWaitErrors {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.is_empty() {
+            write!(f, "no worker failed.")
+        } else {
+            writeln!(f, "the workers failed with the following errors:")?;
+            for (i, err) in self.0.iter().enumerate() {
+                writeln!(f, "  {}: {}", i + 1, err)?;
+            }
+            Ok(())
+        }
+    }
 }
 
 /// The type of worker that is currently running.

@@ -110,7 +110,7 @@ pub async fn create_publication(
         .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
-    let options = config.connect_options();
+    let options = config.into_connection_config().with_db();
     let publication = publication.0;
     let publication = Publication {
         name: publication.name,
@@ -148,7 +148,7 @@ pub async fn read_publication(
         .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
-    let options = config.connect_options();
+    let options = config.into_connection_config().with_db();
     let publications = db::publications::read_publication(&publication_name, &options)
         .await?
         .ok_or(PublicationError::PublicationNotFound(publication_name))?;
@@ -185,7 +185,7 @@ pub async fn update_publication(
         .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
-    let options = config.connect_options();
+    let options = config.into_connection_config().with_db();
     let publication = publication.0;
     let publication = Publication {
         name: publication_name,
@@ -223,7 +223,7 @@ pub async fn delete_publication(
         .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
-    let options = config.connect_options();
+    let options = config.into_connection_config().with_db();
     db::publications::drop_publication(&publication_name, &options).await?;
 
     Ok(HttpResponse::Ok().finish())
@@ -254,7 +254,7 @@ pub async fn read_all_publications(
         .map(|s| s.config)
         .ok_or(PublicationError::SourceNotFound(source_id))?;
 
-    let options = config.connect_options();
+    let options = config.into_connection_config().with_db();
     let publications = db::publications::read_all_publications(&options).await?;
     let response = GetPublicationsResponse { publications };
     Ok(Json(response))

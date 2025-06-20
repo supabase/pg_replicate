@@ -1,32 +1,40 @@
-use aws_lc_rs::error::Unspecified;
+use config::shared::DestinationConfig;
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::encryption::EncryptionKey;
-
-use super::{
-    destinations::{
-        create_destination_txn, update_destination_txn, DestinationConfig, DestinationsDbError,
-    },
-    pipelines::{create_pipeline_txn, update_pipeline_txn, PipelineConfig},
+use crate::db::base::{
+    encrypt_and_serialize, serialize, DbDeserializationError, DbSerializationError,
 };
+use crate::db::destinations::{
+    create_destination_txn, update_destination_txn, DestinationsDbError,
+};
+use crate::db::pipelines::{
+    create_pipeline_txn, update_pipeline_txn, PipelineConfig, PipelinesDbError,
+};
+use crate::encryption::EncryptionKey;
 
 #[derive(Debug, Error)]
 pub enum DestinationPipelineDbError {
-    #[error("sqlx error: {0}")]
+    #[error("Error while interacting with PostgreSQL for sources: {0}")]
     Sqlx(#[from] sqlx::Error),
 
-    #[error("encryption error: {0}")]
-    Encryption(#[from] Unspecified),
-
-    #[error("sources error: {0}")]
-    Destinations(#[from] DestinationsDbError),
-
-    #[error("destination with id {0} not found")]
+    #[error("The destination with id {0} was not found")]
     DestinationNotFound(i64),
 
-    #[error("pipeline with id {0} not found")]
+    #[error("The pipeline with id {0} was not found")]
     PipelineNotFound(i64),
+
+    #[error("Error while interacting with a pipeline: {0}")]
+    PipelinesDb(#[from] PipelinesDbError),
+
+    #[error("Error while interacting with a destination: {0}")]
+    DestinationsDb(#[from] DestinationsDbError),
+
+    #[error("Error while serializing destination or source config: {0}")]
+    DbSerializationError(#[from] DbSerializationError),
+
+    #[error("Error while deserializing destination or pipeline config: {0}")]
+    DbDeserializationError(#[from] DbDeserializationError),
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -41,11 +49,9 @@ pub async fn create_destination_and_pipeline(
     pipeline_config: PipelineConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<(i64, i64), DestinationPipelineDbError> {
-    let destination_config = destination_config.into_db_config(encryption_key)?;
-    let destination_config =
-        serde_json::to_value(destination_config).expect("failed to serialize config");
-    let pipeline_config =
-        serde_json::to_value(pipeline_config).expect("failed to serialize config");
+    let destination_config = encrypt_and_serialize(destination_config, encryption_key)?;
+    let pipeline_config = serialize(pipeline_config)?;
+
     let mut txn = pool.begin().await?;
     let destination_id =
         create_destination_txn(&mut txn, tenant_id, destination_name, destination_config).await?;
@@ -60,6 +66,7 @@ pub async fn create_destination_and_pipeline(
     )
     .await?;
     txn.commit().await?;
+
     Ok((destination_id, pipeline_id))
 }
 
@@ -76,11 +83,9 @@ pub async fn update_destination_and_pipeline(
     pipeline_config: PipelineConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<(), DestinationPipelineDbError> {
-    let destination_config = destination_config.into_db_config(encryption_key)?;
-    let destination_config =
-        serde_json::to_value(destination_config).expect("failed to serialize config");
-    let pipeline_config =
-        serde_json::to_value(pipeline_config).expect("failed to serialize config");
+    let destination_config = encrypt_and_serialize(destination_config, encryption_key)?;
+    let pipeline_config = serialize(pipeline_config)?;
+
     let mut txn = pool.begin().await?;
     let destination_id_res = update_destination_txn(
         &mut txn,

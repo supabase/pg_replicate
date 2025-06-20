@@ -23,7 +23,7 @@ if [[ -z "${SKIP_MIGRATIONS}" ]]; then
   fi
 fi
 
-# Database configuration (should be the same as '/configuration/dev.yaml')
+# Database configuration
 echo "🔧 Configuring database settings..."
 DB_USER="${POSTGRES_USER:=postgres}"
 DB_PASSWORD="${POSTGRES_PASSWORD:=postgres}"

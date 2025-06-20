@@ -207,11 +207,13 @@ where
                 replication_client.delete_slot(&slot_name).await?;
                 attempt += 1;
 
-                if attempt >= config.retry_config.max_attempts {
+                if attempt >= config.apply_worker_initialization_retry.max_attempts {
                     return Err(ApplyWorkerError::ReplicationOriginMissing);
                 }
 
-                let delay = config.retry_config.calculate_delay(attempt);
+                let delay = config
+                    .apply_worker_initialization_retry
+                    .calculate_delay(attempt);
                 tokio::time::sleep(delay).await;
 
                 continue;
@@ -408,6 +410,11 @@ where
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
                     let updated_state = table_replication_state
                         .with_phase(TableReplicationPhase::Ready { lsn: current_lsn });
+                    info!(
+                        "Table {} is ready, its events are now processed by the main apply worker",
+                        table_id
+                    );
+
                     self.state_store
                         .store_table_replication_state(updated_state, true)
                         .await?;

@@ -2,7 +2,7 @@ use secrecy::{ExposeSecret, Secret};
 use serde::Deserialize;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
-/// Connection config for a PostgreSQL database.
+/// Connection config for a PostgreSQL database to be used with `sqlx`.
 ///
 /// Contains the connection parameters needed to establish a connection to a PostgreSQL
 /// database server, including network location, authentication credentials, and security
@@ -32,6 +32,7 @@ impl PgConnectionConfig {
     /// that must be performed before connecting to a specific database, like database
     /// creation.
     pub fn without_db(&self) -> PgConnectOptions {
+        // TODO: explore the possibility to support for certificates.
         let ssl_mode = if self.require_ssl {
             PgSslMode::Require
         } else {

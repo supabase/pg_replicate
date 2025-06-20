@@ -4,24 +4,19 @@ use actix_web::{
     web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder, ResponseError,
 };
+use config::shared::DestinationConfig;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use crate::{
-    db::{
-        self,
-        destinations::{destination_exists, DestinationConfig},
-        destinations_pipelines::DestinationPipelineDbError,
-        pipelines::PipelineConfig,
-        sources::source_exists,
-    },
-    encryption::EncryptionKey,
-    routes::extract_tenant_id,
-};
-
-use super::{destinations::DestinationError, ErrorMessage, TenantIdError};
+use super::{destinations::DestinationError, extract_tenant_id, ErrorMessage, TenantIdError};
+use crate::db;
+use crate::db::destinations::destination_exists;
+use crate::db::destinations_pipelines::DestinationPipelineDbError;
+use crate::db::pipelines::PipelineConfig;
+use crate::db::sources::source_exists;
+use crate::encryption::EncryptionKey;
 
 #[derive(Deserialize, ToSchema)]
 pub struct PostDestinationPipelineRequest {

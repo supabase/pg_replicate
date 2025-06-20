@@ -10,15 +10,10 @@ use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
 
-use super::{ErrorMessage, TenantIdError};
-use crate::{
-    db::{
-        self,
-        sources::{SourceConfig, SourcesDbError},
-    },
-    encryption::EncryptionKey,
-    routes::extract_tenant_id,
-};
+use crate::db;
+use crate::db::sources::{SourceConfig, SourcesDbError};
+use crate::encryption::EncryptionKey;
+use crate::routes::{extract_tenant_id, ErrorMessage, TenantIdError};
 
 pub mod publications;
 pub mod tables;

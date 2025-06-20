@@ -12,8 +12,7 @@ use tracing_actix_web::RootSpan;
 use utoipa::ToSchema;
 
 use crate::db;
-
-use super::ErrorMessage;
+use crate::routes::ErrorMessage;
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateTenantRequest {

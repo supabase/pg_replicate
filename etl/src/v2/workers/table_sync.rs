@@ -61,7 +61,7 @@ pub struct TableSyncWorkerStateInner {
 impl TableSyncWorkerStateInner {
     pub fn set_phase(&mut self, phase: TableReplicationPhase) {
         info!(
-            "Table {} phase changing from {:?} to {:?}",
+            "Table {} phase changing from '{:?}' to '{:?}'",
             self.table_replication_state.table_id, self.table_replication_state.phase, phase
         );
 
@@ -85,8 +85,8 @@ impl TableSyncWorkerStateInner {
         // If we should store this phase change, we want to do it via the supplied state store.
         if phase.as_type().should_store() {
             info!(
-                "Storing phase change for table {} to {:?}",
-                self.table_replication_state.table_id, phase
+                "Storing phase change '{:?}' for table {:?}",
+                phase, self.table_replication_state.table_id,
             );
 
             let new_table_replication_state =
@@ -157,7 +157,10 @@ impl TableSyncWorkerState {
         // We read the state and return the lock to the state.
         let inner = self.inner.read().await;
         if inner.table_replication_state.phase.as_type() == phase_type {
-            info!("Phase type '{:?}' was noticed", phase_type);
+            info!(
+                "Phase type '{:?}' was reached for table {:?}",
+                phase_type, inner.table_replication_state.table_id
+            );
             return Some(inner);
         }
 
@@ -169,7 +172,14 @@ impl TableSyncWorkerState {
         phase_type: TableReplicationPhaseType,
         mut shutdown_rx: ShutdownRx,
     ) -> ShutdownResult<RwLockReadGuard<'_, TableSyncWorkerStateInner>, ()> {
-        info!("Waiting for phase type '{:?}'", phase_type);
+        let table_id = {
+            let inner = self.inner.read().await;
+            inner.table_replication_state.table_id
+        };
+        info!(
+            "Waiting for phase type '{:?}' for table {:?}",
+            phase_type, table_id
+        );
 
         loop {
             tokio::select! {
@@ -388,6 +398,11 @@ where
             drop(inner);
 
             // TODO: implement cleanup of slot and replication origin.
+
+            info!(
+                "Table sync worker for table {} has caught up with the apply worker, shutting down",
+                self.table_id
+            );
 
             return Ok(false);
         }

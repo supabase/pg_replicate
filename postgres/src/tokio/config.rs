@@ -1,7 +1,7 @@
 use tokio_postgres::Config;
 use tokio_postgres::config::SslMode;
 
-/// Connection config for a PostgreSQL database.
+/// Connection config for a PostgreSQL database to be used with `tokio`.
 ///
 /// Contains the connection parameters needed to establish a connection to a PostgreSQL
 /// database server, including network location, authentication credentials, and security

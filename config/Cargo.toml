@@ -1,0 +1,11 @@
+[package]
+name = "config"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+postgres = { workspace = true, features = ["sqlx"] }
+
+rust-cli-config = { workspace = true, features = ["yaml"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }

@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-
 use pg_escape::{quote_identifier, quote_literal};
 use serde::Serialize;
 use sqlx::{postgres::PgConnectOptions, Connection, Executor, PgConnection, Row};
+use std::collections::HashMap;
 use utoipa::ToSchema;
 
-use super::tables::Table;
+use crate::db::tables::Table;
 
 #[derive(Serialize, ToSchema)]
 pub struct Publication {

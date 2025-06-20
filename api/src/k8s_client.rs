@@ -261,6 +261,7 @@ impl K8sClient for HttpK8sClient {
             "prod.yaml": prod_config,
           }
         });
+        // TODO: for consistency we might want to use `serde_yaml` since writing a `.yaml` as JSON.
         let config_map: ConfigMap = serde_json::from_value(config_map_json)?;
 
         let pp = PatchParams::apply(&config_map_name);

@@ -10,12 +10,11 @@ use thiserror::Error;
 use tracing_actix_web::RootSpan;
 use utoipa::ToSchema;
 
-use crate::{
-    db::{self, sources::SourceConfig, tenants_sources::TenantSourceDbError},
-    encryption::EncryptionKey,
-};
-
-use super::ErrorMessage;
+use crate::db;
+use crate::db::sources::SourceConfig;
+use crate::db::tenants_sources::TenantSourceDbError;
+use crate::encryption::EncryptionKey;
+use crate::routes::ErrorMessage;
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateTenantSourceRequest {
@@ -52,7 +51,7 @@ impl ResponseError for TenantSourceError {
             TenantSourceError::TenantSourceDb(e) => match e {
                 TenantSourceDbError::Sqlx(_)
                 | TenantSourceDbError::Sources(_)
-                | TenantSourceDbError::Encryption(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                | TenantSourceDbError::DbSerializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             },
         }
     }

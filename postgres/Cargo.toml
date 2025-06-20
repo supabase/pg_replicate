@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 pg_escape = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["std"] }
 secrecy = { workspace = true, features = ["serde", "alloc"] }
 sqlx = { workspace = true, features = [
     "runtime-tokio-rustls",
@@ -22,7 +21,6 @@ tokio-postgres = { workspace = true, features = [
     "with-uuid-1",
     "with-serde_json-1",
 ] }
-tokio-postgres-rustls = { workspace = true }
 
 
 [features]

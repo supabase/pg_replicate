@@ -9,7 +9,7 @@ use tracing::{info, warn};
 use crate::v2::concurrency::future::ReactiveFutureCallback;
 use crate::v2::destination::base::Destination;
 use crate::v2::state::store::base::StateStore;
-use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError};
+use crate::v2::workers::base::{Worker, WorkerHandle, WorkerWaitError, WorkerWaitErrors};
 use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerError, TableSyncWorkerHandle, TableSyncWorkerState,
 };
@@ -53,13 +53,16 @@ impl TableSyncWorkerPoolInner {
     {
         let table_id = worker.table_id();
         if self.active.contains_key(&table_id) {
-            warn!("Worker for table {} already exists in pool", table_id);
+            warn!("Worker for table {} already exists in the pool", table_id);
             return Ok(false);
         }
 
         let handle = worker.start().await?;
         self.active.insert(table_id, handle);
-        info!("Successfully added worker for table {} to pool", table_id);
+        info!(
+            "Successfully added worker for table {} to the pool",
+            table_id
+        );
 
         Ok(true)
     }
@@ -80,7 +83,7 @@ impl TableSyncWorkerPoolInner {
 
         if let Some(removed_worker) = removed_worker {
             info!(
-                "Marked worker for table {} as inactive with reason {:?}",
+                "Marked table sync worker for table {} as inactive with reason: {:?}",
                 table_id, reason
             );
 
@@ -91,9 +94,7 @@ impl TableSyncWorkerPoolInner {
         }
     }
 
-    pub async fn wait_all(&mut self) -> Result<Option<Arc<Notify>>, Vec<WorkerWaitError>> {
-        info!("Waiting for workers to complete");
-
+    pub async fn wait_all(&mut self) -> Result<Option<Arc<Notify>>, WorkerWaitErrors> {
         // If there are active workers, we return the notify, signaling that not all of them are
         // ready.
         //
@@ -103,6 +104,7 @@ impl TableSyncWorkerPoolInner {
         if !self.active.is_empty() {
             let notify = Arc::new(Notify::new());
             self.waiting = Some(notify.clone());
+
             return Ok(Some(notify));
         }
 
@@ -121,17 +123,15 @@ impl TableSyncWorkerPoolInner {
                 // This should not happen since right now the `ReactiveFuture` is configured to
                 // re-propagate the error after marking a table sync worker as finished.
                 if let TableSyncWorkerInactiveReason::Errored(err) = finish {
-                    errors.push(WorkerWaitError::TaskSilentlyFailed(err));
+                    errors.push(WorkerWaitError::WorkerSilentlyFailed(err));
                 }
             }
         }
 
-        info!("All workers completed");
-
         if errors.is_empty() {
             Ok(None)
         } else {
-            Err(errors)
+            Err(WorkerWaitErrors(errors))
         }
     }
 }
@@ -162,7 +162,7 @@ impl TableSyncWorkerPool {
         self.workers.clone()
     }
 
-    pub async fn wait_all(&self) -> Result<(), Vec<WorkerWaitError>> {
+    pub async fn wait_all(&self) -> Result<(), WorkerWaitErrors> {
         loop {
             // We try first to wait for all workers to be finished, in case there are still active
             // workers, we get back a `Notify` which we will use to try again once new workers reported

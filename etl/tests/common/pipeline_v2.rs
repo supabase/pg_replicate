@@ -24,12 +24,12 @@ where
     D: Destination + Clone + Send + Sync + 'static,
 {
     let config = PipelineConfig {
-        pg_connection_config: pg_connection_config.clone(),
-        batch_config: BatchConfig {
-            max_batch_size: 1,
-            max_batch_fill_time: Duration::from_secs(1),
+        pg_connection: pg_connection_config.clone(),
+        batch: BatchConfig {
+            max_size: 1,
+            max_fill: Duration::from_secs(1),
         },
-        retry_config: RetryConfig::default(),
+        apply_worker_initialization_retry: RetryConfig::default(),
     };
 
     Pipeline::new(identity.clone(), config, vec![], state_store, destination)
