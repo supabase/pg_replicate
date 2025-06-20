@@ -128,7 +128,7 @@ where
                 self.replication_client.clone(),
                 self.schema_cache.clone(),
                 self.destination.clone(),
-                Hook::new(
+                ApplyWorkerHook::new(
                     self.identity,
                     self.config,
                     self.replication_client,
@@ -163,7 +163,7 @@ async fn initialize_apply_loop(
 }
 
 #[derive(Debug)]
-struct Hook<S, D> {
+struct ApplyWorkerHook<S, D> {
     identity: PipelineIdentity,
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
@@ -174,7 +174,7 @@ struct Hook<S, D> {
     shutdown_rx: ShutdownRx,
 }
 
-impl<S, D> Hook<S, D> {
+impl<S, D> ApplyWorkerHook<S, D> {
     #[allow(clippy::too_many_arguments)]
     fn new(
         identity: PipelineIdentity,
@@ -199,7 +199,7 @@ impl<S, D> Hook<S, D> {
     }
 }
 
-impl<S, D> Hook<S, D>
+impl<S, D> ApplyWorkerHook<S, D>
 where
     S: StateStore + Clone + Send + Sync + 'static,
     D: Destination + Clone + Send + Sync + 'static,
@@ -303,7 +303,7 @@ where
     }
 }
 
-impl<S, D> ApplyLoopHook for Hook<S, D>
+impl<S, D> ApplyLoopHook for ApplyWorkerHook<S, D>
 where
     S: StateStore + Clone + Send + Sync + 'static,
     D: Destination + Clone + Send + Sync + 'static,

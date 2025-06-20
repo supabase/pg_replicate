@@ -316,7 +316,7 @@ where
                 self.replication_client,
                 self.schema_cache,
                 self.destination,
-                Hook::new(self.table_id, state_clone, self.state_store),
+                TableSyncWorkerHook::new(self.table_id, state_clone, self.state_store),
                 self.shutdown_rx,
             )
             .await?;
@@ -340,13 +340,13 @@ where
 }
 
 #[derive(Debug)]
-struct Hook<S> {
+struct TableSyncWorkerHook<S> {
     table_id: Oid,
     table_sync_worker_state: TableSyncWorkerState,
     state_store: S,
 }
 
-impl<S> Hook<S> {
+impl<S> TableSyncWorkerHook<S> {
     fn new(table_id: Oid, table_sync_worker_state: TableSyncWorkerState, state_store: S) -> Self {
         Self {
             table_id,
@@ -356,7 +356,7 @@ impl<S> Hook<S> {
     }
 }
 
-impl<S> ApplyLoopHook for Hook<S>
+impl<S> ApplyLoopHook for TableSyncWorkerHook<S>
 where
     S: StateStore + Clone + Send + Sync + 'static,
 {
