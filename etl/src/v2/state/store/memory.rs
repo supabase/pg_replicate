@@ -35,7 +35,7 @@ impl Default for MemoryStateStore {
 }
 
 impl StateStore for MemoryStateStore {
-    async fn load_table_replication_state(
+    async fn get_table_replication_state(
         &self,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {

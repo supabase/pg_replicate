@@ -271,7 +271,7 @@ where
         //  implementing a mechanism for table sync state to be updated after the fact.
         let Some(relation_subscription_state) = self
             .state_store
-            .load_table_replication_state(self.table_id)
+            .get_table_replication_state(self.table_id)
             .await?
         else {
             warn!(

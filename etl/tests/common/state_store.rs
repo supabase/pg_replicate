@@ -95,7 +95,7 @@ impl TestStateStore {
 }
 
 impl StateStore for TestStateStore {
-    async fn load_table_replication_state(
+    async fn get_table_replication_state(
         &self,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
@@ -204,12 +204,12 @@ impl<S> StateStore for FaultInjectingStateStore<S>
 where
     S: StateStore + Clone + Send + Sync + 'static,
 {
-    async fn load_table_replication_state(
+    async fn get_table_replication_state(
         &self,
         table_id: Oid,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
         self.trigger_fault(&self.config.load_table_replication_state)?;
-        self.inner.load_table_replication_state(table_id).await
+        self.inner.get_table_replication_state(table_id).await
     }
 
     async fn load_table_replication_states(

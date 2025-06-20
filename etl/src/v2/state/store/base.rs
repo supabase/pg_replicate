@@ -11,7 +11,7 @@ pub enum StateStoreError {
 }
 
 pub trait StateStore {
-    fn load_table_replication_state(
+    fn get_table_replication_state(
         &self,
         table_id: TableId,
     ) -> impl Future<Output = Result<Option<TableReplicationState>, StateStoreError>> + Send;
