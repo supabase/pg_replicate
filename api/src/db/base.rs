@@ -3,6 +3,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// TODO: remove and use encryption nd decryption error types.
 #[derive(Debug, Error)]
 pub enum ToDbError {
     #[error("An encryption error happened while converting to the db variant: {0}")]
@@ -15,24 +16,12 @@ pub enum ToMemoryError {
     Decryption(#[from] DecryptionError),
 }
 
-pub trait ToDb<T> {
-    fn to_db_type(self, encryption_key: &EncryptionKey) -> Result<T, ToDbError>;
+pub trait Encryptable<T> {
+    fn encrypt(self, encryption_key: &EncryptionKey) -> Result<T, ToDbError>;
 }
 
-impl<T> ToDb<T> for T {
-    fn to_db_type(self, _: &EncryptionKey) -> Result<T, ToDbError> {
-        Ok(self)
-    }
-}
-
-pub trait ToMemory<T> {
-    fn to_memory_type(self, encryption_key: &EncryptionKey) -> Result<T, ToMemoryError>;
-}
-
-impl<T> ToMemory<T> for T {
-    fn to_memory_type(self, _: &EncryptionKey) -> Result<T, ToMemoryError> {
-        Ok(self)
-    }
+pub trait Decryptable<T> {
+    fn decrypt(self, encryption_key: &EncryptionKey) -> Result<T, ToMemoryError>;
 }
 
 #[derive(Debug, Error)]
@@ -53,44 +42,71 @@ pub enum DbDeserializationError {
     ToMemory(#[from] ToMemoryError),
 }
 
-pub fn serialize_to_db_as_json<T, S>(
-    value: T,
-    encryption_key: &EncryptionKey,
-) -> Result<serde_json::Value, DbSerializationError>
+pub fn serialize<S>(value: S) -> Result<serde_json::Value, DbSerializationError>
 where
-    T: ToDb<S>,
     S: Serialize,
 {
-    let value = value.to_db_type(encryption_key)?;
     let serialized_value = serde_json::to_value(value)?;
 
     Ok(serialized_value)
 }
 
-pub fn deserialize_from_db_json_str<T, S>(
+pub fn encrypt_and_serialize<T, S>(
+    value: T,
+    encryption_key: &EncryptionKey,
+) -> Result<serde_json::Value, DbSerializationError>
+where
+    T: Encryptable<S>,
+    S: Serialize,
+{
+    let value = value.encrypt(encryption_key)?;
+    let serialized_value = serde_json::to_value(value)?;
+
+    Ok(serialized_value)
+}
+
+pub fn deserialize_from_str<S>(value: &str) -> Result<S, DbDeserializationError>
+where
+    S: DeserializeOwned,
+{
+    let deserialized_value = serde_json::from_str(value)?;
+
+    Ok(deserialized_value)
+}
+
+pub fn decrypt_and_deserialize_from_str<T, S>(
     value: &str,
     encryption_key: &EncryptionKey,
 ) -> Result<S, DbDeserializationError>
 where
-    T: ToMemory<S>,
+    T: Decryptable<S>,
     T: DeserializeOwned,
 {
     let deserialized_value: T = serde_json::from_str(value)?;
-    let value = deserialized_value.to_memory_type(encryption_key)?;
+    let value = deserialized_value.decrypt(encryption_key)?;
 
     Ok(value)
 }
 
-pub fn deserialize_from_db_json_value<T, S>(
+pub fn deserialize_from_value<S>(value: serde_json::Value) -> Result<S, DbDeserializationError>
+where
+    S: DeserializeOwned,
+{
+    let deserialized_value = serde_json::from_value(value)?;
+
+    Ok(deserialized_value)
+}
+
+pub fn decrypt_and_deserialize_from_value<T, S>(
     value: serde_json::Value,
     encryption_key: &EncryptionKey,
 ) -> Result<S, DbDeserializationError>
 where
-    T: ToMemory<S>,
+    T: Decryptable<S>,
     T: DeserializeOwned,
 {
     let deserialized_value: T = serde_json::from_value(value)?;
-    let value = deserialized_value.to_memory_type(encryption_key)?;
+    let value = deserialized_value.decrypt(encryption_key)?;
 
     Ok(value)
 }

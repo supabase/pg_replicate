@@ -1,160 +1,67 @@
-use aws_lc_rs::{aead::Nonce, error::Unspecified};
-use base64::{prelude::BASE64_STANDARD, DecodeError, Engine};
-use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{
     fmt::{Debug, Formatter},
     str::{from_utf8, Utf8Error},
 };
 use thiserror::Error;
+use config::shared::DestinationConfig;
+use crate::db::base::{decrypt_and_deserialize_from_value, encrypt_and_serialize, DbDeserializationError, DbSerializationError, Decryptable, Encryptable, ToDbError, ToMemoryError};
+use crate::db::sources::EncryptedSourceConfig;
+use crate::encryption::{decrypt, encrypt, encrypt_text, EncryptedValue, EncryptionKey};
 
-use crate::encryption::{decrypt, encrypt, EncryptedValue, EncryptionKey};
-
-#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum DestinationConfig {
-    BigQuery {
-        /// BigQuery project id
-        project_id: String,
-
-        /// BigQuery dataset id
-        dataset_id: String,
-
-        /// BigQuery service account key
-        service_account_key: String,
-
-        /// The max_staleness parameter for BigQuery: https://cloud.google.com/bigquery/docs/change-data-capture#create-max-staleness
-        #[serde(skip_serializing_if = "Option::is_none")]
-        max_staleness_mins: Option<u16>,
-    },
-}
-
-impl DestinationConfig {
-    pub fn into_db_config(
-        self,
-        encryption_key: &EncryptionKey,
-    ) -> Result<DestinationConfigInDb, Unspecified> {
-        let DestinationConfig::BigQuery {
-            project_id,
-            dataset_id,
-            service_account_key,
-            max_staleness_mins,
-        } = self;
-
-        let (encrypted_sa_key, nonce) =
-            encrypt(service_account_key.as_bytes(), &encryption_key.key)?;
-        let encrypted_encoded_sa_key = BASE64_STANDARD.encode(encrypted_sa_key);
-        let encoded_nonce = BASE64_STANDARD.encode(nonce.as_ref());
-        let encrypted_sa_key = EncryptedValue {
-            id: encryption_key.id,
-            nonce: encoded_nonce,
-            value: encrypted_encoded_sa_key,
-        };
-
-        Ok(DestinationConfigInDb::BigQuery {
-            project_id,
-            dataset_id,
-            service_account_key: encrypted_sa_key,
-            max_staleness_mins,
-        })
-    }
-}
-
-impl Debug for DestinationConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl Encryptable<EncryptedDestinationConfig> for DestinationConfig {
+    
+    fn encrypt(self, encryption_key: &EncryptionKey) -> Result<EncryptedDestinationConfig, ToDbError> {
         match self {
             Self::BigQuery {
                 project_id,
                 dataset_id,
-                service_account_key: _,
-                max_staleness_mins,
-            } => f
-                .debug_struct("BigQuery")
-                .field("project_id", project_id)
-                .field("dataset_id", dataset_id)
-                .field("service_account_key", &"REDACTED")
-                .field("max_staleness_mins", max_staleness_mins)
-                .finish(),
+                service_account_key,
+                max_staleness_mins
+            } => {
+                let mut encrypted_service_account_key = encrypt_text(service_account_key, encryption_key)?;
+                
+                Ok(EncryptedDestinationConfig::BigQuery {
+                    project_id,
+                    dataset_id,
+                    service_account_key: encrypted_service_account_key,
+                    max_staleness_mins,
+                })
+            }
+            _ => {}
         }
     }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum DestinationConfigInDb {
+pub enum EncryptedDestinationConfig {
     BigQuery {
-        /// BigQuery project id
         project_id: String,
-
-        /// BigQuery dataset id
         dataset_id: String,
-
-        /// BigQuery service account key
         service_account_key: EncryptedValue,
-
-        /// The max_staleness parameter for BigQuery: https://cloud.google.com/bigquery/docs/change-data-capture#create-max-staleness
         #[serde(skip_serializing_if = "Option::is_none")]
         max_staleness_mins: Option<u16>,
     },
 }
 
-impl DestinationConfigInDb {
-    fn into_config(
-        self,
-        encryption_key: &EncryptionKey,
-    ) -> Result<DestinationConfig, DestinationsDbError> {
-        let DestinationConfigInDb::BigQuery {
-            project_id,
-            dataset_id,
-            service_account_key: encrypted_sa_key,
-            max_staleness_mins,
-        } = self;
-
-        if encrypted_sa_key.id != encryption_key.id {
-            return Err(DestinationsDbError::MismatchedKeyId(
-                encrypted_sa_key.id,
-                encryption_key.id,
-            ));
-        }
-
-        let encrypted_sa_key_bytes = BASE64_STANDARD.decode(encrypted_sa_key.value)?;
-        let nonce =
-            Nonce::try_assume_unique_for_key(&BASE64_STANDARD.decode(encrypted_sa_key.nonce)?)?;
-        let decrypted_sa_key = from_utf8(&decrypt(
-            encrypted_sa_key_bytes,
-            nonce,
-            &encryption_key.key,
-        )?)?
-        .to_string();
-
-        Ok(DestinationConfig::BigQuery {
-            project_id,
-            dataset_id,
-            service_account_key: decrypted_sa_key,
-            max_staleness_mins,
-        })
+impl Decryptable<DestinationConfig> for EncryptedDestinationConfig {
+    
+    fn decrypt(self, encryption_key: &EncryptionKey) -> Result<DestinationConfig, ToMemoryError> {
+        todo!()
     }
 }
 
 #[derive(Debug, Error)]
 pub enum DestinationsDbError {
-    #[error("sqlx error: {0}")]
+    #[error("Error while interacting with PostgreSQL for destinations: {0}")]
     Sqlx(#[from] sqlx::Error),
 
-    #[error("encryption error: {0}")]
-    Encryption(#[from] Unspecified),
+    #[error("Error while serializing destination config: {0}")]
+    DbSerializationError(#[from] DbSerializationError),
 
-    #[error("invalid source config in db")]
-    InvalidConfig(#[from] serde_json::Error),
-
-    #[error("mismatched key id. Expected: {0}, actual: {1}")]
-    MismatchedKeyId(u32, u32),
-
-    #[error("base64 decode error: {0}")]
-    Base64Decode(#[from] DecodeError),
-
-    #[error("utf8 error: {0}")]
-    Utf8(#[from] Utf8Error),
+    #[error("Error while deserializing destination config: {0}")]
+    DbDeserializationError(#[from] DbDeserializationError),
 }
 
 pub struct Destination {
@@ -171,11 +78,12 @@ pub async fn create_destination(
     config: DestinationConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<i64, DestinationsDbError> {
-    let db_config = config.into_db_config(encryption_key)?;
-    let db_config = serde_json::to_value(db_config).expect("failed to serialize config");
+    let config = encrypt_and_serialize(config, encryption_key)?;
+    
     let mut txn = pool.begin().await?;
-    let res = create_destination_txn(&mut txn, tenant_id, name, db_config).await;
+    let res = create_destination_txn(&mut txn, tenant_id, name, config).await;
     txn.commit().await?;
+    
     res
 }
 
@@ -183,7 +91,7 @@ pub async fn create_destination_txn(
     txn: &mut Transaction<'_, Postgres>,
     tenant_id: &str,
     name: &str,
-    destination_config: Value,
+    config: serde_json::Value,
 ) -> Result<i64, DestinationsDbError> {
     let record = sqlx::query!(
         r#"
@@ -193,7 +101,7 @@ pub async fn create_destination_txn(
         "#,
         tenant_id,
         name,
-        destination_config
+        config
     )
     .fetch_one(&mut **txn)
     .await?;
@@ -219,19 +127,22 @@ pub async fn read_destination(
     .fetch_optional(pool)
     .await?;
 
-    let destination = record
-        .map(|r| {
-            let config: DestinationConfigInDb = serde_json::from_value(r.config)?;
-            let config = config.into_config(encryption_key)?;
-            let source = Destination {
-                id: r.id,
-                tenant_id: r.tenant_id,
-                name: r.name,
+    let destination = match record {
+        Some(record) => { 
+            let config = decrypt_and_deserialize_from_value::<EncryptedDestinationConfig, DestinationConfig>(record.config, encryption_key)?;
+            
+            let destination = Destination {
+                id: record.id,
+                tenant_id: record.tenant_id,
+                name: record.name,
                 config,
             };
-            Ok::<Destination, DestinationsDbError>(source)
-        })
-        .transpose()?;
+            
+            Some(destination)
+        },
+        None => None
+    };
+    
     Ok(destination)
 }
 
@@ -240,22 +151,22 @@ pub async fn update_destination(
     tenant_id: &str,
     name: &str,
     destination_id: i64,
-    destination_config: DestinationConfig,
+    config: DestinationConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<Option<i64>, DestinationsDbError> {
-    let destination_config = destination_config.into_db_config(encryption_key)?;
-    let destination_config =
-        serde_json::to_value(destination_config).expect("failed to serialize config");
+    let config = encrypt_and_serialize(config, encryption_key)?;
+   
     let mut txn = pool.begin().await?;
     let res = update_destination_txn(
         &mut txn,
         tenant_id,
         name,
         destination_id,
-        destination_config,
+        config,
     )
     .await;
     txn.commit().await?;
+    
     res
 }
 
@@ -264,7 +175,7 @@ pub async fn update_destination_txn(
     tenant_id: &str,
     name: &str,
     destination_id: i64,
-    destination_config: Value,
+    config: serde_json::Value,
 ) -> Result<Option<i64>, DestinationsDbError> {
     let record = sqlx::query!(
         r#"
@@ -273,7 +184,7 @@ pub async fn update_destination_txn(
         where tenant_id = $3 and id = $4
         returning id
         "#,
-        destination_config,
+        config,
         name,
         tenant_id,
         destination_id
@@ -356,6 +267,7 @@ pub async fn destination_exists(
     Ok(record.exists)
 }
 
+// TODO: rewrite tests.
 #[cfg(test)]
 mod tests {
     use crate::db::destinations::DestinationConfig;

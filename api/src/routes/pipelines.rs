@@ -7,7 +7,7 @@ use crate::{
         images::Image,
         pipelines::{Pipeline, PipelineConfig},
         replicators::Replicator,
-        sources::{source_exists, Source, SourceConfig, SourcesDbError},
+        sources::{source_exists, Source, SourcesDbError, SourceConfig},
     },
     encryption::EncryptionKey,
     k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase, TRUSTED_ROOT_CERT_CONFIG_MAP_NAME},
@@ -199,8 +199,7 @@ pub async fn create_pipeline(
         pipeline.source_id,
         pipeline.destination_id,
         image.id,
-        &pipeline.publication_name,
-        &config,
+        config,
     )
     .await?;
 
@@ -231,7 +230,6 @@ pub async fn read_pipeline(
     let response = db::pipelines::read_pipeline(&pool, tenant_id, pipeline_id)
         .await?
         .map(|s| {
-            let config: PipelineConfig = serde_json::from_value(s.config)?;
             Ok::<GetPipelineResponse, serde_json::Error>(GetPipelineResponse {
                 id: s.id,
                 tenant_id: s.tenant_id,
@@ -241,7 +239,7 @@ pub async fn read_pipeline(
                 destination_name: s.destination_name,
                 replicator_id: s.replicator_id,
                 publication_name: s.publication_name,
-                config,
+                config: s.config,
             })
         })
         .transpose()?

@@ -1,8 +1,8 @@
-use config::shared::SourceConfig;
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::db::base::{serialize_to_db_as_json, DbSerializationError};
+use crate::db::base::{encrypt_and_serialize, DbSerializationError};
+use crate::db::sources::SourceConfig;
 use crate::encryption::EncryptionKey;
 
 use super::{
@@ -30,7 +30,7 @@ pub async fn create_tenant_and_source(
     source_config: SourceConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<(String, i64), TenantSourceDbError> {
-    let source_config = serialize_to_db_as_json(source_config, encryption_key)?;
+    let source_config = encrypt_and_serialize(source_config, encryption_key)?;
 
     let mut txn = pool.begin().await?;
     let tenant_id = create_tenant_txn(&mut txn, tenant_id, tenant_name).await?;

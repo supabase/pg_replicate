@@ -1,8 +1,7 @@
-use crate::shared::ValidationError;
-use postgres::sqlx::config::PgConnectionConfig;
-use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use crate::shared::ValidationError;
 
 /// Configuration for connecting to a Postgres source database.
 ///

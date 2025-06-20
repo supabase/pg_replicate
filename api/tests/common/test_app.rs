@@ -1,6 +1,9 @@
 use api::{
     config::ApiConfig,
-    db::{destinations::DestinationConfig, pipelines::PipelineConfig, sources::SourceConfig},
+    db::{
+        destinations::DestinationConfig, pipelines::PipelineConfig,
+        sources::SourceConfig,
+    },
     encryption::{self, generate_random_key},
     startup::run,
 };

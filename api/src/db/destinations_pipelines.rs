@@ -6,7 +6,7 @@ use crate::encryption::EncryptionKey;
 
 use super::{
     destinations::{
-        create_destination_txn, update_destination_txn, DestinationConfig, DestinationsDbError,
+        create_destination_txn, update_destination_txn, DestinationsDbError,
     },
     pipelines::{create_pipeline_txn, update_pipeline_txn},
 };
