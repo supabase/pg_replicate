@@ -49,6 +49,9 @@ pub enum ApplyWorkerHookError {
 
     #[error("A Postgres replication error occurred in the apply worker: {0}")]
     PgReplication(#[from] PgReplicationError),
+
+    #[error("An error occurred in the apply worker when getting slot name: {0}")]
+    Slot(#[from] SlotError),
 }
 
 #[derive(Debug)]
@@ -325,6 +328,27 @@ where
             if table_sync_worker_state.is_none() {
                 if let Err(err) = self.start_table_sync_worker(*table_id).await {
                     error!("Error handling syncing table {}: {}", table_id, err);
+                    continue;
+                }
+                let table_sync_worker_state = {
+                    let pool = self.pool.read().await;
+                    pool.get_active_worker_state(*table_id)
+                };
+                let table_sync_worker_state = table_sync_worker_state
+                    .expect("State can't be null because worker was just started");
+                let mut inner = table_sync_worker_state.get_inner().write().await;
+                let phase = inner.replication_phase();
+                if let TableReplicationPhase::SyncDone { lsn: None } = phase {
+                    let slot_name = get_slot_name(
+                        &self.identity,
+                        WorkerType::TableSync {
+                            table_id: *table_id,
+                        },
+                    )?;
+                    let slot = self.replication_client.get_slot(&slot_name).await?;
+                    inner.set_phase(TableReplicationPhase::SyncDone {
+                        lsn: Some(slot.confirmed_flush_lsn),
+                    });
                 }
             }
         }
@@ -343,7 +367,10 @@ where
             // We read the state store state first, if we don't find `SyncDone` we will attempt to
             // read the shared state which can contain also non-persisted states.
             match table_replication_state {
-                TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
+                TableReplicationPhase::SyncDone { lsn }
+                    if current_lsn
+                        >= lsn.expect("SyncDone lsn must be set in process_syncing_tables") =>
+                {
                     let updated_state = TableReplicationPhase::Ready;
                     self.state_store
                         .store_table_replication_state(table_id, updated_state)
@@ -412,7 +439,9 @@ where
 
         let should_apply_changes = match replication_phase {
             TableReplicationPhase::Ready => true,
-            TableReplicationPhase::SyncDone { lsn } => lsn <= remote_final_lsn,
+            TableReplicationPhase::SyncDone { lsn } => {
+                lsn.expect("SyncDone lsn must be set in should_apply_changes") <= remote_final_lsn
+            }
             _ => false,
         };
 

@@ -26,7 +26,7 @@ pub enum TableReplicationPhase {
     /// apply worker's lsn position
     SyncDone {
         /// The lsn up to which the table sync worker has caught up
-        lsn: PgLsn,
+        lsn: Option<PgLsn>,
     },
 
     /// Set by apply worker when it has caught up with the table-sync worker's

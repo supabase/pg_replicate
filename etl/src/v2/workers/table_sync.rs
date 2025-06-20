@@ -378,7 +378,7 @@ where
             if current_lsn >= lsn {
                 inner
                     .set_phase_with(
-                        TableReplicationPhase::SyncDone { lsn: current_lsn },
+                        TableReplicationPhase::SyncDone { lsn: Some(current_lsn) },
                         self.state_store.clone(),
                     )
                     .await?;
