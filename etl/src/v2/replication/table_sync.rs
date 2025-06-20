@@ -109,6 +109,14 @@ where
             // If we are in `DataSync` it means we failed during table copying, so we want to delete the
             // existing slot before continuing.
             if phase_type == TableReplicationPhaseType::DataSync {
+                // TODO: After we delete the slot we will have to truncate the table in the destination,
+                // otherwise there can be an inconsistent copy of the data. E.g. consider this scenario:
+                // A table had a single row with id 1 and this was copied to the destination during initial
+                // table copy. Before the table's phase was set to FinishedCopy, the process crashed. 
+                // While the process was down, row with id 1 in the source was deleted and another row with
+                // id 2 was inserted. The process comes back up to find the table's state in DataSync,
+                // deletes the slot and makes a copy again. This time it copies the row with id 2. Now
+                // the destinations contains two rows (with id 1 and 2) instead of only one (with id 2).
                 if let Err(err) = replication_client.delete_slot(&slot_name).await {
                     // If the slot is not found, we are safe to continue, for any other error, we bail.
                     if !matches!(err, PgReplicationError::SlotNotFound(_)) {

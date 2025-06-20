@@ -158,6 +158,10 @@ async fn get_start_lsn(
     replication_client: &PgReplicationClient,
 ) -> Result<PgLsn, ApplyWorkerError> {
     let slot_name = get_slot_name(identity, WorkerType::Apply)?;
+    // TODO: validate that we only create the slot when we first start replication which
+    // means when all tables are in the Init state. In any other case we should raise an
+    // error because that means the apply slot was deleted and creating a fresh slot now
+    // could cause inconsistent data to be read.
     let slot = replication_client.get_or_create_slot(&slot_name).await?;
     Ok(slot.get_start_lsn())
 }
