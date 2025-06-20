@@ -119,7 +119,7 @@ where
         info!("Starting apply worker");
 
         let apply_worker = async move {
-            let start_lsn = initialize_apply_loop(&self.identity, &self.replication_client).await?;
+            let start_lsn = get_start_lsn(&self.identity, &self.replication_client).await?;
 
             start_apply_loop(
                 self.identity.clone(),
@@ -153,7 +153,7 @@ where
     }
 }
 
-async fn initialize_apply_loop(
+async fn get_start_lsn(
     identity: &PipelineIdentity,
     replication_client: &PgReplicationClient,
 ) -> Result<PgLsn, ApplyWorkerError> {
