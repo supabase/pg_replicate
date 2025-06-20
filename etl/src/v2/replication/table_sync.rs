@@ -117,6 +117,8 @@ where
                 // id 2 was inserted. The process comes back up to find the table's state in DataSync,
                 // deletes the slot and makes a copy again. This time it copies the row with id 2. Now
                 // the destinations contains two rows (with id 1 and 2) instead of only one (with id 2).
+                // The simplest fix here would be to unconditionally send a truncate to the destination
+                // before starting a table copy.
                 if let Err(err) = replication_client.delete_slot(&slot_name).await {
                     // If the slot is not found, we are safe to continue, for any other error, we bail.
                     if !matches!(err, PgReplicationError::SlotNotFound(_)) {
