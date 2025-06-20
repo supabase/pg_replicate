@@ -176,7 +176,7 @@ where
             .await?;
         let states = self.state_store.load_table_replication_states().await?;
         for table_id in table_ids {
-            let state = TableReplicationState::init(table_id);
+            let state = TableReplicationState::init();
             // We store the init state only if it's not already present.
             if !states.contains_key(&table_id) {
                 self.state_store

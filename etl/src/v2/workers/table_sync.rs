@@ -1,4 +1,4 @@
-use postgres::schema::Oid;
+use postgres::schema::{Oid, TableId};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -54,6 +54,7 @@ pub enum TableSyncWorkerStateError {
 
 #[derive(Debug)]
 pub struct TableSyncWorkerStateInner {
+    table_id: TableId,
     table_replication_state: TableReplicationState,
     phase_change: Arc<Notify>,
 }
@@ -62,7 +63,7 @@ impl TableSyncWorkerStateInner {
     pub fn set_phase(&mut self, phase: TableReplicationPhase) {
         info!(
             "Table {} phase changing from {:?} to {:?}",
-            self.table_replication_state.table_id, self.table_replication_state.phase, phase
+            self.table_id, self.table_replication_state.phase, phase
         );
 
         self.table_replication_state.phase = phase;
@@ -86,7 +87,7 @@ impl TableSyncWorkerStateInner {
         if phase.as_type().should_store() {
             info!(
                 "Storing phase change for table {} to {:?}",
-                self.table_replication_state.table_id, phase
+                self.table_id, phase
             );
 
             let new_table_replication_state =
@@ -100,7 +101,7 @@ impl TableSyncWorkerStateInner {
     }
 
     pub fn table_id(&self) -> Oid {
-        self.table_replication_state.table_id
+        self.table_id
     }
 
     pub fn replication_phase(&self) -> TableReplicationPhase {
@@ -116,8 +117,9 @@ pub struct TableSyncWorkerState {
 }
 
 impl TableSyncWorkerState {
-    fn new(table_replication_state: TableReplicationState) -> Self {
+    fn new(table_id: TableId, table_replication_state: TableReplicationState) -> Self {
         let inner = TableSyncWorkerStateInner {
+            table_id,
             table_replication_state,
             phase_change: Arc::new(Notify::new()),
         };
@@ -219,7 +221,7 @@ pub struct TableSyncWorker<S, D> {
     config: Arc<PipelineConfig>,
     replication_client: PgReplicationClient,
     pool: TableSyncWorkerPool,
-    table_id: Oid,
+    table_id: TableId,
     schema_cache: SchemaCache,
     state_store: S,
     destination: D,
@@ -233,7 +235,7 @@ impl<S, D> TableSyncWorker<S, D> {
         config: Arc<PipelineConfig>,
         replication_client: PgReplicationClient,
         pool: TableSyncWorkerPool,
-        table_id: Oid,
+        table_id: TableId,
         schema_cache: SchemaCache,
         state_store: S,
         destination: D,
@@ -252,7 +254,7 @@ impl<S, D> TableSyncWorker<S, D> {
         }
     }
 
-    pub fn table_id(&self) -> Oid {
+    pub fn table_id(&self) -> TableId {
         self.table_id
     }
 }
@@ -282,7 +284,7 @@ where
             return Err(TableSyncWorkerError::ReplicationStateMissing(self.table_id));
         };
 
-        let state = TableSyncWorkerState::new(relation_subscription_state);
+        let state = TableSyncWorkerState::new(self.table_id, relation_subscription_state);
 
         let state_clone = state.clone();
         let table_sync_worker = async move {

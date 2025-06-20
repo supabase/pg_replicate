@@ -1,37 +1,25 @@
-use postgres::schema::TableId;
 use std::fmt;
 use tokio_postgres::types::PgLsn;
 
 #[derive(Debug, Clone)]
 pub struct TableReplicationState {
-    /// The table (relation) OID to which this state refers.
-    pub table_id: TableId,
-
     /// The phase of replication of the table.
     pub phase: TableReplicationPhase,
 }
 
 impl TableReplicationState {
-    pub fn new(table_id: TableId, phase: TableReplicationPhase) -> Self {
-        Self { table_id, phase }
+    pub fn new(phase: TableReplicationPhase) -> Self {
+        Self { phase }
     }
 
-    pub fn init(table_id: TableId) -> Self {
-        Self::new(table_id, TableReplicationPhase::Init)
+    pub fn init() -> Self {
+        Self::new(TableReplicationPhase::Init)
     }
 
     pub fn with_phase(self, phase: TableReplicationPhase) -> TableReplicationState {
-        TableReplicationState { phase, ..self }
+        TableReplicationState { phase }
     }
 }
-
-impl PartialEq for TableReplicationState {
-    fn eq(&self, other: &Self) -> bool {
-        self.table_id == other.table_id
-    }
-}
-
-impl Eq for TableReplicationState {}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TableReplicationPhase {
