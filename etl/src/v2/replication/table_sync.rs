@@ -112,7 +112,7 @@ where
                 // TODO: After we delete the slot we will have to truncate the table in the destination,
                 // otherwise there can be an inconsistent copy of the data. E.g. consider this scenario:
                 // A table had a single row with id 1 and this was copied to the destination during initial
-                // table copy. Before the table's phase was set to FinishedCopy, the process crashed. 
+                // table copy. Before the table's phase was set to FinishedCopy, the process crashed.
                 // While the process was down, row with id 1 in the source was deleted and another row with
                 // id 2 was inserted. The process comes back up to find the table's state in DataSync,
                 // deletes the slot and makes a copy again. This time it copies the row with id 2. Now
