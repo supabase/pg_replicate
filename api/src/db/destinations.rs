@@ -1,26 +1,30 @@
-use sqlx::{PgPool, Postgres, Transaction};
-use std::{
-    fmt::{Debug, Formatter},
-    str::{from_utf8, Utf8Error},
-};
-use thiserror::Error;
 use config::shared::DestinationConfig;
-use crate::db::base::{decrypt_and_deserialize_from_value, encrypt_and_serialize, DbDeserializationError, DbSerializationError, Decryptable, Encryptable, ToDbError, ToMemoryError};
-use crate::db::sources::EncryptedSourceConfig;
-use crate::encryption::{decrypt, encrypt, encrypt_text, EncryptedValue, EncryptionKey};
+use sqlx::{PgPool, Postgres, Transaction};
+use std::fmt::Debug;
+use thiserror::Error;
+
+use crate::db::base::{
+    decrypt_and_deserialize_from_value, encrypt_and_serialize, DbDeserializationError,
+    DbSerializationError, Decryptable, Encryptable, ToDbError, ToMemoryError,
+};
+use crate::encryption::{decrypt_text, encrypt_text, EncryptedValue, EncryptionKey};
 
 impl Encryptable<EncryptedDestinationConfig> for DestinationConfig {
-    
-    fn encrypt(self, encryption_key: &EncryptionKey) -> Result<EncryptedDestinationConfig, ToDbError> {
+    fn encrypt(
+        self,
+        encryption_key: &EncryptionKey,
+    ) -> Result<EncryptedDestinationConfig, ToDbError> {
         match self {
+            Self::Memory => Ok(EncryptedDestinationConfig::Memory),
             Self::BigQuery {
                 project_id,
                 dataset_id,
                 service_account_key,
-                max_staleness_mins
+                max_staleness_mins,
             } => {
-                let mut encrypted_service_account_key = encrypt_text(service_account_key, encryption_key)?;
-                
+                let encrypted_service_account_key =
+                    encrypt_text(service_account_key, encryption_key)?;
+
                 Ok(EncryptedDestinationConfig::BigQuery {
                     project_id,
                     dataset_id,
@@ -28,7 +32,6 @@ impl Encryptable<EncryptedDestinationConfig> for DestinationConfig {
                     max_staleness_mins,
                 })
             }
-            _ => {}
         }
     }
 }
@@ -36,6 +39,7 @@ impl Encryptable<EncryptedDestinationConfig> for DestinationConfig {
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EncryptedDestinationConfig {
+    Memory,
     BigQuery {
         project_id: String,
         dataset_id: String,
@@ -46,9 +50,26 @@ pub enum EncryptedDestinationConfig {
 }
 
 impl Decryptable<DestinationConfig> for EncryptedDestinationConfig {
-    
     fn decrypt(self, encryption_key: &EncryptionKey) -> Result<DestinationConfig, ToMemoryError> {
-        todo!()
+        match self {
+            Self::Memory => Ok(DestinationConfig::Memory),
+            Self::BigQuery {
+                project_id,
+                dataset_id,
+                service_account_key: encrypted_service_account_key,
+                max_staleness_mins,
+            } => {
+                let service_account_key =
+                    decrypt_text(encrypted_service_account_key, encryption_key)?;
+
+                Ok(DestinationConfig::BigQuery {
+                    project_id,
+                    dataset_id,
+                    service_account_key,
+                    max_staleness_mins,
+                })
+            }
+        }
     }
 }
 
@@ -79,11 +100,11 @@ pub async fn create_destination(
     encryption_key: &EncryptionKey,
 ) -> Result<i64, DestinationsDbError> {
     let config = encrypt_and_serialize(config, encryption_key)?;
-    
+
     let mut txn = pool.begin().await?;
     let res = create_destination_txn(&mut txn, tenant_id, name, config).await;
     txn.commit().await?;
-    
+
     res
 }
 
@@ -128,21 +149,24 @@ pub async fn read_destination(
     .await?;
 
     let destination = match record {
-        Some(record) => { 
-            let config = decrypt_and_deserialize_from_value::<EncryptedDestinationConfig, DestinationConfig>(record.config, encryption_key)?;
-            
+        Some(record) => {
+            let config = decrypt_and_deserialize_from_value::<
+                EncryptedDestinationConfig,
+                DestinationConfig,
+            >(record.config, encryption_key)?;
+
             let destination = Destination {
                 id: record.id,
                 tenant_id: record.tenant_id,
                 name: record.name,
                 config,
             };
-            
+
             Some(destination)
-        },
-        None => None
+        }
+        None => None,
     };
-    
+
     Ok(destination)
 }
 
@@ -155,18 +179,11 @@ pub async fn update_destination(
     encryption_key: &EncryptionKey,
 ) -> Result<Option<i64>, DestinationsDbError> {
     let config = encrypt_and_serialize(config, encryption_key)?;
-   
+
     let mut txn = pool.begin().await?;
-    let res = update_destination_txn(
-        &mut txn,
-        tenant_id,
-        name,
-        destination_id,
-        config,
-    )
-    .await;
+    let res = update_destination_txn(&mut txn, tenant_id, name, destination_id, config).await;
     txn.commit().await?;
-    
+
     res
 }
 
@@ -233,15 +250,18 @@ pub async fn read_all_destinations(
 
     let mut destinations = Vec::with_capacity(records.len());
     for record in records {
-        let config: DestinationConfigInDb = serde_json::from_value(record.config)?;
-        let config = config.into_config(encryption_key)?;
-        let source = Destination {
+        let config = decrypt_and_deserialize_from_value::<
+            EncryptedDestinationConfig,
+            DestinationConfig,
+        >(record.config.clone(), encryption_key)?;
+
+        let destination = Destination {
             id: record.id,
             tenant_id: record.tenant_id,
             name: record.name,
             config,
         };
-        destinations.push(source);
+        destinations.push(destination);
     }
 
     Ok(destinations)
@@ -270,39 +290,96 @@ pub async fn destination_exists(
 // TODO: rewrite tests.
 #[cfg(test)]
 mod tests {
-    use crate::db::destinations::DestinationConfig;
+    use aws_lc_rs::aead::RandomizedNonceKey;
+    use config::shared::DestinationConfig;
+
+    use crate::db::base::{decrypt_and_deserialize_from_value, encrypt_and_serialize};
+    use crate::db::destinations::EncryptedDestinationConfig;
+    use crate::encryption::EncryptionKey;
 
     #[test]
-    pub fn deserialize_settings_test() {
-        let settings = r#"{
+    pub fn destination_config_json_roundtrip() {
+        let json = r#"{
             "big_query": {
                 "project_id": "project-id",
                 "dataset_id": "dataset-id",
-                "service_account_key": "service-account-key"
+                "service_account_key": "service-account-key",
+                "max_staleness_mins": 42
             }
         }"#;
-        let actual = serde_json::from_str::<DestinationConfig>(settings);
         let expected = DestinationConfig::BigQuery {
             project_id: "project-id".to_string(),
             dataset_id: "dataset-id".to_string(),
             service_account_key: "service-account-key".to_string(),
-            max_staleness_mins: None,
+            max_staleness_mins: Some(42),
         };
-        assert!(actual.is_ok());
-        assert_eq!(expected, actual.unwrap());
+
+        let deserialized = serde_json::from_str::<DestinationConfig>(json);
+        assert!(deserialized.is_ok());
+        assert_eq!(expected, deserialized.as_ref().unwrap().to_owned());
+
+        let serialized = serde_json::to_string_pretty(&expected);
+        assert!(serialized.is_ok());
+        let re_deserialized = serde_json::from_str::<DestinationConfig>(&serialized.unwrap());
+        assert!(re_deserialized.is_ok());
+        assert_eq!(expected, re_deserialized.unwrap());
     }
 
     #[test]
-    pub fn serialize_settings_test() {
-        let actual = DestinationConfig::BigQuery {
+    pub fn destination_config_json_memory_roundtrip() {
+        let json = r#"{
+            "memory": {}
+        }"#;
+        let expected = DestinationConfig::Memory;
+
+        let deserialized = serde_json::from_str::<DestinationConfig>(json);
+        assert!(deserialized.is_ok());
+        assert_eq!(expected, deserialized.as_ref().unwrap().to_owned());
+
+        let serialized = serde_json::to_string(&expected);
+        assert!(serialized.is_ok());
+        assert_eq!(json, serialized.unwrap());
+    }
+
+    #[test]
+    pub fn destination_config_in_db_encryption() {
+        let key_bytes = [42u8; 32];
+        let key = RandomizedNonceKey::new(&aws_lc_rs::aead::AES_256_GCM, &key_bytes).unwrap();
+        let encryption_key = EncryptionKey { id: 1, key };
+
+        let config = DestinationConfig::BigQuery {
             project_id: "project-id".to_string(),
             dataset_id: "dataset-id".to_string(),
-            service_account_key: "service-account-key".to_string(),
-            max_staleness_mins: None,
+            service_account_key: "supersecretkey".to_string(),
+            max_staleness_mins: Some(99),
         };
-        let expected = r#"{"big_query":{"project_id":"project-id","dataset_id":"dataset-id","service_account_key":"service-account-key"}}"#;
-        let actual = serde_json::to_string(&actual);
-        assert!(actual.is_ok());
-        assert_eq!(expected, actual.unwrap());
+
+        // Serialize to db (should encrypt service_account_key)
+        let config_in_db = encrypt_and_serialize::<DestinationConfig, EncryptedDestinationConfig>(
+            config.clone(),
+            &encryption_key,
+        )
+        .unwrap();
+        // Deserialize from db (should decrypt service_account_key)
+        let deserialized_config = decrypt_and_deserialize_from_value::<
+            EncryptedDestinationConfig,
+            DestinationConfig,
+        >(config_in_db, &encryption_key)
+        .unwrap();
+        assert_eq!(config, deserialized_config);
+
+        // Memory variant (no encryption)
+        let config = DestinationConfig::Memory;
+        let config_in_db = encrypt_and_serialize::<DestinationConfig, EncryptedDestinationConfig>(
+            config.clone(),
+            &encryption_key,
+        )
+        .unwrap();
+        let deserialized_config = decrypt_and_deserialize_from_value::<
+            EncryptedDestinationConfig,
+            DestinationConfig,
+        >(config_in_db, &encryption_key)
+        .unwrap();
+        assert_eq!(config, deserialized_config);
     }
 }

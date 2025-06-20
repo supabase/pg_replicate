@@ -36,10 +36,7 @@ impl SourceConfig {
 }
 
 impl Encryptable<EncryptedSourceConfig> for SourceConfig {
-    fn encrypt(
-        self,
-        encryption_key: &EncryptionKey,
-    ) -> Result<EncryptedSourceConfig, ToDbError> {
+    fn encrypt(self, encryption_key: &EncryptionKey) -> Result<EncryptedSourceConfig, ToDbError> {
         let mut encrypted_password = None;
         if let Some(password) = self.password {
             encrypted_password = Some(encrypt_text(password, encryption_key)?);
@@ -109,10 +106,8 @@ pub async fn create_source(
     config: SourceConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<i64, SourcesDbError> {
-    let config = encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(
-        config,
-        encryption_key,
-    )?;
+    let config =
+        encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(config, encryption_key)?;
 
     let mut txn = pool.begin().await?;
     let res = create_source_txn(&mut txn, tenant_id, name, config).await;
@@ -163,10 +158,10 @@ pub async fn read_source(
 
     let source = match record {
         Some(record) => {
-            let config = decrypt_and_deserialize_from_value::<
-                EncryptedSourceConfig,
-                SourceConfig,
-            >(record.config, encryption_key)?;
+            let config = decrypt_and_deserialize_from_value::<EncryptedSourceConfig, SourceConfig>(
+                record.config,
+                encryption_key,
+            )?;
 
             Some(Source {
                 id: record.id,
@@ -189,10 +184,8 @@ pub async fn update_source(
     config: SourceConfig,
     encryption_key: &EncryptionKey,
 ) -> Result<Option<i64>, SourcesDbError> {
-    let config = encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(
-        config,
-        encryption_key,
-    )?;
+    let config =
+        encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(config, encryption_key)?;
 
     let record = sqlx::query!(
         r#"
@@ -250,10 +243,10 @@ pub async fn read_all_sources(
 
     let mut sources = Vec::with_capacity(records.len());
     for record in records {
-        let config = decrypt_and_deserialize_from_value::<
-            EncryptedSourceConfig,
-            SourceConfig,
-        >(record.config.clone(), encryption_key)?;
+        let config = decrypt_and_deserialize_from_value::<EncryptedSourceConfig, SourceConfig>(
+            record.config.clone(),
+            encryption_key,
+        )?;
         let source = Source {
             id: record.id,
             tenant_id: record.tenant_id,
@@ -288,10 +281,12 @@ pub async fn source_exists(
 
 #[cfg(test)]
 mod tests {
-    use crate::db::sources::{EncryptedSourceConfig, SourceConfig};
-    use crate::encryption::EncryptionKey;
     use aws_lc_rs::aead::RandomizedNonceKey;
     use serde_json;
+
+    use crate::db::base::{decrypt_and_deserialize_from_value, encrypt_and_serialize};
+    use crate::db::sources::{EncryptedSourceConfig, SourceConfig};
+    use crate::encryption::EncryptionKey;
 
     #[test]
     pub fn source_config_json_roundtrip() {
@@ -321,7 +316,6 @@ mod tests {
 
     #[test]
     pub fn source_config_in_db_password_encryption() {
-        use crate::db::base::{decrypt_and_deserialize_from_value, encrypt_and_serialize};
         let key_bytes = [42u8; 32];
         let key = RandomizedNonceKey::new(&aws_lc_rs::aead::AES_256_GCM, &key_bytes).unwrap();
         let encryption_key = EncryptionKey { id: 1, key };
@@ -335,12 +329,11 @@ mod tests {
         };
 
         // Serialize to db (should encrypt password)
-        let config_in_db =
-            encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(
-                config.clone(),
-                &encryption_key,
-            )
-            .unwrap();
+        let config_in_db = encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(
+            config.clone(),
+            &encryption_key,
+        )
+        .unwrap();
         // Deserialize from db (should decrypt password)
         let deserialized_config = decrypt_and_deserialize_from_value::<
             EncryptedSourceConfig,
@@ -354,12 +347,11 @@ mod tests {
             password: None,
             ..config.clone()
         };
-        let config_in_db =
-            encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(
-                config.clone(),
-                &encryption_key,
-            )
-            .unwrap();
+        let config_in_db = encrypt_and_serialize::<SourceConfig, EncryptedSourceConfig>(
+            config.clone(),
+            &encryption_key,
+        )
+        .unwrap();
         let deserialized_config = decrypt_and_deserialize_from_value::<
             EncryptedSourceConfig,
             SourceConfig,

@@ -19,7 +19,7 @@ use crate::{
     encryption::EncryptionKey,
     routes::extract_tenant_id,
 };
-
+use crate::db::pipelines::PipelineConfig;
 use super::{destinations::DestinationError, ErrorMessage, TenantIdError};
 
 #[derive(Deserialize, ToSchema)]

@@ -7,7 +7,7 @@ use crate::{
         images::Image,
         pipelines::{Pipeline, PipelineConfig},
         replicators::Replicator,
-        sources::{source_exists, Source, SourcesDbError, SourceConfig},
+        sources::{source_exists, Source, SourceConfig, SourcesDbError},
     },
     encryption::EncryptionKey,
     k8s_client::{HttpK8sClient, K8sClient, K8sError, PodPhase, TRUSTED_ROOT_CERT_CONFIG_MAP_NAME},
