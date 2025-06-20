@@ -1,5 +1,5 @@
 use postgres::schema::TableId;
-use std::future::Future;
+use std::{collections::HashMap, future::Future};
 use thiserror::Error;
 
 use crate::v2::state::table::TableReplicationState;
@@ -18,7 +18,7 @@ pub trait StateStore {
 
     fn load_table_replication_states(
         &self,
-    ) -> impl Future<Output = Result<Vec<TableReplicationState>, StateStoreError>> + Send;
+    ) -> impl Future<Output = Result<HashMap<TableId, TableReplicationState>, StateStoreError>> + Send;
 
     fn store_table_replication_state(
         &self,

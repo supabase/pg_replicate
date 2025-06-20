@@ -15,7 +15,8 @@ use crate::v2::workers::pool::TableSyncWorkerPool;
 use crate::v2::workers::table_sync::{
     TableSyncWorker, TableSyncWorkerError, TableSyncWorkerState, TableSyncWorkerStateError,
 };
-use postgres::schema::Oid;
+use postgres::schema::{Oid, TableId};
+use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinHandle;
@@ -299,9 +300,9 @@ where
 
     async fn active_table_replication_states(
         &self,
-    ) -> Result<Vec<TableReplicationState>, ApplyWorkerHookError> {
+    ) -> Result<HashMap<TableId, TableReplicationState>, ApplyWorkerHookError> {
         let mut table_replication_states = self.state_store.load_table_replication_states().await?;
-        table_replication_states.retain(|s| !s.phase.as_type().is_done());
+        table_replication_states.retain(|_table_id, state| !state.phase.as_type().is_done());
 
         Ok(table_replication_states)
     }
@@ -317,16 +318,14 @@ where
     async fn initialize(&self) -> Result<(), Self::Error> {
         let table_replication_states = self.active_table_replication_states().await?;
 
-        for table_replication_state in table_replication_states {
-            let table_id = table_replication_state.table_id;
-
+        for table_id in table_replication_states.keys() {
             let table_sync_worker_state = {
                 let pool = self.pool.read().await;
-                pool.get_active_worker_state(table_id)
+                pool.get_active_worker_state(*table_id)
             };
 
             if table_sync_worker_state.is_none() {
-                if let Err(err) = self.start_table_sync_worker(table_id).await {
+                if let Err(err) = self.start_table_sync_worker(*table_id).await {
                     error!("Error handling syncing table {}: {}", table_id, err);
                 }
             }
@@ -342,10 +341,9 @@ where
             current_lsn
         );
 
-        for table_replication_state in table_replication_states {
+        for (table_id, table_replication_state) in table_replication_states {
             // We read the state store state first, if we don't find `SyncDone` we will attempt to
             // read the shared state which can contain also non-persisted states.
-            let table_id = table_replication_state.table_id;
             match table_replication_state.phase {
                 TableReplicationPhase::SyncDone { lsn } if current_lsn >= lsn => {
                     let updated_state =

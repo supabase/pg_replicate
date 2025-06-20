@@ -111,9 +111,9 @@ impl StateStore for TestStateStore {
 
     async fn load_table_replication_states(
         &self,
-    ) -> Result<Vec<TableReplicationState>, StateStoreError> {
+    ) -> Result<HashMap<TableId, TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
-        let result = Ok(inner.table_replication_states.values().cloned().collect());
+        let result = Ok(inner.table_replication_states.clone());
 
         inner
             .dispatch_method_notification(StateStoreMethod::LoadTableReplicationStates)
@@ -214,7 +214,7 @@ where
 
     async fn load_table_replication_states(
         &self,
-    ) -> Result<Vec<TableReplicationState>, StateStoreError> {
+    ) -> Result<HashMap<TableId, TableReplicationState>, StateStoreError> {
         self.trigger_fault(&self.config.load_table_replication_states)?;
         self.inner.load_table_replication_states().await
     }

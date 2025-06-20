@@ -1,4 +1,4 @@
-use postgres::schema::{Oid, TableId};
+use postgres::schema::TableId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -8,7 +8,7 @@ use crate::v2::state::table::TableReplicationState;
 
 #[derive(Debug)]
 struct Inner {
-    table_replication_states: HashMap<Oid, TableReplicationState>,
+    table_replication_states: HashMap<TableId, TableReplicationState>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +37,7 @@ impl Default for MemoryStateStore {
 impl StateStore for MemoryStateStore {
     async fn get_table_replication_state(
         &self,
-        table_id: Oid,
+        table_id: TableId,
     ) -> Result<Option<TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
 
@@ -46,10 +46,10 @@ impl StateStore for MemoryStateStore {
 
     async fn load_table_replication_states(
         &self,
-    ) -> Result<Vec<TableReplicationState>, StateStoreError> {
+    ) -> Result<HashMap<TableId, TableReplicationState>, StateStoreError> {
         let inner = self.inner.read().await;
 
-        Ok(inner.table_replication_states.values().cloned().collect())
+        Ok(inner.table_replication_states.clone())
     }
 
     async fn store_table_replication_state(
